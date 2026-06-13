@@ -28,6 +28,16 @@ interface SubmissionRecord {
   submission_type: string;
 }
 
+interface FeedbackRecord {
+  id: string;
+  feedback_date: string;
+  main_win: string | null;
+  main_focus: string | null;
+  agreed_action: string | null;
+  plan_change: string | null;
+  next_review_date: string | null;
+}
+
 const formatDate = (value: string | null) => {
   if (!value) return 'Not set';
   return new Intl.DateTimeFormat('en-GB', {
@@ -42,6 +52,7 @@ export default function ClientHub() {
   const [client, setClient] = useState<ClientRecord | null>(null);
   const [tasks, setTasks] = useState<AssignedTaskRecord[]>([]);
   const [submissions, setSubmissions] = useState<SubmissionRecord[]>([]);
+  const [feedback, setFeedback] = useState<FeedbackRecord | null>(null);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -95,8 +106,23 @@ export default function ClientHub() {
         return;
       }
 
+      const { data: feedbackData, error: feedbackError } = await supabase
+        .from('feedback_notes')
+        .select('id, feedback_date, main_win, main_focus, agreed_action, plan_change, next_review_date')
+        .eq('client_id', linkedClient.id)
+        .eq('client_visible', true)
+        .order('feedback_date', { ascending: false })
+        .limit(1);
+
+      if (feedbackError) {
+        setMessage(feedbackError.message);
+        setLoading(false);
+        return;
+      }
+
       setTasks((taskData ?? []) as AssignedTaskRecord[]);
       setSubmissions((submissionData ?? []) as SubmissionRecord[]);
+      setFeedback((feedbackData?.[0] ?? null) as FeedbackRecord | null);
       setLoading(false);
     };
 
@@ -167,6 +193,26 @@ export default function ClientHub() {
               ))
             )}
           </div>
+        </section>
+
+        <section>
+          <SectionHeader title="LATEST FEEDBACK" accent />
+          <Card>
+            {!feedback ? (
+              <p className="text-sm text-gray-600">No coach feedback visible yet.</p>
+            ) : (
+              <div className="space-y-4 text-sm text-gray-800">
+                <p className="text-xs font-bold uppercase text-gray-500">{formatDate(feedback.feedback_date)}</p>
+                {feedback.main_win && <p><strong>Main win:</strong> {feedback.main_win}</p>}
+                {feedback.main_focus && <p><strong>Main focus:</strong> {feedback.main_focus}</p>}
+                {feedback.agreed_action && <p><strong>Agreed action:</strong> {feedback.agreed_action}</p>}
+                {feedback.plan_change && <p><strong>Plan change:</strong> {feedback.plan_change}</p>}
+                {feedback.next_review_date && (
+                  <p className="pt-3 border-t border-gray-200"><strong>Next review:</strong> {formatDate(feedback.next_review_date)}</p>
+                )}
+              </div>
+            )}
+          </Card>
         </section>
       </div>
     </div>
