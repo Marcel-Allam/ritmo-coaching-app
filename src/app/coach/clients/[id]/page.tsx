@@ -382,20 +382,25 @@ export default function ClientProfilePage() {
             ) : (
               <div className="space-y-4">
                 {submissions.map((submission) => (
-                  <div
+                  <Link
                     key={submission.id}
-                    className="flex items-center justify-between pb-4 border-b border-gray-200 last:border-b-0 last:pb-0"
+                    href={`/coach/submissions/${submission.id}`}
+                    className="block rounded-lg hover:bg-gray-50"
                   >
-                    <div>
-                      <p className="font-bold text-sm uppercase text-[#000000]">
-                        {submission.submission_type.replaceAll('_', ' ')}
-                      </p>
-                      <p className="text-xs text-gray-500 mt-1">
-                        {formatDate(submission.submitted_at)}
-                      </p>
+                    <div className="flex items-center justify-between pb-4 border-b border-gray-200 last:border-b-0 last:pb-0">
+                      <div>
+                        <p className="font-bold text-sm uppercase text-[#000000]">
+                          {submission.submission_type.replaceAll('_', ' ')}
+                        </p>
+                        <p className="text-xs text-gray-500 mt-1">
+                          {formatDate(submission.submitted_at)}
+                        </p>
+                      </div>
+                      <Badge variant={submission.review_status === 'reviewed' ? 'success' : 'default'}>
+                        {submission.review_status}
+                      </Badge>
                     </div>
-                    <Badge variant="default">{submission.review_status}</Badge>
-                  </div>
+                  </Link>
                 ))}
               </div>
             )}
