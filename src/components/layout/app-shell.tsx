@@ -55,6 +55,7 @@ const LogOutIcon = () => (
 const coachNavItems = [
   { label: 'Dashboard', href: '/coach', icon: HomeIcon },
   { label: 'Clients', href: '/coach/clients', icon: UsersIcon },
+  { label: 'Reviews', href: '/coach/submissions', icon: CheckIcon },
   { label: 'Actions', href: '/coach/actions', icon: ClipboardIcon },
   { label: 'Feedback', href: '/coach/feedback', icon: MessageIcon },
 ];
