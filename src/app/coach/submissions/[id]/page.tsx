@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { SectionHeader } from '@/components/ui/section-header';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
+import { useAuth } from '@/lib/auth-context';
 
 interface SubmissionRecord {
   id: string;
@@ -39,17 +40,25 @@ const formatDate = (value: string | null) => {
   }).format(new Date(value));
 };
 
+const todayDate = () => new Date().toISOString().slice(0, 10);
 const formatSubmissionType = (value: string) => value.replaceAll('_', ' ');
 
 export default function CoachSubmissionReviewPage() {
   const params = useParams();
   const submissionId = params.id as string;
+  const { user } = useAuth();
 
   const [submission, setSubmission] = useState<SubmissionRecord | null>(null);
   const [client, setClient] = useState<ClientRecord | null>(null);
   const [coachNote, setCoachNote] = useState('');
+  const [mainWin, setMainWin] = useState('');
+  const [mainFocus, setMainFocus] = useState('');
+  const [agreedAction, setAgreedAction] = useState('');
+  const [planChange, setPlanChange] = useState('');
+  const [nextReviewDate, setNextReviewDate] = useState('');
   const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
+  const [isSavingReview, setIsSavingReview] = useState(false);
+  const [isSendingFeedback, setIsSendingFeedback] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   const loadSubmission = async () => {
@@ -97,7 +106,7 @@ export default function CoachSubmissionReviewPage() {
   const markReviewed = async () => {
     if (!submission) return;
 
-    setIsSaving(true);
+    setIsSavingReview(true);
     setMessage(null);
 
     const supabase = createClient();
@@ -112,7 +121,7 @@ export default function CoachSubmissionReviewPage() {
 
     if (error) {
       setMessage(error.message);
-      setIsSaving(false);
+      setIsSavingReview(false);
       return;
     }
 
@@ -122,7 +131,59 @@ export default function CoachSubmissionReviewPage() {
       coach_note: coachNote.trim() || null,
     });
     setMessage('Submission marked as reviewed.');
-    setIsSaving(false);
+    setIsSavingReview(false);
+  };
+
+  const sendFeedback = async () => {
+    if (!submission || !client) return;
+
+    if (!mainWin.trim() && !mainFocus.trim() && !agreedAction.trim() && !planChange.trim()) {
+      setMessage('Add at least one feedback field before sending.');
+      return;
+    }
+
+    setIsSendingFeedback(true);
+    setMessage(null);
+
+    const supabase = createClient();
+
+    const { error: feedbackError } = await supabase.from('feedback_notes').insert({
+      client_id: client.id,
+      coach_id: user?.id ?? null,
+      feedback_date: todayDate(),
+      main_win: mainWin.trim() || null,
+      main_focus: mainFocus.trim() || null,
+      agreed_action: agreedAction.trim() || null,
+      plan_change: planChange.trim() || null,
+      next_review_date: nextReviewDate || null,
+      client_visible: true,
+    });
+
+    if (feedbackError) {
+      setMessage(feedbackError.message);
+      setIsSendingFeedback(false);
+      return;
+    }
+
+    const { error: reviewError } = await supabase
+      .from('task_submissions')
+      .update({ review_status: 'reviewed', coach_note: coachNote.trim() || null })
+      .eq('id', submission.id);
+
+    if (reviewError) {
+      setMessage(reviewError.message);
+      setIsSendingFeedback(false);
+      return;
+    }
+
+    setSubmission({ ...submission, review_status: 'reviewed', coach_note: coachNote.trim() || null });
+    setMainWin('');
+    setMainFocus('');
+    setAgreedAction('');
+    setPlanChange('');
+    setNextReviewDate('');
+    setMessage('Feedback sent to client and submission marked as reviewed.');
+    setIsSendingFeedback(false);
   };
 
   if (isLoading) {
@@ -209,9 +270,42 @@ export default function CoachSubmissionReviewPage() {
                   Back to client
                 </Button>
               </Link>
-              <Button type="button" onClick={markReviewed} isLoading={isSaving}>
+              <Button type="button" onClick={markReviewed} isLoading={isSavingReview}>
                 Mark reviewed
               </Button>
+            </div>
+          </Card>
+        </div>
+
+        <div>
+          <SectionHeader title="SEND FEEDBACK TO CLIENT" accent />
+          <Card>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold uppercase text-gray-600 mb-2">Main Win</label>
+                <textarea value={mainWin} onChange={(event) => setMainWin(event.target.value)} className="min-h-20 w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm" />
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase text-gray-600 mb-2">Main Focus</label>
+                <textarea value={mainFocus} onChange={(event) => setMainFocus(event.target.value)} className="min-h-20 w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm" />
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase text-gray-600 mb-2">Agreed Action</label>
+                <textarea value={agreedAction} onChange={(event) => setAgreedAction(event.target.value)} className="min-h-20 w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm" />
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase text-gray-600 mb-2">Plan Change</label>
+                <textarea value={planChange} onChange={(event) => setPlanChange(event.target.value)} className="min-h-20 w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm" />
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase text-gray-600 mb-2">Next Review Date</label>
+                <input type="date" value={nextReviewDate} onChange={(event) => setNextReviewDate(event.target.value)} className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm" />
+              </div>
+              <div className="flex justify-end">
+                <Button type="button" onClick={sendFeedback} isLoading={isSendingFeedback}>
+                  Send feedback
+                </Button>
+              </div>
             </div>
           </Card>
         </div>
