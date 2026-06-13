@@ -23,6 +23,11 @@ interface AssignedTaskRecord {
   end_date: string | null;
 }
 
+interface SubmissionRecord {
+  assigned_task_id: string | null;
+  submission_type: string;
+}
+
 const formatDate = (value: string | null) => {
   if (!value) return 'Not set';
   return new Intl.DateTimeFormat('en-GB', {
@@ -36,6 +41,7 @@ export default function ClientHub() {
   const { user } = useAuth();
   const [client, setClient] = useState<ClientRecord | null>(null);
   const [tasks, setTasks] = useState<AssignedTaskRecord[]>([]);
+  const [submissions, setSubmissions] = useState<SubmissionRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -77,12 +83,31 @@ export default function ClientHub() {
         return;
       }
 
+      const { data: submissionData, error: submissionError } = await supabase
+        .from('task_submissions')
+        .select('assigned_task_id, submission_type')
+        .eq('client_id', linkedClient.id)
+        .order('submitted_at', { ascending: false });
+
+      if (submissionError) {
+        setMessage(submissionError.message);
+        setLoading(false);
+        return;
+      }
+
       setTasks((taskData ?? []) as AssignedTaskRecord[]);
+      setSubmissions((submissionData ?? []) as SubmissionRecord[]);
       setLoading(false);
     };
 
     loadHub();
   }, [user]);
+
+  const isTaskComplete = (task: AssignedTaskRecord) => {
+    return submissions.some((submission) => {
+      return submission.assigned_task_id === task.id || submission.submission_type === task.task_type;
+    });
+  };
 
   if (loading) {
     return (
@@ -136,7 +161,7 @@ export default function ClientHub() {
                   key={task.id}
                   title={task.task_name}
                   description={task.instructions || task.task_type}
-                  status="pending"
+                  status={isTaskComplete(task) ? 'completed' : 'pending'}
                   dueDate={formatDate(task.end_date)}
                 />
               ))
