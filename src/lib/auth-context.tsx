@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { User } from '@supabase/supabase-js';
-import { createClient } from '@/lib/supabase/client';
+import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
 
 export interface UserProfile {
   id: string;
@@ -34,9 +34,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [isInitializing, setIsInitializing] = useState(true);
-  const [supabase] = useState(() => createClient());
+
+  // Only create the Supabase client when the environment is configured.
+  // This prevents the app preview from crashing in Bolt before env vars are injected.
+  const [supabase] = useState(() =>
+    isSupabaseConfigured ? createClient() : null
+  );
 
   const fetchProfile = async (userId: string) => {
+    if (!supabase) {
+      return null;
+    }
+
     try {
       const { data, error } = await supabase
         .from('profiles')
@@ -58,9 +67,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const initializeAuth = async () => {
+      // If Supabase is not configured yet, render the app shell in a safe logged-out state.
+      if (!supabase) {
+        setUser(null);
+        setProfile(null);
+        setLoading(false);
+        setIsInitializing(false);
+        return;
+      }
+
       try {
         setIsInitializing(true);
-        const { data: { session } } = await supabase.auth.getSession();
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
 
         if (session?.user) {
           setUser(session.user);
@@ -70,15 +90,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } catch (error) {
         console.error('Error initializing auth:', error);
       } finally {
+        setLoading(false);
         setIsInitializing(false);
       }
     };
 
     initializeAuth();
-  }, []);
+  }, [supabase]);
 
   useEffect(() => {
-    if (isInitializing) return;
+    if (isInitializing || !supabase) return;
 
     let isListening = true;
 
@@ -103,12 +124,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isListening = false;
       subscription?.unsubscribe();
     };
-  }, [isInitializing]);
+  }, [isInitializing, supabase]);
 
   const signIn = async (
     email: string,
     password: string
   ): Promise<{ error: Error | null }> => {
+    if (!supabase) {
+      return {
+        error: new Error(
+          'Supabase is not configured yet. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY to the environment.'
+        ),
+      };
+    }
+
     try {
       setLoading(true);
       const { error } = await supabase.auth.signInWithPassword({
@@ -134,14 +163,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     fullName: string,
     role: 'coach' | 'client'
   ): Promise<{ error: Error | null }> => {
+    if (!supabase) {
+      return {
+        error: new Error(
+          'Supabase is not configured yet. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY to the environment.'
+        ),
+      };
+    }
+
     try {
       setLoading(true);
 
-      const { data: { user: newUser }, error: signUpError } =
-        await supabase.auth.signUp({
-          email,
-          password,
-        });
+      const {
+        data: { user: newUser },
+        error: signUpError,
+      } = await supabase.auth.signUp({
+        email,
+        password,
+      });
 
       if (signUpError) {
         return { error: signUpError };
@@ -151,16 +190,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { error: new Error('No user returned from signup') };
       }
 
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .insert({
-          id: newUser.id,
-          email,
-          full_name: fullName,
-          role,
-          avatar_url: null,
-          created_at: new Date().toISOString(),
-        });
+      const { error: profileError } = await supabase.from('profiles').insert({
+        id: newUser.id,
+        email,
+        full_name: fullName,
+        role,
+        avatar_url: null,
+        created_at: new Date().toISOString(),
+      });
 
       if (profileError) {
         console.error('Error creating profile:', profileError);
@@ -176,6 +213,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async (): Promise<{ error: Error | null }> => {
+    if (!supabase) {
+      setUser(null);
+      setProfile(null);
+      return { error: null };
+    }
+
     try {
       setLoading(true);
       const { error } = await supabase.auth.signOut();
