@@ -1,201 +1,178 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { PageHeader } from '@/components/layout/page-header';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { SectionHeader } from '@/components/ui/section-header';
+import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
+import { useAuth } from '@/lib/auth-context';
 
-interface RatingInput {
-  label: string;
-  value: number;
-}
-
-interface FormData {
-  weekStarting: string;
-  energy: number;
-  sleepQuality: number;
-  stress: number;
-  motivation: number;
-  adherence: number;
-  painIssues: string;
-  wins: string;
-  notes: string;
-}
-
-const RatingButtons = ({
-  value,
-  onChange,
-  label,
-}: {
-  value: number;
-  onChange: (val: number) => void;
-  label: string;
-}) => (
-  <div className="mb-6">
-    <label className="block text-sm font-semibold uppercase mb-3">{label}</label>
-    <div className="flex gap-2 flex-wrap">
-      {Array.from({ length: 10 }, (_, i) => i + 1).map((num) => (
-        <button
-          key={num}
-          onClick={() => onChange(num)}
-          className={`w-10 h-10 rounded font-bold uppercase text-sm transition-colors ${
-            value === num
-              ? 'bg-[#FA0201] text-white'
-              : 'bg-white border-2 border-gray-300 text-black hover:border-[#FA0201]'
-          }`}
-        >
-          {num}
-        </button>
-      ))}
-    </div>
-  </div>
-);
+type ClientRecord = { id: string; full_name: string };
 
 export default function WeeklyCheckinPage() {
-  const [formData, setFormData] = useState<FormData>({
-    weekStarting: '',
-    energy: 0,
-    sleepQuality: 0,
-    stress: 0,
-    motivation: 0,
-    adherence: 0,
-    painIssues: '',
-    wins: '',
-    notes: '',
-  });
+  const router = useRouter();
+  const { user } = useAuth();
+  const [client, setClient] = useState<ClientRecord | null>(null);
+  const [weekRating, setWeekRating] = useState('');
+  const [biggestWin, setBiggestWin] = useState('');
+  const [biggestChallenge, setBiggestChallenge] = useState('');
+  const [issues, setIssues] = useState('');
+  const [helpNeeded, setHelpNeeded] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
 
-  const [submitted, setSubmitted] = useState(false);
+  useEffect(() => {
+    const loadClient = async () => {
+      if (!isSupabaseConfigured || !user) {
+        setMessage('Client login is not ready.');
+        setLoading(false);
+        return;
+      }
 
-  const handleInputChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
-  ) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from('clients')
+        .select('id, full_name')
+        .eq('user_id', user.id)
+        .single();
+
+      if (error || !data) {
+        setMessage('This login is not linked to a client profile.');
+        setLoading(false);
+        return;
+      }
+
+      setClient(data as ClientRecord);
+      setLoading(false);
+    };
+
+    loadClient();
+  }, [user]);
+
+  const submitCheckin = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (!client) {
+      setMessage('No linked client profile found.');
+      return;
+    }
+
+    const ratingNumber = Number(weekRating);
+    if (!ratingNumber || ratingNumber < 1 || ratingNumber > 10) {
+      setMessage('Add a week rating from 1 to 10.');
+      return;
+    }
+
+    setSaving(true);
+    setMessage(null);
+
+    const supabase = createClient();
+
+    const { error: checkinError } = await supabase.from('weekly_checkins').insert({
+      client_id: client.id,
+      week_rating: ratingNumber,
+      biggest_win: biggestWin.trim() || null,
+      biggest_challenge: biggestChallenge.trim() || null,
+      pain_or_issues: issues.trim() || null,
+      help_needed_on_call: helpNeeded.trim() || null,
+      review_status: 'new',
+    });
+
+    if (checkinError) {
+      setMessage(checkinError.message);
+      setSaving(false);
+      return;
+    }
+
+    const summary = [
+      `Rating: ${ratingNumber}/10`,
+      `Win: ${biggestWin || 'Not provided'}`,
+      `Challenge: ${biggestChallenge || 'Not provided'}`,
+      `Issues: ${issues || 'Not provided'}`,
+      `Help needed: ${helpNeeded || 'Not provided'}`,
+    ].join('\n');
+
+    const { error: submissionError } = await supabase.from('task_submissions').insert({
+      client_id: client.id,
+      submission_type: 'weekly_checkin',
+      answer_value: ratingNumber,
+      answer_text: summary,
+      review_status: 'new',
+      followup_required: Boolean(biggestChallenge.trim() || issues.trim() || helpNeeded.trim()),
+    });
+
+    if (submissionError) {
+      setMessage(submissionError.message);
+      setSaving(false);
+      return;
+    }
+
+    setMessage('Check-in submitted successfully. Returning to your hub...');
+    setSaving(false);
+    setTimeout(() => router.push('/client'), 1200);
   };
 
-  const handleRatingChange = (field: keyof FormData, value: number) => {
-    setFormData((prev) => ({
-      ...prev,
-      [field]: value,
-    }));
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    console.log('Form submitted:', formData);
-    setSubmitted(true);
-    setTimeout(() => setSubmitted(false), 3000);
-  };
+  if (loading) {
+    return (
+      <div>
+        <PageHeader title="WEEKLY CHECK-IN" />
+        <main className="px-4 py-6 md:px-8 max-w-2xl mx-auto">
+          <Card><p>Loading check-in...</p></Card>
+        </main>
+      </div>
+    );
+  }
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden">
-      <PageHeader title="WEEKLY CHECK-IN" />
+    <div>
+      <PageHeader title="WEEKLY CHECK-IN" subtitle={client ? `For ${client.full_name}` : undefined} />
+      <main className="px-4 py-6 md:px-8 max-w-2xl mx-auto">
+        {message && (
+          <Card className="mb-6">
+            <p className="font-semibold text-sm text-gray-800">{message}</p>
+          </Card>
+        )}
 
-      <main className="flex-1 overflow-y-auto pb-20 md:pb-0">
-        <div className="px-4 py-6 md:px-8 max-w-2xl mx-auto">
-          {submitted && (
-            <Card className="mb-6 p-4 bg-green-50 border-green-200">
-              <p className="text-green-800 font-semibold uppercase text-sm">
-                ✓ Check-in submitted successfully
-              </p>
-            </Card>
-          )}
+        <form onSubmit={submitCheckin} className="space-y-8">
+          <section>
+            <SectionHeader title="WEEK RATING" />
+            <label className="block text-sm font-bold uppercase mb-2">Rate your week from 1 to 10</label>
+            <input
+              type="number"
+              min="1"
+              max="10"
+              value={weekRating}
+              onChange={(event) => setWeekRating(event.target.value)}
+              className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm"
+              required
+            />
+          </section>
 
-          <form onSubmit={handleSubmit} className="space-y-8">
-            {/* Week Starting */}
-            <div>
-              <Input
-                type="date"
-                label="WEEK STARTING"
-                name="weekStarting"
-                value={formData.weekStarting}
-                onChange={handleInputChange}
-                required
-              />
-            </div>
+          <section>
+            <SectionHeader title="CHECK-IN QUESTIONS" />
+            <Textarea label="Biggest Win" value={biggestWin} onChange={(event) => setBiggestWin(event.target.value)} />
+          </section>
 
-            {/* Rating Section */}
-            <section>
-              <SectionHeader title="METRICS" />
-              <RatingButtons
-                value={formData.energy}
-                onChange={(val) => handleRatingChange('energy', val)}
-                label="Energy Level"
-              />
-              <RatingButtons
-                value={formData.sleepQuality}
-                onChange={(val) => handleRatingChange('sleepQuality', val)}
-                label="Sleep Quality"
-              />
-              <RatingButtons
-                value={formData.stress}
-                onChange={(val) => handleRatingChange('stress', val)}
-                label="Stress Level"
-              />
-              <RatingButtons
-                value={formData.motivation}
-                onChange={(val) => handleRatingChange('motivation', val)}
-                label="Motivation"
-              />
-              <RatingButtons
-                value={formData.adherence}
-                onChange={(val) => handleRatingChange('adherence', val)}
-                label="Adherence"
-              />
-            </section>
+          <section>
+            <Textarea label="Biggest Challenge" value={biggestChallenge} onChange={(event) => setBiggestChallenge(event.target.value)} />
+          </section>
 
-            {/* Textarea Fields */}
-            <section>
-              <SectionHeader title="FEEDBACK" />
-              <Textarea
-                label="Pain / Issues"
-                name="painIssues"
-                placeholder="Any pain, injuries, or issues this week?"
-                value={formData.painIssues}
-                onChange={handleInputChange}
-              />
-            </section>
+          <section>
+            <Textarea label="Issues" value={issues} onChange={(event) => setIssues(event.target.value)} />
+          </section>
 
-            <section>
-              <Textarea
-                label="Wins This Week"
-                name="wins"
-                placeholder="What went well this week? Any PRs or achievements?"
-                value={formData.wins}
-                onChange={handleInputChange}
-              />
-            </section>
+          <section>
+            <Textarea label="Help Needed" value={helpNeeded} onChange={(event) => setHelpNeeded(event.target.value)} />
+          </section>
 
-            <section>
-              <Textarea
-                label="Additional Notes"
-                name="notes"
-                placeholder="Any other notes or observations..."
-                value={formData.notes}
-                onChange={handleInputChange}
-              />
-            </section>
-
-            {/* Submit Button */}
-            <div className="pb-8">
-              <Button
-                type="submit"
-                variant="primary"
-                size="lg"
-                fullWidth
-                className="bg-[#FA0201] hover:bg-red-700"
-              >
-                SUBMIT CHECK-IN
-              </Button>
-            </div>
-          </form>
-        </div>
+          <Button type="submit" variant="primary" size="lg" fullWidth disabled={saving || !client} className="bg-[#FA0201] hover:bg-red-700 disabled:opacity-60">
+            {saving ? 'SAVING...' : 'SUBMIT CHECK-IN'}
+          </Button>
+        </form>
       </main>
     </div>
   );
