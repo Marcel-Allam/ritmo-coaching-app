@@ -4,6 +4,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { SectionHeader } from '@/components/ui/section-header';
 import { TaskCard } from '@/components/ui/task-card';
+import { Input } from '@/components/ui/input';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
@@ -37,6 +38,14 @@ interface SubmissionRecord {
   review_status: string;
 }
 
+const emptyTaskForm = {
+  taskName: '',
+  taskType: 'weekly_checkin',
+  frequency: 'weekly',
+  endDate: '',
+  instructions: '',
+};
+
 const formatDate = (value: string | null) => {
   if (!value) return 'Not set';
 
@@ -60,63 +69,109 @@ export default function ClientProfilePage() {
   const [submissions, setSubmissions] = useState<SubmissionRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isTaskFormOpen, setIsTaskFormOpen] = useState(false);
+  const [isSavingTask, setIsSavingTask] = useState(false);
+  const [taskForm, setTaskForm] = useState(emptyTaskForm);
+
+  const loadClientProfile = async () => {
+    if (!isSupabaseConfigured) {
+      setError('Supabase environment variables are not configured.');
+      setIsLoading(false);
+      return;
+    }
+
+    const supabase = createClient();
+
+    const [clientResult, tasksResult, submissionsResult] = await Promise.all([
+      supabase
+        .from('clients')
+        .select('id, full_name, email, status, current_focus, next_review_date, next_call_date, start_date')
+        .eq('id', clientId)
+        .single(),
+      supabase
+        .from('assigned_tasks')
+        .select('id, task_name, task_type, frequency, instructions, active, end_date')
+        .eq('client_id', clientId)
+        .eq('active', true)
+        .order('created_at', { ascending: false }),
+      supabase
+        .from('task_submissions')
+        .select('id, submission_type, submitted_at, review_status')
+        .eq('client_id', clientId)
+        .order('submitted_at', { ascending: false })
+        .limit(5),
+    ]);
+
+    if (clientResult.error) {
+      setError(clientResult.error.message);
+      setIsLoading(false);
+      return;
+    }
+
+    if (tasksResult.error) {
+      setError(tasksResult.error.message);
+      setIsLoading(false);
+      return;
+    }
+
+    if (submissionsResult.error) {
+      setError(submissionsResult.error.message);
+      setIsLoading(false);
+      return;
+    }
+
+    setClient(clientResult.data as ClientRecord);
+    setTasks((tasksResult.data ?? []) as AssignedTaskRecord[]);
+    setSubmissions((submissionsResult.data ?? []) as SubmissionRecord[]);
+    setIsLoading(false);
+  };
 
   useEffect(() => {
-    const loadClientProfile = async () => {
-      if (!isSupabaseConfigured) {
-        setError('Supabase environment variables are not configured.');
-        setIsLoading(false);
-        return;
-      }
-
-      const supabase = createClient();
-
-      const [clientResult, tasksResult, submissionsResult] = await Promise.all([
-        supabase
-          .from('clients')
-          .select('id, full_name, email, status, current_focus, next_review_date, next_call_date, start_date')
-          .eq('id', clientId)
-          .single(),
-        supabase
-          .from('assigned_tasks')
-          .select('id, task_name, task_type, frequency, instructions, active, end_date')
-          .eq('client_id', clientId)
-          .eq('active', true)
-          .order('created_at', { ascending: false }),
-        supabase
-          .from('task_submissions')
-          .select('id, submission_type, submitted_at, review_status')
-          .eq('client_id', clientId)
-          .order('submitted_at', { ascending: false })
-          .limit(5),
-      ]);
-
-      if (clientResult.error) {
-        setError(clientResult.error.message);
-        setIsLoading(false);
-        return;
-      }
-
-      if (tasksResult.error) {
-        setError(tasksResult.error.message);
-        setIsLoading(false);
-        return;
-      }
-
-      if (submissionsResult.error) {
-        setError(submissionsResult.error.message);
-        setIsLoading(false);
-        return;
-      }
-
-      setClient(clientResult.data as ClientRecord);
-      setTasks((tasksResult.data ?? []) as AssignedTaskRecord[]);
-      setSubmissions((submissionsResult.data ?? []) as SubmissionRecord[]);
-      setIsLoading(false);
-    };
-
     loadClientProfile();
   }, [clientId]);
+
+  const handleCreateTask = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (!isSupabaseConfigured) {
+      setError('Supabase environment variables are not configured.');
+      return;
+    }
+
+    if (!taskForm.taskName.trim()) {
+      setError('Task name is required.');
+      return;
+    }
+
+    setIsSavingTask(true);
+    setError(null);
+
+    const supabase = createClient();
+
+    const { error: insertError } = await supabase.from('assigned_tasks').insert({
+      client_id: clientId,
+      task_name: taskForm.taskName.trim(),
+      task_type: taskForm.taskType,
+      frequency: taskForm.frequency,
+      required: true,
+      start_date: new Date().toISOString().slice(0, 10),
+      end_date: taskForm.endDate || null,
+      active: true,
+      instructions: taskForm.instructions.trim() || null,
+    });
+
+    if (insertError) {
+      setError(insertError.message);
+      setIsSavingTask(false);
+      return;
+    }
+
+    setTaskForm(emptyTaskForm);
+    setIsTaskFormOpen(false);
+    setIsSavingTask(false);
+    setIsLoading(true);
+    await loadClientProfile();
+  };
 
   if (isLoading) {
     return (
@@ -199,7 +254,100 @@ export default function ClientProfilePage() {
         </div>
 
         <div>
-          <SectionHeader title="ASSIGNED TASKS" accent />
+          <div className="flex items-center justify-between gap-4">
+            <SectionHeader title="ASSIGNED TASKS" accent />
+            <button
+              type="button"
+              onClick={() => setIsTaskFormOpen(true)}
+              className="mb-4 rounded-lg bg-[#FA0201] px-4 py-2 text-sm font-bold uppercase text-white hover:bg-red-700"
+            >
+              Assign Task
+            </button>
+          </div>
+
+          {isTaskFormOpen && (
+            <Card className="mb-4 border-2 border-[#FA0201]">
+              <form onSubmit={handleCreateTask} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold uppercase text-gray-600 mb-2">Task Name</label>
+                  <Input
+                    value={taskForm.taskName}
+                    onChange={(event) => setTaskForm((current) => ({ ...current, taskName: event.target.value }))}
+                    placeholder="e.g. Weekly check-in"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase text-gray-600 mb-2">Task Type</label>
+                  <select
+                    value={taskForm.taskType}
+                    onChange={(event) => setTaskForm((current) => ({ ...current, taskType: event.target.value }))}
+                    className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm text-[#000000]"
+                  >
+                    <option value="weekly_checkin">Weekly check-in</option>
+                    <option value="workout_checkin">Workout check-in</option>
+                    <option value="key_lift">Key lift / top set</option>
+                    <option value="nutrition">Nutrition submission</option>
+                    <option value="bodyweight">Bodyweight</option>
+                    <option value="progress_photo">Progress photo</option>
+                    <option value="habit_check">Habit check</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase text-gray-600 mb-2">Frequency</label>
+                  <select
+                    value={taskForm.frequency}
+                    onChange={(event) => setTaskForm((current) => ({ ...current, frequency: event.target.value }))}
+                    className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm text-[#000000]"
+                  >
+                    <option value="daily">Daily</option>
+                    <option value="weekly">Weekly</option>
+                    <option value="per_workout">Per workout</option>
+                    <option value="one_off">One-off</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase text-gray-600 mb-2">Due / End Date</label>
+                  <Input
+                    type="date"
+                    value={taskForm.endDate}
+                    onChange={(event) => setTaskForm((current) => ({ ...current, endDate: event.target.value }))}
+                  />
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-xs font-bold uppercase text-gray-600 mb-2">Instructions</label>
+                  <textarea
+                    value={taskForm.instructions}
+                    onChange={(event) => setTaskForm((current) => ({ ...current, instructions: event.target.value }))}
+                    placeholder="Add the exact instruction the client should follow."
+                    className="min-h-24 w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm text-[#000000]"
+                  />
+                </div>
+
+                <div className="md:col-span-2 flex justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setIsTaskFormOpen(false)}
+                    className="rounded-lg bg-gray-200 px-5 py-3 text-sm font-bold uppercase text-[#000000] hover:bg-gray-300"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSavingTask}
+                    className="rounded-lg bg-[#FA0201] px-5 py-3 text-sm font-bold uppercase text-white hover:bg-red-700 disabled:opacity-60"
+                  >
+                    {isSavingTask ? 'Saving...' : 'Save Task'}
+                  </button>
+                </div>
+              </form>
+            </Card>
+          )}
+
           <div className="space-y-4">
             {tasks.length === 0 ? (
               <Card>
