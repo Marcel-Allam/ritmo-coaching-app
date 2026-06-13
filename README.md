@@ -1,48 +1,36 @@
-# RITMO Coaching App
+This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
-Mobile-first web app for the RITMO coaching system.
+## Getting Started
 
-## Current build direction
+First, run the development server:
 
-This project is the early MVP for the RITMO Coach + Client web app. The goal is not to build the full dream app immediately. The goal is to build the smallest app that allows one coach to manage one client through the full RITMO workflow.
+```bash
+npm run dev
+# or
+yarn dev
+# or
+pnpm dev
+# or
+bun dev
+```
 
-## Approved stack
+Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-- Next.js
-- TypeScript
-- Tailwind CSS
-- Supabase for database, authentication, file storage, and backend logic
-- Vercel for deployment
-- GitHub for version control
+You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
-## MVP scope
+This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
-Initial screens:
+## Learn More
 
-- Coach login
-- Client login
-- Coach dashboard
-- Client list
-- Client profile
-- Assigned tasks
-- Client dashboard / client hub
-- Weekly check-in form
-- Workout check-in form
-- Key lift / top set form
-- Nutrition and bodyweight submission form
-- Coach action queue
-- Weekly feedback view
+To learn more about Next.js, take a look at the following resources:
 
-## Not in the first build
+- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
+- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
 
-- Full native mobile app
-- Full exercise-by-exercise workout tracker
-- AI meal scanner
-- Payment system
-- Messaging/chat system
-- Advanced analytics
-- App-store deployment
+You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
 
-## Product principle
+## Deploy on Vercel
 
-Do not build features just because they are possible. Every feature must either improve coaching delivery, generate useful insight, reduce repetitive admin, or increase client capacity without lowering service quality.
+The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+
+Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
