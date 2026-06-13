@@ -1,202 +1,148 @@
 'use client';
 
-import { useState } from 'react';
-import Link from 'next/link';
+import { useEffect, useState } from 'react';
 import { PageHeader } from '@/components/layout/page-header';
 import { Card } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { TaskCard } from '@/components/ui/task-card';
 import { SectionHeader } from '@/components/ui/section-header';
+import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
+import { useAuth } from '@/lib/auth-context';
 
-// Placeholder data
-const assignedTasks = [
-  {
-    id: 1,
-    title: 'Complete Weekly Check-in',
-    description: 'Submit your weekly metrics and feedback',
-    status: 'pending' as const,
-    dueDate: 'June 15, 2026',
-  },
-  {
-    id: 2,
-    title: 'Log Top Lift - Upper Push',
-    description: 'Record your heaviest set from this week',
-    status: 'in-progress' as const,
-    dueDate: 'June 16, 2026',
-  },
-  {
-    id: 3,
-    title: 'Nutrition Check-in',
-    description: 'Submit your average daily intake',
-    status: 'pending' as const,
-    dueDate: 'June 17, 2026',
-  },
-];
+interface ClientRecord {
+  id: string;
+  full_name: string;
+  current_focus: string | null;
+  next_review_date: string | null;
+}
 
-const feedbackNotes = [
-  {
-    id: 1,
-    week: 'Week of June 9',
-    date: 'June 13, 2026',
-    content:
-      'Great work this week! Your adherence to the program has been excellent. I noticed improved form on squats. Let\'s focus on increasing volume slightly next week to push adaptation further.',
-  },
-];
+interface AssignedTaskRecord {
+  id: string;
+  task_name: string;
+  task_type: string;
+  instructions: string | null;
+  end_date: string | null;
+}
 
-const submissionOptions = [
-  {
-    id: 'weekly-checkin',
-    title: 'Weekly Check-in',
-    description: 'Energy, sleep, stress, motivation',
-    href: '/client/submit/weekly-checkin',
-    icon: '📋',
-  },
-  {
-    id: 'workout-checkin',
-    title: 'Workout Check-in',
-    description: 'Session RPE and volume',
-    href: '/client/submit/workout-checkin',
-    icon: '💪',
-  },
-  {
-    id: 'key-lift',
-    title: 'Key Lift / Top Set',
-    description: 'Record your top lifts',
-    href: '/client/submit/key-lift',
-    icon: '🏋️',
-  },
-  {
-    id: 'nutrition-bodyweight',
-    title: 'Nutrition & Bodyweight',
-    description: 'Macros and weight tracking',
-    href: '/client/submit/nutrition-bodyweight',
-    icon: '⚖️',
-  },
-];
+const formatDate = (value: string | null) => {
+  if (!value) return 'Not set';
+  return new Intl.DateTimeFormat('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  }).format(new Date(value));
+};
 
 export default function ClientHub() {
-  const [expandedFeedback, setExpandedFeedback] = useState<number | null>(null);
+  const { user } = useAuth();
+  const [client, setClient] = useState<ClientRecord | null>(null);
+  const [tasks, setTasks] = useState<AssignedTaskRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    const loadHub = async () => {
+      if (!isSupabaseConfigured || !user) {
+        setMessage('Account is not ready yet.');
+        setLoading(false);
+        return;
+      }
+
+      const supabase = createClient();
+
+      const { data: clientData, error: clientError } = await supabase
+        .from('clients')
+        .select('id, full_name, current_focus, next_review_date')
+        .eq('user_id', user.id)
+        .single();
+
+      if (clientError || !clientData) {
+        setMessage('This account is not linked to a client record yet.');
+        setLoading(false);
+        return;
+      }
+
+      const linkedClient = clientData as ClientRecord;
+      setClient(linkedClient);
+
+      const { data: taskData, error: taskError } = await supabase
+        .from('assigned_tasks')
+        .select('id, task_name, task_type, instructions, end_date')
+        .eq('client_id', linkedClient.id)
+        .eq('active', true)
+        .order('created_at', { ascending: false });
+
+      if (taskError) {
+        setMessage(taskError.message);
+        setLoading(false);
+        return;
+      }
+
+      setTasks((taskData ?? []) as AssignedTaskRecord[]);
+      setLoading(false);
+    };
+
+    loadHub();
+  }, [user]);
+
+  if (loading) {
+    return (
+      <div>
+        <PageHeader title="YOUR HUB" />
+        <div className="px-4 py-6 md:px-8 max-w-6xl mx-auto">
+          <Card><p className="font-semibold text-gray-700">Loading your hub...</p></Card>
+        </div>
+      </div>
+    );
+  }
+
+  if (message || !client) {
+    return (
+      <div>
+        <PageHeader title="YOUR HUB" />
+        <div className="px-4 py-6 md:px-8 max-w-6xl mx-auto">
+          <Card>
+            <p className="font-bold uppercase text-[#000000]">Account not linked</p>
+            <p className="mt-2 text-sm text-gray-600">{message}</p>
+          </Card>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>
-      <PageHeader title="YOUR HUB" />
-
+      <PageHeader title="YOUR HUB" subtitle={`Welcome, ${client.full_name}`} />
       <div className="px-4 py-6 md:px-8 max-w-6xl mx-auto space-y-8">
-          {/* Current Focus Section */}
-          <section>
-            <SectionHeader title="CURRENT FOCUS" accent />
-            <Card variant="dark" className="p-8">
-              <div className="text-white">
-                <div className="text-sm font-semibold uppercase opacity-75 mb-2">
-                  Active Program
-                </div>
-                <div className="text-2xl md:text-3xl font-bold">
-                  Hypertrophy Block - Week 4 of 8
-                </div>
-                <div className="mt-4 pt-4 border-t border-gray-700 text-sm opacity-75">
-                  Focus on controlled eccentric movements and maintaining perfect form
-                </div>
-              </div>
-              <div
-                className="absolute top-0 right-0 w-0 h-0 border-l-[80px] border-t-[80px] border-l-transparent border-t-red-600"
-                aria-hidden="true"
-              />
-            </Card>
-          </section>
+        <section>
+          <SectionHeader title="CURRENT FOCUS" accent />
+          <Card variant="dark" className="p-8">
+            <p className="text-white text-2xl font-bold">
+              {client.current_focus || 'No current focus set'}
+            </p>
+            <p className="mt-4 pt-4 border-t border-gray-700 text-sm text-white opacity-75">
+              Next review: {formatDate(client.next_review_date)}
+            </p>
+          </Card>
+        </section>
 
-          {/* Assigned Tasks Section */}
-          <section>
-            <SectionHeader title="ASSIGNED TASKS" accent />
-            <div className="space-y-4">
-              {assignedTasks.map((task) => (
+        <section>
+          <SectionHeader title="ASSIGNED TASKS" accent />
+          <div className="space-y-4">
+            {tasks.length === 0 ? (
+              <Card><p className="text-sm text-gray-600">No active tasks assigned yet.</p></Card>
+            ) : (
+              tasks.map((task) => (
                 <TaskCard
                   key={task.id}
-                  title={task.title}
-                  description={task.description}
-                  status={task.status}
-                  dueDate={task.dueDate}
+                  title={task.task_name}
+                  description={task.instructions || task.task_type}
+                  status="pending"
+                  dueDate={formatDate(task.end_date)}
                 />
-              ))}
-            </div>
-          </section>
-
-          {/* Submit Section */}
-          <section>
-            <SectionHeader title="SUBMIT" accent />
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {submissionOptions.map((option) => (
-                <Link key={option.id} href={option.href}>
-                  <Card
-                    variant="dark"
-                    className="h-full p-6 cursor-pointer hover:shadow-lg transition-shadow relative"
-                  >
-                    <div className="text-white">
-                      <div className="text-3xl mb-3">{option.icon}</div>
-                      <h3 className="text-lg font-bold uppercase mb-1">
-                        {option.title}
-                      </h3>
-                      <p className="text-sm opacity-75">{option.description}</p>
-                    </div>
-                    <div
-                      className="absolute top-0 right-0 w-0 h-0 border-l-[60px] border-t-[60px] border-l-transparent border-t-red-600"
-                      aria-hidden="true"
-                    />
-                  </Card>
-                </Link>
-              ))}
-            </div>
-          </section>
-
-          {/* Latest Feedback Section */}
-          <section>
-            <SectionHeader title="LATEST FEEDBACK" accent />
-            <div className="space-y-4">
-              {feedbackNotes.map((feedback) => (
-                <Card
-                  key={feedback.id}
-                  className="cursor-pointer hover:shadow-md transition-shadow"
-                  onClick={() =>
-                    setExpandedFeedback(
-                      expandedFeedback === feedback.id ? null : feedback.id
-                    )
-                  }
-                >
-                  <div className="flex items-start justify-between mb-2">
-                    <h3 className="font-bold uppercase text-sm">{feedback.week}</h3>
-                    <span className="text-xs text-gray-500">{feedback.date}</span>
-                  </div>
-                  <p
-                    className={`text-sm text-gray-700 ${
-                      expandedFeedback === feedback.id ? '' : 'line-clamp-2'
-                    }`}
-                  >
-                    {feedback.content}
-                  </p>
-                  {expandedFeedback === feedback.id && (
-                    <Button variant="ghost" size="sm" className="mt-3">
-                      Read More
-                    </Button>
-                  )}
-                </Card>
-              ))}
-            </div>
-          </section>
-
-          {/* Next Review Section */}
-          <section className="pb-8">
-            <SectionHeader title="NEXT REVIEW" accent />
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <Card className="p-6 text-center">
-                <p className="text-sm font-semibold uppercase opacity-75 mb-2">
-                  Scheduled For
-                </p>
-                <p className="text-2xl font-bold text-[#FA0201]">
-                  June 20, 2026
-                </p>
-                <p className="text-xs text-gray-500 mt-2">In 7 days</p>
-              </Card>
-            </div>
-          </section>
+              ))
+            )}
+          </div>
+        </section>
       </div>
     </div>
   );
