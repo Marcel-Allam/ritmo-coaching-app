@@ -72,6 +72,17 @@ export default function WeeklyCheckinPage() {
 
     const supabase = createClient();
 
+    const { data: taskData } = await supabase
+      .from('assigned_tasks')
+      .select('id')
+      .eq('client_id', client.id)
+      .eq('task_type', 'weekly_checkin')
+      .eq('active', true)
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    const assignedTaskId = taskData?.[0]?.id ?? null;
+
     const { error: checkinError } = await supabase.from('weekly_checkins').insert({
       client_id: client.id,
       week_rating: ratingNumber,
@@ -98,6 +109,7 @@ export default function WeeklyCheckinPage() {
 
     const { error: submissionError } = await supabase.from('task_submissions').insert({
       client_id: client.id,
+      assigned_task_id: assignedTaskId,
       submission_type: 'weekly_checkin',
       answer_value: ratingNumber,
       answer_text: summary,
