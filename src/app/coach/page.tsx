@@ -28,6 +28,10 @@ interface DashboardStats {
   openActions: number;
 }
 
+interface QueryErrorLike {
+  message: string;
+}
+
 const formatDate = (value: string | null) => {
   if (!value) return 'Not set';
 
@@ -103,7 +107,7 @@ export default function CoachDashboard() {
         supabase
           .from('clients')
           .select('*', { count: 'exact', head: true })
-          .not('next_review_date', 'is', null)
+          .not('next_review_date', 'is', 'null')
           .lte('next_review_date', today),
         supabase
           .from('coach_actions')
@@ -118,7 +122,7 @@ export default function CoachDashboard() {
         supabase
           .from('clients')
           .select('id, full_name, next_review_date')
-          .not('next_review_date', 'is', null)
+          .not('next_review_date', 'is', 'null')
           .order('next_review_date', { ascending: true })
           .limit(3),
       ]);
@@ -132,7 +136,7 @@ export default function CoachDashboard() {
         openActionsResult.error,
         flagsResult.error,
         reviewsResult.error,
-      ].find(Boolean);
+      ].find(Boolean) as QueryErrorLike | undefined;
 
       if (firstError) {
         setError(firstError.message);
@@ -149,8 +153,8 @@ export default function CoachDashboard() {
         checkinsDue: checkinsDueResult.count ?? 0,
         openActions: openActionsResult.count ?? 0,
       });
-      setFlags((flagsResult.data ?? []) as InsightFlagRecord[]);
-      setReviewsDue((reviewsResult.data ?? []) as ReviewDueRecord[]);
+      setFlags((flagsResult.data ?? []) as unknown as InsightFlagRecord[]);
+      setReviewsDue((reviewsResult.data ?? []) as unknown as ReviewDueRecord[]);
       setIsLoading(false);
     };
 
