@@ -33,6 +33,7 @@ interface AssignedTaskRecord {
 
 interface SubmissionRecord {
   id: string;
+  assigned_task_id: string | null;
   submission_type: string;
   submitted_at: string;
   review_status: string;
@@ -96,7 +97,7 @@ export default function ClientProfilePage() {
         .order('created_at', { ascending: false }),
       supabase
         .from('task_submissions')
-        .select('id, submission_type, submitted_at, review_status')
+        .select('id, assigned_task_id, submission_type, submitted_at, review_status')
         .eq('client_id', clientId)
         .order('submitted_at', { ascending: false })
         .limit(5),
@@ -171,6 +172,12 @@ export default function ClientProfilePage() {
     setIsSavingTask(false);
     setIsLoading(true);
     await loadClientProfile();
+  };
+
+  const isTaskComplete = (task: AssignedTaskRecord) => {
+    return submissions.some((submission) => {
+      return submission.assigned_task_id === task.id || submission.submission_type === task.task_type;
+    });
   };
 
   if (isLoading) {
@@ -359,7 +366,7 @@ export default function ClientProfilePage() {
                   key={task.id}
                   title={task.task_name}
                   description={task.instructions || task.task_type}
-                  status="pending"
+                  status={isTaskComplete(task) ? 'completed' : 'pending'}
                   dueDate={formatDate(task.end_date)}
                 />
               ))
