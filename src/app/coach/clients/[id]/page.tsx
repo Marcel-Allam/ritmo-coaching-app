@@ -277,6 +277,12 @@ export default function ClientProfilePage() {
               >
                 Create Workout
               </Link>
+              <Link
+                href={`/coach/clients/${clientId}/workout-history`}
+                className="rounded-lg bg-white px-4 py-2 text-sm font-bold uppercase text-[#000000] border border-gray-300 hover:bg-gray-100"
+              >
+                Workout History
+              </Link>
             </div>
           </div>
 
