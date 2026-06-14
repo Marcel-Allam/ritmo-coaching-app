@@ -14,6 +14,14 @@ const submissionTypes = [
     icon: '📋',
   },
   {
+    id: 'training-availability',
+    title: 'Training Availability',
+    description:
+      'Pick the days you can realistically train next week so your coach can schedule your workouts around your actual availability.',
+    href: '/client/submit/training-availability',
+    icon: '📆',
+  },
+  {
     id: 'workout-checkin',
     title: 'Workout Check-in',
     description:
