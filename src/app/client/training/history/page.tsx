@@ -16,7 +16,8 @@ type SessionRecord = {
   review_status: string;
   client_notes: string | null;
 };
-type WorkoutTitleRecord = { id: string; title: string };
+type WorkoutRecord = { id: string; title: string; day_label: string | null; program_id: string };
+type ProgramRecord = { id: string; title: string };
 type PerformedSetRecord = {
   session_id: string;
   set_order: number;
@@ -28,15 +29,21 @@ type PerformedSetRecord = {
 
 const formatDate = (value: string | null) => {
   if (!value) return 'Not set';
-  return new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(value));
+  const date = new Date(value);
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const year = date.getFullYear();
+  return `${day}/${month}/${year}`;
 };
 
 export default function CompletedWorkoutHistoryPage() {
   const { user } = useAuth();
   const [client, setClient] = useState<ClientRecord | null>(null);
   const [sessions, setSessions] = useState<SessionRecord[]>([]);
-  const [workoutTitles, setWorkoutTitles] = useState<Record<string, string>>({});
+  const [workouts, setWorkouts] = useState<Record<string, WorkoutRecord>>({});
+  const [programs, setPrograms] = useState<Record<string, ProgramRecord>>({});
   const [setsBySession, setSetsBySession] = useState<Record<string, PerformedSetRecord[]>>({});
+  const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -84,16 +91,42 @@ export default function CompletedWorkoutHistoryPage() {
       const sessionIds = loadedSessions.map((session) => session.id);
 
       if (workoutIds.length > 0) {
-        const { data: workoutData } = await supabase
+        const { data: workoutData, error: workoutError } = await supabase
           .from('program_workouts')
-          .select('id, title')
+          .select('id, title, day_label, program_id')
           .in('id', workoutIds);
 
-        const titleMap = ((workoutData ?? []) as WorkoutTitleRecord[]).reduce<Record<string, string>>((acc, workout) => {
-          acc[workout.id] = workout.title;
+        if (workoutError) {
+          setError(workoutError.message);
+          setLoading(false);
+          return;
+        }
+
+        const workoutMap = ((workoutData ?? []) as WorkoutRecord[]).reduce<Record<string, WorkoutRecord>>((acc, workout) => {
+          acc[workout.id] = workout;
           return acc;
         }, {});
-        setWorkoutTitles(titleMap);
+        setWorkouts(workoutMap);
+
+        const programIds = [...new Set(Object.values(workoutMap).map((workout) => workout.program_id))];
+        if (programIds.length > 0) {
+          const { data: programData, error: programError } = await supabase
+            .from('training_programs')
+            .select('id, title')
+            .in('id', programIds);
+
+          if (programError) {
+            setError(programError.message);
+            setLoading(false);
+            return;
+          }
+
+          const programMap = ((programData ?? []) as ProgramRecord[]).reduce<Record<string, ProgramRecord>>((acc, program) => {
+            acc[program.id] = program;
+            return acc;
+          }, {});
+          setPrograms(programMap);
+        }
       }
 
       if (sessionIds.length > 0) {
@@ -154,37 +187,61 @@ export default function CompletedWorkoutHistoryPage() {
             {sessions.length === 0 ? (
               <p className="text-sm text-gray-600">No completed workouts yet.</p>
             ) : (
-              <div className="space-y-6">
-                {sessions.map((session) => (
-                  <div key={session.id} className="border-b border-gray-200 pb-6 last:border-b-0 last:pb-0">
-                    <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
-                      <div>
-                        <p className="font-bold uppercase text-[#000000]">
-                          {workoutTitles[session.program_workout_id] || 'Workout session'}
-                        </p>
-                        <p className="text-xs text-gray-500">
-                          Completed: {formatDate(session.completed_at)} • Review: {session.review_status}
-                        </p>
-                      </div>
-                    </div>
+              <div className="space-y-4">
+                {sessions.map((session) => {
+                  const workout = workouts[session.program_workout_id];
+                  const program = workout ? programs[workout.program_id] : null;
+                  const isExpanded = expandedSessionId === session.id;
+                  const performedSets = setsBySession[session.id] || [];
 
-                    <div className="mt-4 grid grid-cols-1 md:grid-cols-4 gap-3 text-xs font-bold uppercase text-gray-500">
-                      <p>Set</p>
-                      <p>Kg</p>
-                      <p>Reps</p>
-                      <p>RPE</p>
+                  return (
+                    <div key={session.id} className="rounded-xl border border-gray-200 bg-white">
+                      <button
+                        type="button"
+                        onClick={() => setExpandedSessionId(isExpanded ? null : session.id)}
+                        className="w-full p-4 text-left"
+                      >
+                        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                          <div>
+                            <p className="text-xs font-bold uppercase text-gray-500">{formatDate(session.completed_at)}</p>
+                            <p className="mt-1 text-lg font-bold uppercase text-[#000000]">
+                              {workout?.day_label || workout?.title || 'Workout'}
+                            </p>
+                            <p className="mt-1 text-sm text-gray-600">
+                              Programme: {program?.title || 'Programme not found'}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-bold uppercase text-gray-700">
+                              {workout?.title || 'Workout'}
+                            </span>
+                            <span className="text-xl font-bold text-[#FA0201]">{isExpanded ? '−' : '+'}</span>
+                          </div>
+                        </div>
+                      </button>
+
+                      {isExpanded && (
+                        <div className="border-t border-gray-200 p-4">
+                          <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs font-bold uppercase text-gray-500">
+                            <p>Set</p>
+                            <p>Kg</p>
+                            <p>Reps</p>
+                            <p>RPE</p>
+                          </div>
+                          {performedSets.map((set) => (
+                            <div key={`${session.id}-${set.set_order}`} className="mt-2 grid grid-cols-1 md:grid-cols-4 gap-3 rounded-lg bg-gray-50 p-3 text-sm text-gray-800">
+                              <p className="font-bold">Set {set.set_order}</p>
+                              <p>{set.actual_weight_kg ?? '-'}</p>
+                              <p>{set.actual_reps ?? '-'}</p>
+                              <p>{set.actual_rpe ?? '-'}</p>
+                            </div>
+                          ))}
+                          {session.client_notes && <p className="mt-3 text-sm text-gray-700">{session.client_notes}</p>}
+                        </div>
+                      )}
                     </div>
-                    {(setsBySession[session.id] || []).map((set) => (
-                      <div key={`${session.id}-${set.set_order}`} className="mt-2 grid grid-cols-1 md:grid-cols-4 gap-3 rounded-lg bg-gray-50 p-3 text-sm text-gray-800">
-                        <p className="font-bold">Set {set.set_order}</p>
-                        <p>{set.actual_weight_kg ?? '-'}</p>
-                        <p>{set.actual_reps ?? '-'}</p>
-                        <p>{set.actual_rpe ?? '-'}</p>
-                      </div>
-                    ))}
-                    {session.client_notes && <p className="mt-3 text-sm text-gray-700">{session.client_notes}</p>}
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </Card>
