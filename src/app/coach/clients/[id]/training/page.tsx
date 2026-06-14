@@ -26,8 +26,6 @@ export default function CoachClientTrainingPage() {
   const [client, setClient] = useState<ClientRecord | null>(null);
   const [programTitle, setProgramTitle] = useState('RITMO Programme');
   const [workoutTitle, setWorkoutTitle] = useState('Upper Day');
-  const [dayLabel, setDayLabel] = useState('');
-  const [instructions, setInstructions] = useState('');
   const [exercises, setExercises] = useState<ExerciseForm[]>([blankExercise()]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -131,8 +129,8 @@ export default function CoachClientTrainingPage() {
         client_id: clientId,
         program_id: programId,
         title: workoutTitle.trim(),
-        day_label: textOrNull(dayLabel),
-        instructions: textOrNull(instructions),
+        day_label: null,
+        instructions: null,
         status: 'active',
       })
       .select('id')
@@ -185,8 +183,6 @@ export default function CoachClientTrainingPage() {
 
     setMessage('Workout saved. The client can now open Start your workout.');
     setWorkoutTitle('Upper Day');
-    setDayLabel('');
-    setInstructions('');
     setExercises([blankExercise()]);
     setSaving(false);
   };
@@ -222,8 +218,6 @@ export default function CoachClientTrainingPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <Input label="Programme title" value={programTitle} onChange={(e) => setProgramTitle(e.target.value)} required />
               <Input label="Workout title" value={workoutTitle} onChange={(e) => setWorkoutTitle(e.target.value)} required />
-              <Input label="Day label" value={dayLabel} onChange={(e) => setDayLabel(e.target.value)} placeholder="e.g. Upper A" />
-              <Textarea label="Instructions" value={instructions} onChange={(e) => setInstructions(e.target.value)} />
             </div>
 
             {exercises.map((exercise, exerciseIndex) => (
