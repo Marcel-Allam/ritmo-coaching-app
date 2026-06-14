@@ -20,25 +20,6 @@ type WorkoutRecord = {
 };
 type ProgramRecord = { id: string; title: string };
 type SessionRecord = { program_workout_id: string };
-type ExerciseRecord = {
-  id: string;
-  workout_id: string;
-  exercise_order: number;
-  exercise_name: string;
-  notes: string | null;
-  tempo: string | null;
-  rest_seconds: number | null;
-};
-type ProgramSetRecord = {
-  id: string;
-  exercise_id: string;
-  set_order: number;
-  target_reps: string | null;
-  target_weight_kg: number | null;
-  target_rpe: number | null;
-  target_rir: number | null;
-  notes: string | null;
-};
 
 const formatDate = (value: string | null) => {
   if (!value) return 'Not scheduled';
@@ -50,7 +31,7 @@ const formatDate = (value: string | null) => {
 };
 
 const statusLabel = (workout: WorkoutRecord, completedIds: Set<string>) => {
-  if (completedIds.has(workout.id) || workout.status === 'completed') return 'completed';
+  if (completedIds.has(workout.id)) return 'completed';
   if (workout.scheduled_date) return 'scheduled';
   return 'unscheduled';
 };
@@ -161,99 +142,14 @@ export default function CoachCurrentWorkoutsPage() {
     setError(null);
 
     const supabase = createClient();
-    const { data: newWorkout, error: workoutError } = await supabase
-      .from('program_workouts')
-      .insert({
-        client_id: clientId,
-        program_id: workout.program_id,
-        title: `${workout.title} Copy`,
-        scheduled_date: null,
-        status: 'active',
-        workout_order: workouts.length + 1,
-        day_label: null,
-        instructions: null,
-      })
-      .select('id')
-      .single();
+    const { error: duplicateError } = await supabase.rpc('duplicate_program_workout', {
+      source_workout_id: workout.id,
+    });
 
-    if (workoutError || !newWorkout) {
-      setError(workoutError?.message || 'Could not duplicate workout.');
+    if (duplicateError) {
+      setError(duplicateError.message);
       setBusyWorkoutId(null);
       return;
-    }
-
-    const newWorkoutId = (newWorkout as { id: string }).id;
-
-    const { data: exerciseData, error: exerciseError } = await supabase
-      .from('program_exercises')
-      .select('id, workout_id, exercise_order, exercise_name, notes, tempo, rest_seconds')
-      .eq('workout_id', workout.id)
-      .order('exercise_order', { ascending: true });
-
-    if (exerciseError) {
-      setError(exerciseError.message);
-      setBusyWorkoutId(null);
-      return;
-    }
-
-    const exercises = (exerciseData ?? []) as ExerciseRecord[];
-    const exerciseIds = exercises.map((exercise) => exercise.id);
-    const { data: setData, error: setError } = exerciseIds.length > 0
-      ? await supabase
-          .from('program_sets')
-          .select('id, exercise_id, set_order, target_reps, target_weight_kg, target_rpe, target_rir, notes')
-          .in('exercise_id', exerciseIds)
-          .order('set_order', { ascending: true })
-      : { data: [], error: null };
-
-    if (setError) {
-      setError(setError.message);
-      setBusyWorkoutId(null);
-      return;
-    }
-
-    const oldSets = (setData ?? []) as ProgramSetRecord[];
-
-    for (const exercise of exercises) {
-      const { data: insertedExercise, error: insertExerciseError } = await supabase
-        .from('program_exercises')
-        .insert({
-          workout_id: newWorkoutId,
-          exercise_order: exercise.exercise_order,
-          exercise_name: exercise.exercise_name,
-          notes: exercise.notes,
-          tempo: exercise.tempo,
-          rest_seconds: exercise.rest_seconds,
-        })
-        .select('id')
-        .single();
-
-      if (insertExerciseError || !insertedExercise) {
-        setError(insertExerciseError?.message || 'Could not duplicate exercise.');
-        setBusyWorkoutId(null);
-        return;
-      }
-
-      const newExerciseId = (insertedExercise as { id: string }).id;
-      const matchingSets = oldSets.filter((set) => set.exercise_id === exercise.id);
-      if (matchingSets.length > 0) {
-        const setRows = matchingSets.map((set) => ({
-          exercise_id: newExerciseId,
-          set_order: set.set_order,
-          target_reps: set.target_reps,
-          target_weight_kg: set.target_weight_kg,
-          target_rpe: set.target_rpe,
-          target_rir: set.target_rir,
-          notes: set.notes,
-        }));
-
-        const { error: insertSetsError } = await supabase.from('program_sets').insert(setRows);
-        if (insertSetsError) {
-          setError(insertSetsError.message);
-          setBusyWorkoutId(null);
-          return;
-        }
-      }
     }
 
     setMessage('Workout duplicated. The copy is unscheduled and editable.');
