@@ -1,65 +1,133 @@
 'use client';
 
-import { useState } from 'react';
+import Link from 'next/link';
+import { useEffect, useState } from 'react';
 import { PageHeader } from '@/components/layout/page-header';
 import { TaskCard } from '@/components/ui/task-card';
-import { Button } from '@/components/ui/button';
+import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
+import { useAuth } from '@/lib/auth-context';
 
-interface Task {
-  id: number;
-  title: string;
-  description: string;
-  status: 'pending' | 'in-progress' | 'completed';
-  dueDate: string;
+interface ClientRecord {
+  id: string;
+  full_name: string;
 }
 
-const allTasks: Task[] = [
-  {
-    id: 1,
-    title: 'Complete Weekly Check-in',
-    description: 'Submit your weekly metrics and feedback for program evaluation',
-    status: 'pending',
-    dueDate: 'June 15, 2026',
-  },
-  {
-    id: 2,
-    title: 'Log Top Lift - Upper Push',
-    description: 'Record your heaviest set from the upper push session',
-    status: 'in-progress',
-    dueDate: 'June 16, 2026',
-  },
-  {
-    id: 3,
-    title: 'Nutrition Check-in',
-    description: 'Submit your average daily macro intake for the week',
-    status: 'pending',
-    dueDate: 'June 17, 2026',
-  },
-  {
-    id: 4,
-    title: 'Workout Check-in - Lower A',
-    description: 'Log RPE and volume completion for lower A session',
-    status: 'completed',
-    dueDate: 'June 14, 2026',
-  },
-  {
-    id: 5,
-    title: 'Submit Bodyweight Reading',
-    description: 'Record your current bodyweight and date',
-    status: 'completed',
-    dueDate: 'June 13, 2026',
-  },
-];
+interface AssignedTaskRecord {
+  id: string;
+  task_name: string;
+  task_type: string;
+  frequency: string;
+  instructions: string | null;
+  active: boolean;
+  end_date: string | null;
+}
+
+interface SubmissionRecord {
+  id: string;
+  assigned_task_id: string | null;
+  submission_type: string;
+  review_status: string;
+}
 
 type FilterStatus = 'all' | 'pending' | 'in-progress' | 'completed';
+type TaskStatus = 'pending' | 'in-progress' | 'completed';
+
+const taskRoutes: Record<string, string> = {
+  weekly_checkin: '/client/submit/weekly-checkin',
+  workout_checkin: '/client/submit/workout-checkin',
+  key_lift: '/client/submit/key-lift',
+  nutrition: '/client/submit/nutrition-bodyweight',
+  bodyweight: '/client/submit/nutrition-bodyweight',
+  training_availability: '/client/submit/training-availability',
+};
+
+const formatDate = (value: string | null) => {
+  if (!value) return 'No deadline';
+  return new Intl.DateTimeFormat('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  }).format(new Date(value));
+};
 
 export default function TasksPage() {
+  const { user } = useAuth();
   const [filter, setFilter] = useState<FilterStatus>('all');
+  const [client, setClient] = useState<ClientRecord | null>(null);
+  const [tasks, setTasks] = useState<AssignedTaskRecord[]>([]);
+  const [submissions, setSubmissions] = useState<SubmissionRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState<string | null>(null);
 
-  const filteredTasks =
-    filter === 'all'
-      ? allTasks
-      : allTasks.filter((task) => task.status === filter);
+  useEffect(() => {
+    const loadTasks = async () => {
+      if (!isSupabaseConfigured || !user) {
+        setMessage('Account is not ready yet.');
+        setLoading(false);
+        return;
+      }
+
+      const supabase = createClient();
+      const { data: clientData, error: clientError } = await supabase
+        .from('clients')
+        .select('id, full_name')
+        .eq('user_id', user.id)
+        .single();
+
+      if (clientError || !clientData) {
+        setMessage('This account is not linked to a client record yet.');
+        setLoading(false);
+        return;
+      }
+
+      const linkedClient = clientData as ClientRecord;
+      setClient(linkedClient);
+
+      const [taskResult, submissionResult] = await Promise.all([
+        supabase
+          .from('assigned_tasks')
+          .select('id, task_name, task_type, frequency, instructions, active, end_date')
+          .eq('client_id', linkedClient.id)
+          .eq('active', true)
+          .order('created_at', { ascending: false }),
+        supabase
+          .from('task_submissions')
+          .select('id, assigned_task_id, submission_type, review_status')
+          .eq('client_id', linkedClient.id),
+      ]);
+
+      if (taskResult.error) {
+        setMessage(taskResult.error.message);
+        setLoading(false);
+        return;
+      }
+
+      if (submissionResult.error) {
+        setMessage(submissionResult.error.message);
+        setLoading(false);
+        return;
+      }
+
+      setTasks((taskResult.data ?? []) as AssignedTaskRecord[]);
+      setSubmissions((submissionResult.data ?? []) as SubmissionRecord[]);
+      setLoading(false);
+    };
+
+    loadTasks();
+  }, [user]);
+
+  const getTaskStatus = (task: AssignedTaskRecord): TaskStatus => {
+    const submitted = submissions.some((submission) => (
+      submission.assigned_task_id === task.id || submission.submission_type === task.task_type
+    ));
+
+    return submitted ? 'completed' : 'pending';
+  };
+
+  const filteredTasks = tasks.filter((task) => {
+    if (filter === 'all') return true;
+    return getTaskStatus(task) === filter;
+  });
 
   const filterOptions: { label: string; value: FilterStatus }[] = [
     { label: 'All', value: 'all' },
@@ -68,13 +136,31 @@ export default function TasksPage() {
     { label: 'Completed', value: 'completed' },
   ];
 
+  if (loading) {
+    return (
+      <div className="flex flex-col h-screen overflow-hidden">
+        <PageHeader title="YOUR TASKS" />
+        <main className="flex-1 overflow-y-auto pb-20 md:pb-0">
+          <div className="px-4 py-6 md:px-8 max-w-3xl mx-auto">
+            <p className="font-semibold text-gray-700">Loading tasks...</p>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col h-screen overflow-hidden">
-      <PageHeader title="YOUR TASKS" />
+      <PageHeader title="YOUR TASKS" subtitle={client ? `For ${client.full_name}` : undefined} />
 
       <main className="flex-1 overflow-y-auto pb-20 md:pb-0">
         <div className="px-4 py-6 md:px-8 max-w-3xl mx-auto">
-          {/* Filter Buttons */}
+          {message && (
+            <div className="mb-6 rounded-lg border border-gray-200 bg-white p-5">
+              <p className="text-sm font-semibold text-gray-700">{message}</p>
+            </div>
+          )}
+
           <div className="mb-8 flex gap-2 flex-wrap">
             {filterOptions.map((option) => (
               <button
@@ -91,18 +177,23 @@ export default function TasksPage() {
             ))}
           </div>
 
-          {/* Tasks List */}
           <div className="space-y-4 pb-8">
             {filteredTasks.length > 0 ? (
-              filteredTasks.map((task) => (
-                <TaskCard
-                  key={task.id}
-                  title={task.title}
-                  description={task.description}
-                  status={task.status}
-                  dueDate={task.dueDate}
-                />
-              ))
+              filteredTasks.map((task) => {
+                const href = taskRoutes[task.task_type] || '/client/submit';
+                const status = getTaskStatus(task);
+
+                return (
+                  <Link key={task.id} href={href} className="block">
+                    <TaskCard
+                      title={task.task_name}
+                      description={task.instructions || task.task_type.replaceAll('_', ' ')}
+                      status={status}
+                      dueDate={formatDate(task.end_date)}
+                    />
+                  </Link>
+                );
+              })
             ) : (
               <div className="text-center py-12">
                 <p className="text-gray-500 text-lg font-semibold uppercase">
