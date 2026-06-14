@@ -11,12 +11,12 @@ import { SectionHeader } from '@/components/ui/section-header';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
 
 type ClientRecord = { id: string; full_name: string; email: string | null };
-type SetForm = { targetReps: string; targetWeightKg: string; targetRpe: string; targetRir: string; notes: string };
+type SetForm = { targetReps: string; targetWeightKg: string; notes: string };
 type ExerciseForm = { exerciseName: string; notes: string; sets: SetForm[] };
 type SessionRecord = { id: string; program_workout_id: string; completed_at: string | null; review_status: string; client_notes: string | null };
 type WorkoutRecord = { id: string; title: string };
 
-const blankSet = (): SetForm => ({ targetReps: '', targetWeightKg: '', targetRpe: '', targetRir: '', notes: '' });
+const blankSet = (): SetForm => ({ targetReps: '', targetWeightKg: '', notes: '' });
 const blankExercise = (): ExerciseForm => ({ exerciseName: '', notes: '', sets: [blankSet(), blankSet(), blankSet()] });
 const numberOrNull = (value: string) => (value.trim() ? Number(value) : null);
 const textOrNull = (value: string) => value.trim() || null;
@@ -104,6 +104,10 @@ export default function CoachClientTrainingPage() {
 
   const updateExercise = (index: number, updates: Partial<ExerciseForm>) => {
     setExercises((current) => current.map((exercise, i) => (i === index ? { ...exercise, ...updates } : exercise)));
+  };
+
+  const removeExercise = (index: number) => {
+    setExercises((current) => current.filter((_, i) => i !== index));
   };
 
   const updateSet = (exerciseIndex: number, setIndex: number, updates: Partial<SetForm>) => {
@@ -206,8 +210,8 @@ export default function CoachClientTrainingPage() {
         set_order: setIndex + 1,
         target_reps: textOrNull(set.targetReps),
         target_weight_kg: numberOrNull(set.targetWeightKg),
-        target_rpe: numberOrNull(set.targetRpe),
-        target_rir: numberOrNull(set.targetRir),
+        target_rpe: null,
+        target_rir: null,
         notes: textOrNull(set.notes),
       }));
 
@@ -262,18 +266,40 @@ export default function CoachClientTrainingPage() {
 
             {exercises.map((exercise, exerciseIndex) => (
               <div key={exerciseIndex} className="rounded-xl border border-gray-200 p-4 space-y-4">
-                <Input label={`Exercise ${exerciseIndex + 1}`} value={exercise.exerciseName} onChange={(e) => updateExercise(exerciseIndex, { exerciseName: e.target.value })} placeholder="e.g. Bench press" />
+                <div className="flex items-center justify-between gap-4">
+                  <p className="text-sm font-bold uppercase text-[#000000]">Exercise {exerciseIndex + 1}</p>
+                  {exercises.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => removeExercise(exerciseIndex)}
+                      className="text-xs font-bold uppercase text-[#FA0201] hover:underline"
+                    >
+                      Remove exercise
+                    </button>
+                  )}
+                </div>
+
+                <Input value={exercise.exerciseName} onChange={(e) => updateExercise(exerciseIndex, { exerciseName: e.target.value })} placeholder="e.g. Bench press" />
                 <Textarea label="Exercise notes" value={exercise.notes} onChange={(e) => updateExercise(exerciseIndex, { notes: e.target.value })} />
 
-                {exercise.sets.map((set, setIndex) => (
-                  <div key={setIndex} className="grid grid-cols-1 md:grid-cols-5 gap-3 rounded-lg bg-gray-50 p-3">
-                    <Input label={`Set ${setIndex + 1} reps`} value={set.targetReps} onChange={(e) => updateSet(exerciseIndex, setIndex, { targetReps: e.target.value })} placeholder="6-8" />
-                    <Input label="Kg" type="number" step="0.5" value={set.targetWeightKg} onChange={(e) => updateSet(exerciseIndex, setIndex, { targetWeightKg: e.target.value })} />
-                    <Input label="RPE" type="number" step="0.5" value={set.targetRpe} onChange={(e) => updateSet(exerciseIndex, setIndex, { targetRpe: e.target.value })} />
-                    <Input label="RIR" type="number" step="0.5" value={set.targetRir} onChange={(e) => updateSet(exerciseIndex, setIndex, { targetRir: e.target.value })} />
-                    <Input label="Notes" value={set.notes} onChange={(e) => updateSet(exerciseIndex, setIndex, { notes: e.target.value })} />
+                <div className="overflow-x-auto rounded-lg bg-gray-50 p-3">
+                  <div className="grid min-w-[640px] grid-cols-[80px_1fr_1fr_2fr] gap-3 px-1 pb-2 text-xs font-bold uppercase text-gray-600">
+                    <div />
+                    <p>Reps</p>
+                    <p>Kg</p>
+                    <p>Notes</p>
                   </div>
-                ))}
+                  <div className="space-y-3">
+                    {exercise.sets.map((set, setIndex) => (
+                      <div key={setIndex} className="grid min-w-[640px] grid-cols-[80px_1fr_1fr_2fr] items-center gap-3">
+                        <p className="text-sm font-bold uppercase text-[#000000]">Set {setIndex + 1}</p>
+                        <Input value={set.targetReps} onChange={(e) => updateSet(exerciseIndex, setIndex, { targetReps: e.target.value })} placeholder="6-8" />
+                        <Input type="number" step="0.5" value={set.targetWeightKg} onChange={(e) => updateSet(exerciseIndex, setIndex, { targetWeightKg: e.target.value })} />
+                        <Input value={set.notes} onChange={(e) => updateSet(exerciseIndex, setIndex, { notes: e.target.value })} />
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
             ))}
 
