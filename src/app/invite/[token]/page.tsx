@@ -67,7 +67,7 @@ export default function ClientInvitePage() {
 
           {!user && !loading && (
             <div className="space-y-3">
-              <Link href="/login" className="block">
+              <Link href={`/login?invite=${token}&mode=signup`} className="block">
                 <Button variant="primary" fullWidth>
                   SIGN IN OR CREATE ACCOUNT
                 </Button>
