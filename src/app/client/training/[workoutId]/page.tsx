@@ -33,6 +33,20 @@ const integerOrFallback = (value: string, fallback: string | null) => {
   return Number.isFinite(parsed) ? parsed : null;
 };
 
+const rpeGuide = [
+  { score: '6', title: 'Easy effort', description: 'You could probably do about 4 more reps.' },
+  { score: '7', title: 'Moderate effort', description: 'You could probably do about 3 more reps.' },
+  { score: '8', title: 'Hard effort', description: 'You could probably do about 2 more reps.' },
+  { score: '8.5', title: 'Very hard effort', description: 'You could probably do 1-2 more reps.' },
+  { score: '9', title: 'Extremely hard effort', description: 'You could probably do 1 more rep.' },
+  { score: '9.5', title: 'Near-max effort', description: 'You might have had 0-1 more reps available.' },
+  { score: '10', title: 'Max effort', description: 'No more reps available with good form.' },
+];
+
+const getRpeDescription = (value: string) => {
+  return rpeGuide.find((item) => item.score === value.trim());
+};
+
 export default function ClientWorkoutSessionPage() {
   const { user } = useAuth();
   const router = useRouter();
@@ -206,6 +220,22 @@ export default function ClientWorkoutSessionPage() {
       <main className="px-4 py-6 md:px-8 max-w-5xl mx-auto pb-24 md:pb-8">
         {error && <Card className="mb-6 border-2 border-red-200 bg-red-50"><p className="text-sm font-semibold text-red-700">{error}</p></Card>}
         {workout?.instructions && <Card className="mb-6"><p className="text-sm text-gray-700">{workout.instructions}</p></Card>}
+
+        <Card className="mb-6 border-2 border-gray-200 bg-white">
+          <p className="text-xs font-bold uppercase text-gray-500">RPE guide</p>
+          <p className="mt-1 text-sm text-gray-700">
+            RPE tells your coach how hard the set felt. Pick the number that best matches how many good reps you had left.
+          </p>
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+            {rpeGuide.map((item) => (
+              <div key={item.score} className="rounded-lg bg-gray-50 p-3">
+                <p className="text-sm font-bold text-[#000000]">RPE {item.score}: {item.title}</p>
+                <p className="mt-1 text-xs text-gray-600">{item.description}</p>
+              </div>
+            ))}
+          </div>
+        </Card>
+
         <form onSubmit={submitWorkout} className="space-y-8">
           {exercises.map((exercise) => (
             <section key={exercise.id}>
@@ -214,6 +244,7 @@ export default function ClientWorkoutSessionPage() {
                 {exercise.notes && <p className="text-sm text-gray-700">{exercise.notes}</p>}
                 {setsByExercise[exercise.id]?.map((set) => {
                   const log = logs[set.id] || emptyLog;
+                  const selectedRpe = getRpeDescription(log.rpe);
                   return (
                     <div key={set.id} className="rounded-lg border border-gray-200 p-4">
                       <div className="mb-4 flex items-start justify-between gap-4">
@@ -236,7 +267,22 @@ export default function ClientWorkoutSessionPage() {
                       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                         <Input label="Kg" type="number" step="0.5" value={log.weight} placeholder={set.target_weight_kg?.toString() || ''} onChange={(e) => updateLog(set.id, { weight: e.target.value })} />
                         <Input label="Reps" type="number" value={log.reps} placeholder={set.target_reps || ''} onChange={(e) => updateLog(set.id, { reps: e.target.value })} />
-                        <Input label="RPE" type="number" step="0.5" value={log.rpe} placeholder="Rate difficulty" onChange={(e) => updateLog(set.id, { rpe: e.target.value })} />
+                        <div>
+                          <label className="block text-sm font-semibold uppercase mb-2">RPE</label>
+                          <select
+                            value={log.rpe}
+                            onChange={(e) => updateLog(set.id, { rpe: e.target.value })}
+                            className="w-full px-4 py-2 bg-white border-2 border-gray-300 rounded-lg text-black transition-colors duration-200 focus:outline-none focus:border-black focus:ring-2 focus:ring-black focus:ring-opacity-50"
+                          >
+                            <option value="">Select RPE</option>
+                            {rpeGuide.map((item) => <option key={item.score} value={item.score}>{item.score}</option>)}
+                          </select>
+                          {selectedRpe && (
+                            <p className="mt-2 text-xs text-gray-600">
+                              <span className="font-bold">{selectedRpe.title}:</span> {selectedRpe.description}
+                            </p>
+                          )}
+                        </div>
                         <Input label="Notes" value={log.notes} onChange={(e) => updateLog(set.id, { notes: e.target.value })} />
                       </div>
                     </div>
