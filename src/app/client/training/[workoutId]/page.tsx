@@ -183,9 +183,9 @@ export default function ClientWorkoutSessionPage() {
       notes: logs[set.id]?.notes.trim() || null,
     }));
 
-    const { error: setError } = await supabase.from('performed_sets').insert(rows);
-    if (setError) {
-      setError(setError.message);
+    const { error: performedSetsError } = await supabase.from('performed_sets').insert(rows);
+    if (performedSetsError) {
+      setError(performedSetsError.message);
       setSaving(false);
       return;
     }
