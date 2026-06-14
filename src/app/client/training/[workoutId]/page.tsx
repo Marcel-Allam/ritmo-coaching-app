@@ -203,6 +203,20 @@ export default function ClientWorkoutSessionPage() {
       return;
     }
 
+    const { error: reviewQueueError } = await supabase.from('task_submissions').insert({
+      client_id: client.id,
+      submission_type: 'workout_session',
+      answer_text: sessionId,
+      review_status: 'new',
+      followup_required: true,
+    });
+
+    if (reviewQueueError) {
+      setError(`Workout saved, but the coach review item was not created: ${reviewQueueError.message}`);
+      setSaving(false);
+      return;
+    }
+
     router.push('/client/training?submitted=1');
   };
 
