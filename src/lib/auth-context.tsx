@@ -21,7 +21,8 @@ interface AuthContextType {
     email: string,
     password: string,
     fullName: string,
-    role: 'coach' | 'client'
+    role: 'coach' | 'client',
+    inviteToken?: string | null
   ) => Promise<{ error: Error | null }>;
   signOut: () => Promise<{ error: Error | null }>;
 }
@@ -35,7 +36,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isInitializing, setIsInitializing] = useState(true);
 
   // Only create the Supabase client when the environment is configured.
-  // This prevents the app preview from crashing in Bolt before env vars are injected.
+  // This prevents the app preview from crashing in Bolt/Vercel previews before env vars are injected.
   const [supabase] = useState(() =>
     isSupabaseConfigured ? createClient() : null
   );
@@ -160,7 +161,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     email: string,
     password: string,
     fullName: string,
-    role: 'coach' | 'client'
+    role: 'coach' | 'client',
+    inviteToken?: string | null
   ): Promise<{ error: Error | null }> => {
     if (!supabase) {
       return {
@@ -172,12 +174,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     try {
       setLoading(true);
+      const normalisedEmail = email.trim().toLowerCase();
 
       const {
         data: { user: newUser },
         error: signUpError,
       } = await supabase.auth.signUp({
-        email,
+        email: normalisedEmail,
         password,
       });
 
@@ -193,7 +196,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // This insert must stay aligned with the live public.profiles table schema.
       const { error: profileError } = await supabase.from('profiles').insert({
         id: newUser.id,
-        email,
+        email: normalisedEmail,
         full_name: fullName,
         role,
         created_at: new Date().toISOString(),
@@ -202,6 +205,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (profileError) {
         console.error('Error creating profile:', profileError);
         return { error: profileError };
+      }
+
+      if (role === 'client' && inviteToken) {
+        // Secure client linking rule:
+        // The client can only attach their login to a coach-created client record
+        // by claiming a valid one-time invite token through the database RPC.
+        const { error: inviteError } = await supabase.rpc('claim_client_invite', {
+          p_token: inviteToken,
+        });
+
+        if (inviteError) {
+          console.error('Error claiming client invite:', inviteError);
+          return { error: inviteError };
+        }
       }
 
       return { error: null };
