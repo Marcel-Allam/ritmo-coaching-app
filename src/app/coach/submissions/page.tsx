@@ -13,6 +13,7 @@ interface SubmissionRecord {
   submission_type: string;
   submitted_at: string;
   answer_value: number | null;
+  answer_text: string | null;
   review_status: string;
   followup_required: boolean;
 }
@@ -56,7 +57,7 @@ export default function CoachSubmissionsPage() {
 
       const { data: submissionData, error: submissionError } = await supabase
         .from('task_submissions')
-        .select('id, client_id, submission_type, submitted_at, answer_value, review_status, followup_required')
+        .select('id, client_id, submission_type, submitted_at, answer_value, answer_text, review_status, followup_required')
         .order('submitted_at', { ascending: false })
         .limit(50);
 
@@ -100,11 +101,19 @@ export default function CoachSubmissionsPage() {
   const newSubmissions = submissions.filter((submission) => submission.review_status !== 'reviewed');
   const reviewedSubmissions = submissions.filter((submission) => submission.review_status === 'reviewed');
 
+  const getSubmissionHref = (submission: SubmissionRecord) => {
+    if (submission.submission_type === 'workout_session' && submission.answer_text) {
+      return `/coach/clients/${submission.client_id}/workout-history?session=${submission.answer_text}`;
+    }
+
+    return `/coach/submissions/${submission.id}`;
+  };
+
   const renderSubmission = (submission: SubmissionRecord) => {
     return (
       <Link
         key={submission.id}
-        href={`/coach/submissions/${submission.id}`}
+        href={getSubmissionHref(submission)}
         className="block rounded-lg hover:bg-gray-50"
       >
         <div className="flex items-center justify-between gap-4 border-b border-gray-200 py-4 last:border-b-0">
