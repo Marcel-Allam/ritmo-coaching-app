@@ -59,6 +59,7 @@ export default function ClientWorkoutSessionPage() {
   const [sets, setSets] = useState<PrescribedSetRecord[]>([]);
   const [logs, setLogs] = useState<Record<string, SetLog>>({});
   const [sessionNotes, setSessionNotes] = useState('');
+  const [expandedRpeGuideSetId, setExpandedRpeGuideSetId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -221,21 +222,6 @@ export default function ClientWorkoutSessionPage() {
         {error && <Card className="mb-6 border-2 border-red-200 bg-red-50"><p className="text-sm font-semibold text-red-700">{error}</p></Card>}
         {workout?.instructions && <Card className="mb-6"><p className="text-sm text-gray-700">{workout.instructions}</p></Card>}
 
-        <Card className="mb-6 border-2 border-gray-200 bg-white">
-          <p className="text-xs font-bold uppercase text-gray-500">RPE guide</p>
-          <p className="mt-1 text-sm text-gray-700">
-            RPE tells your coach how hard the set felt. Pick the number that best matches how many good reps you had left.
-          </p>
-          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
-            {rpeGuide.map((item) => (
-              <div key={item.score} className="rounded-lg bg-gray-50 p-3">
-                <p className="text-sm font-bold text-[#000000]">RPE {item.score}: {item.title}</p>
-                <p className="mt-1 text-xs text-gray-600">{item.description}</p>
-              </div>
-            ))}
-          </div>
-        </Card>
-
         <form onSubmit={submitWorkout} className="space-y-8">
           {exercises.map((exercise) => (
             <section key={exercise.id}>
@@ -245,6 +231,8 @@ export default function ClientWorkoutSessionPage() {
                 {setsByExercise[exercise.id]?.map((set) => {
                   const log = logs[set.id] || emptyLog;
                   const selectedRpe = getRpeDescription(log.rpe);
+                  const isRpeGuideOpen = expandedRpeGuideSetId === set.id;
+
                   return (
                     <div key={set.id} className="rounded-lg border border-gray-200 p-4">
                       <div className="mb-4 flex items-start justify-between gap-4">
@@ -268,7 +256,17 @@ export default function ClientWorkoutSessionPage() {
                         <Input label="Kg" type="number" step="0.5" value={log.weight} placeholder={set.target_weight_kg?.toString() || ''} onChange={(e) => updateLog(set.id, { weight: e.target.value })} />
                         <Input label="Reps" type="number" value={log.reps} placeholder={set.target_reps || ''} onChange={(e) => updateLog(set.id, { reps: e.target.value })} />
                         <div>
-                          <label className="block text-sm font-semibold uppercase mb-2">RPE</label>
+                          <div className="mb-2 flex items-center gap-2">
+                            <label className="block text-sm font-semibold uppercase">RPE</label>
+                            <button
+                              type="button"
+                              onClick={() => setExpandedRpeGuideSetId(isRpeGuideOpen ? null : set.id)}
+                              className="flex h-5 w-5 items-center justify-center rounded-full border border-gray-400 text-xs font-bold text-gray-700 hover:border-[#FA0201] hover:text-[#FA0201]"
+                              aria-label="Show RPE guide"
+                            >
+                              ?
+                            </button>
+                          </div>
                           <select
                             value={log.rpe}
                             onChange={(e) => updateLog(set.id, { rpe: e.target.value })}
@@ -277,14 +275,31 @@ export default function ClientWorkoutSessionPage() {
                             <option value="">Select RPE</option>
                             {rpeGuide.map((item) => <option key={item.score} value={item.score}>{item.score}</option>)}
                           </select>
-                          {selectedRpe && (
+                          {selectedRpe && !isRpeGuideOpen && (
                             <p className="mt-2 text-xs text-gray-600">
-                              <span className="font-bold">{selectedRpe.title}:</span> {selectedRpe.description}
+                              {selectedRpe.title}
                             </p>
                           )}
                         </div>
                         <Input label="Notes" value={log.notes} onChange={(e) => updateLog(set.id, { notes: e.target.value })} />
                       </div>
+
+                      {isRpeGuideOpen && (
+                        <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-4">
+                          <p className="text-xs font-bold uppercase text-gray-500">RPE guide</p>
+                          <p className="mt-1 text-sm text-gray-700">
+                            Pick the number that best matches how many good reps you had left.
+                          </p>
+                          <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2">
+                            {rpeGuide.map((item) => (
+                              <div key={item.score} className="rounded-md bg-white p-3">
+                                <p className="text-sm font-bold text-[#000000]">RPE {item.score}: {item.title}</p>
+                                <p className="mt-1 text-xs text-gray-600">{item.description}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
