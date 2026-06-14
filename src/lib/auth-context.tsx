@@ -9,7 +9,6 @@ export interface UserProfile {
   email: string;
   full_name: string | null;
   role: 'coach' | 'client';
-  avatar_url: string | null;
   created_at: string;
 }
 
@@ -190,12 +189,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { error: new Error('No user returned from signup') };
       }
 
+      // Create the RITMO profile row that extends the Supabase auth user.
+      // This insert must stay aligned with the live public.profiles table schema.
       const { error: profileError } = await supabase.from('profiles').insert({
         id: newUser.id,
         email,
         full_name: fullName,
         role,
-        avatar_url: null,
         created_at: new Date().toISOString(),
       });
 
