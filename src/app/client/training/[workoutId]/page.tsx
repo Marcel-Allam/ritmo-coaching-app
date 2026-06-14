@@ -23,7 +23,7 @@ type PrescribedSetRecord = {
 };
 type SetLog = { weight: string; reps: string; rpe: string; completed: boolean; notes: string };
 
-const emptyLog: SetLog = { weight: '', reps: '', rpe: '', completed: true, notes: '' };
+const emptyLog: SetLog = { weight: '', reps: '', rpe: '', completed: false, notes: '' };
 const numberOrNull = (value: string) => (value.trim() ? Number(value) : null);
 const numberOrFallback = (value: string, fallback: number | null) => (value.trim() ? Number(value) : fallback);
 const integerOrFallback = (value: string, fallback: string | null) => {
@@ -192,7 +192,7 @@ export default function ClientWorkoutSessionPage() {
       actual_reps: integerOrFallback(logs[set.id]?.reps || '', set.target_reps),
       actual_rpe: numberOrNull(logs[set.id]?.rpe || ''),
       actual_rir: null,
-      completed: logs[set.id]?.completed ?? true,
+      completed: logs[set.id]?.completed ?? false,
       notes: logs[set.id]?.notes.trim() || null,
     }));
 
@@ -232,7 +232,12 @@ export default function ClientWorkoutSessionPage() {
                   const selectedRpe = getRpeDescription(log.rpe);
 
                   return (
-                    <div key={set.id} className="rounded-lg border border-gray-200 p-4">
+                    <div
+                      key={set.id}
+                      className={`rounded-lg border p-4 transition-colors duration-200 ${
+                        log.completed ? 'border-gray-300 bg-gray-100 opacity-75' : 'border-gray-200 bg-white'
+                      }`}
+                    >
                       <div className="mb-4 flex items-start justify-between gap-4">
                         <div>
                           <p className="text-sm font-bold uppercase text-[#000000]">Set {set.set_order}</p>
