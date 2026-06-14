@@ -34,13 +34,13 @@ const integerOrFallback = (value: string, fallback: string | null) => {
 };
 
 const rpeGuide = [
-  { score: '6', title: 'Easy effort', description: 'You could probably do about 4 more reps.' },
-  { score: '7', title: 'Moderate effort', description: 'You could probably do about 3 more reps.' },
-  { score: '8', title: 'Hard effort', description: 'You could probably do about 2 more reps.' },
-  { score: '8.5', title: 'Very hard effort', description: 'You could probably do 1-2 more reps.' },
-  { score: '9', title: 'Extremely hard effort', description: 'You could probably do 1 more rep.' },
-  { score: '9.5', title: 'Near-max effort', description: 'You might have had 0-1 more reps available.' },
-  { score: '10', title: 'Max effort', description: 'No more reps available with good form.' },
+  { score: '6', repsLeft: 'About 4 reps left' },
+  { score: '7', repsLeft: 'About 3 reps left' },
+  { score: '8', repsLeft: 'About 2 reps left' },
+  { score: '8.5', repsLeft: 'About 1-2 reps left' },
+  { score: '9', repsLeft: 'About 1 rep left' },
+  { score: '9.5', repsLeft: 'Maybe 0-1 reps left' },
+  { score: '10', repsLeft: 'No reps left' },
 ];
 
 const getRpeDescription = (value: string) => {
@@ -59,7 +59,6 @@ export default function ClientWorkoutSessionPage() {
   const [sets, setSets] = useState<PrescribedSetRecord[]>([]);
   const [logs, setLogs] = useState<Record<string, SetLog>>({});
   const [sessionNotes, setSessionNotes] = useState('');
-  const [expandedRpeGuideSetId, setExpandedRpeGuideSetId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -231,7 +230,6 @@ export default function ClientWorkoutSessionPage() {
                 {setsByExercise[exercise.id]?.map((set) => {
                   const log = logs[set.id] || emptyLog;
                   const selectedRpe = getRpeDescription(log.rpe);
-                  const isRpeGuideOpen = expandedRpeGuideSetId === set.id;
 
                   return (
                     <div key={set.id} className="rounded-lg border border-gray-200 p-4">
@@ -256,17 +254,7 @@ export default function ClientWorkoutSessionPage() {
                         <Input label="Kg" type="number" step="0.5" value={log.weight} placeholder={set.target_weight_kg?.toString() || ''} onChange={(e) => updateLog(set.id, { weight: e.target.value })} />
                         <Input label="Reps" type="number" value={log.reps} placeholder={set.target_reps || ''} onChange={(e) => updateLog(set.id, { reps: e.target.value })} />
                         <div>
-                          <div className="mb-2 flex items-center gap-2">
-                            <label className="block text-sm font-semibold uppercase">RPE</label>
-                            <button
-                              type="button"
-                              onClick={() => setExpandedRpeGuideSetId(isRpeGuideOpen ? null : set.id)}
-                              className="flex h-5 w-5 items-center justify-center rounded-full border border-gray-400 text-xs font-bold text-gray-700 hover:border-[#FA0201] hover:text-[#FA0201]"
-                              aria-label="Show RPE guide"
-                            >
-                              ?
-                            </button>
-                          </div>
+                          <label className="block text-sm font-semibold uppercase mb-2">RPE</label>
                           <select
                             value={log.rpe}
                             onChange={(e) => updateLog(set.id, { rpe: e.target.value })}
@@ -275,31 +263,14 @@ export default function ClientWorkoutSessionPage() {
                             <option value="">Select RPE</option>
                             {rpeGuide.map((item) => <option key={item.score} value={item.score}>{item.score}</option>)}
                           </select>
-                          {selectedRpe && !isRpeGuideOpen && (
-                            <p className="mt-2 text-xs text-gray-600">
-                              {selectedRpe.title}
+                          {selectedRpe && (
+                            <p className="mt-2 text-xs font-semibold text-gray-600">
+                              {selectedRpe.repsLeft}
                             </p>
                           )}
                         </div>
                         <Input label="Notes" value={log.notes} onChange={(e) => updateLog(set.id, { notes: e.target.value })} />
                       </div>
-
-                      {isRpeGuideOpen && (
-                        <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-4">
-                          <p className="text-xs font-bold uppercase text-gray-500">RPE guide</p>
-                          <p className="mt-1 text-sm text-gray-700">
-                            Pick the number that best matches how many good reps you had left.
-                          </p>
-                          <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2">
-                            {rpeGuide.map((item) => (
-                              <div key={item.score} className="rounded-md bg-white p-3">
-                                <p className="text-sm font-bold text-[#000000]">RPE {item.score}: {item.title}</p>
-                                <p className="mt-1 text-xs text-gray-600">{item.description}</p>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
                     </div>
                   );
                 })}
