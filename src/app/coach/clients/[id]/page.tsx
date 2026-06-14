@@ -286,6 +286,12 @@ export default function ClientProfilePage() {
                 Create Workout
               </Link>
               <Link
+                href={`/coach/clients/${clientId}/current-workouts`}
+                className="rounded-lg bg-white px-4 py-2 text-sm font-bold uppercase text-[#000000] border border-gray-300 hover:bg-gray-100"
+              >
+                Current Workouts
+              </Link>
+              <Link
                 href={`/coach/clients/${clientId}/schedule-workouts`}
                 className="rounded-lg bg-[#FA0201] px-4 py-2 text-sm font-bold uppercase text-white hover:bg-red-700"
               >
