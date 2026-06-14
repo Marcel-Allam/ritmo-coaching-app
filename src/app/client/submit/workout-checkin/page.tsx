@@ -1,11 +1,16 @@
+```tsx
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import type { ChangeEvent, FormEvent } from 'react';
+import { useRouter } from 'next/navigation';
 import { PageHeader } from '@/components/layout/page-header';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
+import { useAuth } from '@/lib/auth-context';
 
 interface FormData {
   workoutDate: string;
@@ -14,6 +19,11 @@ interface FormData {
   volumeCompleted: boolean;
   notes: string;
 }
+
+type ClientRecord = {
+  id: string;
+  full_name: string;
+};
 
 const RatingButtons = ({
   value,
@@ -28,6 +38,7 @@ const RatingButtons = ({
       {Array.from({ length: 10 }, (_, i) => i + 1).map((num) => (
         <button
           key={num}
+          type="button"
           onClick={() => onChange(num)}
           className={`w-10 h-10 rounded font-bold uppercase text-sm transition-colors ${
             value === num
@@ -43,6 +54,15 @@ const RatingButtons = ({
 );
 
 export default function WorkoutCheckinPage() {
+  const router = useRouter();
+  const { user } = useAuth();
+
+  const [client, setClient] = useState<ClientRecord | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [isSuccess, setIsSuccess] = useState(false);
+
   const [formData, setFormData] = useState<FormData>({
     workoutDate: '',
     sessionName: '',
@@ -51,48 +71,196 @@ export default function WorkoutCheckinPage() {
     notes: '',
   });
 
-  const [submitted, setSubmitted] = useState(false);
+  useEffect(() => {
+    const loadLinkedClient = async () => {
+      if (!isSupabaseConfigured || !user) {
+        setMessage('Client login is not ready.');
+        setLoading(false);
+        return;
+      }
+
+      const supabase = createClient();
+
+      // Find the client record linked to the currently logged-in Supabase user.
+      // This prevents the form from trusting any manually entered client ID.
+      const { data, error } = await supabase
+        .from('clients')
+        .select('id, full_name')
+        .eq('user_id', user.id)
+        .single();
+
+      if (error || !data) {
+        setMessage('This login is not linked to a client profile.');
+        setLoading(false);
+        return;
+      }
+
+      setClient(data as ClientRecord);
+      setLoading(false);
+    };
+
+    loadLinkedClient();
+  }, [user]);
 
   const handleInputChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
+    e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
   ) => {
     const { name, value } = e.target;
+
     setFormData((prev) => ({
       ...prev,
       [name]: value,
     }));
   };
 
-  const handleCheckboxChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleCheckboxChange = (e: ChangeEvent<HTMLInputElement>) => {
     setFormData((prev) => ({
       ...prev,
       volumeCompleted: e.target.checked,
     }));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    console.log('Form submitted:', formData);
-    setSubmitted(true);
-    setTimeout(() => setSubmitted(false), 3000);
+
+    if (!client) {
+      setMessage('No linked client profile found.');
+      return;
+    }
+
+    if (!formData.workoutDate) {
+      setMessage('Add the workout date.');
+      return;
+    }
+
+    if (!formData.sessionName.trim()) {
+      setMessage('Add the session name.');
+      return;
+    }
+
+    if (formData.rpe < 1 || formData.rpe > 10) {
+      setMessage('Select an RPE from 1 to 10.');
+      return;
+    }
+
+    setSaving(true);
+    setMessage(null);
+    setIsSuccess(false);
+
+    const supabase = createClient();
+
+    // Attach the submission to the latest active workout-check-in task if one exists.
+    // This keeps detailed workout_checkins and the generic review queue in sync.
+    const { data: taskData } = await supabase
+      .from('assigned_tasks')
+      .select('id')
+      .eq('client_id', client.id)
+      .eq('task_type', 'workout_checkin')
+      .eq('active', true)
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    const assignedTaskId = taskData?.[0]?.id ?? null;
+    const notes = formData.notes.trim();
+
+    // Temporary follow-up logic until the workout form has dedicated pain/energy fields.
+    const followupRequired = formData.rpe >= 8 || !formData.volumeCompleted;
+
+    const { error: workoutError } = await supabase.from('workout_checkins').insert({
+      client_id: client.id,
+      workout_date: formData.workoutDate,
+      workout_name: formData.sessionName.trim(),
+      completed: formData.volumeCompleted,
+      difficulty_rating: formData.rpe,
+      energy_rating: null,
+      pain_reported: false,
+      pain_notes: null,
+      workout_notes: notes || null,
+      review_status: 'new',
+    });
+
+    if (workoutError) {
+      setMessage(workoutError.message);
+      setSaving(false);
+      return;
+    }
+
+    const summary = [
+      `Workout date: ${formData.workoutDate}`,
+      `Session: ${formData.sessionName.trim()}`,
+      `RPE: ${formData.rpe}/10`,
+      `Volume completed: ${formData.volumeCompleted ? 'Yes' : 'No'}`,
+      `Notes: ${notes || 'Not provided'}`,
+    ].join('\n');
+
+    const { error: submissionError } = await supabase.from('task_submissions').insert({
+      client_id: client.id,
+      assigned_task_id: assignedTaskId,
+      submission_type: 'workout_checkin',
+      answer_value: formData.rpe,
+      answer_text: summary,
+      review_status: 'new',
+      followup_required: followupRequired,
+    });
+
+    if (submissionError) {
+      setMessage(submissionError.message);
+      setSaving(false);
+      return;
+    }
+
+    setIsSuccess(true);
+    setMessage('Workout check-in submitted successfully. Returning to your hub...');
+    setSaving(false);
+
+    setTimeout(() => {
+      router.push('/client');
+    }, 1200);
   };
+
+  if (loading) {
+    return (
+      <div className="flex flex-col h-screen overflow-hidden">
+        <PageHeader title="WORKOUT CHECK-IN" />
+
+        <main className="flex-1 overflow-y-auto pb-20 md:pb-0">
+          <div className="px-4 py-6 md:px-8 max-w-2xl mx-auto">
+            <Card>
+              <p>Loading workout check-in...</p>
+            </Card>
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-screen overflow-hidden">
-      <PageHeader title="WORKOUT CHECK-IN" />
+      <PageHeader
+        title="WORKOUT CHECK-IN"
+        subtitle={client ? `For ${client.full_name}` : undefined}
+      />
 
       <main className="flex-1 overflow-y-auto pb-20 md:pb-0">
         <div className="px-4 py-6 md:px-8 max-w-2xl mx-auto">
-          {submitted && (
-            <Card className="mb-6 p-4 bg-green-50 border-green-200">
-              <p className="text-green-800 font-semibold uppercase text-sm">
-                ✓ Workout check-in submitted successfully
+          {message && (
+            <Card
+              className={`mb-6 p-4 ${
+                isSuccess ? 'bg-green-50 border-green-200' : 'border-red-300 bg-red-50'
+              }`}
+            >
+              <p
+                className={`font-semibold uppercase text-sm ${
+                  isSuccess ? 'text-green-800' : 'text-red-800'
+                }`}
+              >
+                {isSuccess ? '✓ ' : ''}
+                {message}
               </p>
             </Card>
           )}
 
           <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Workout Date */}
             <Input
               type="date"
               label="WORKOUT DATE"
@@ -102,7 +270,6 @@ export default function WorkoutCheckinPage() {
               required
             />
 
-            {/* Session Name */}
             <Input
               type="text"
               label="SESSION NAME"
@@ -113,7 +280,6 @@ export default function WorkoutCheckinPage() {
               required
             />
 
-            {/* RPE Rating */}
             <RatingButtons
               value={formData.rpe}
               onChange={(val) =>
@@ -124,7 +290,6 @@ export default function WorkoutCheckinPage() {
               }
             />
 
-            {/* Volume Completed */}
             <div className="mb-6">
               <label className="flex items-center gap-3 cursor-pointer">
                 <input
@@ -139,7 +304,6 @@ export default function WorkoutCheckinPage() {
               </label>
             </div>
 
-            {/* Notes */}
             <Textarea
               label="NOTES"
               name="notes"
@@ -148,16 +312,16 @@ export default function WorkoutCheckinPage() {
               onChange={handleInputChange}
             />
 
-            {/* Submit Button */}
             <div className="pb-8">
               <Button
                 type="submit"
                 variant="primary"
                 size="lg"
                 fullWidth
-                className="bg-[#FA0201] hover:bg-red-700"
+                disabled={saving || !client}
+                className="bg-[#FA0201] hover:bg-red-700 disabled:opacity-60"
               >
-                SUBMIT
+                {saving ? 'SAVING...' : 'SUBMIT'}
               </Button>
             </div>
           </form>
@@ -166,3 +330,4 @@ export default function WorkoutCheckinPage() {
     </div>
   );
 }
+```
