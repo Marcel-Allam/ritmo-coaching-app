@@ -28,6 +28,14 @@ interface ClientRecord {
   email: string | null;
 }
 
+type WeeklyCallOutcome = 'complete' | 'missed';
+
+const availabilityPrompt = `Set your training days now.\n\nWhen your workouts have a clear day attached, they stop being “I’ll fit it in” and become part of the plan. Pick the days you can realistically train next week.`;
+
+const completedCallMessage = `Good work on today’s check-in.\n\nNext step: pick the days you can realistically train next week so I can schedule your workouts around your actual week.`;
+
+const missedCallMessage = `We missed today’s check-in call — no stress, but let’s keep the week moving.\n\nPlease pick the days you can realistically train next week so I can schedule your workouts around your actual availability. We can rearrange the call separately if needed.`;
+
 const formatDate = (value: string | null) => {
   if (!value) return 'Not set';
 
@@ -41,6 +49,11 @@ const formatDate = (value: string | null) => {
 };
 
 const todayDate = () => new Date().toISOString().slice(0, 10);
+const dateInDays = (days: number) => {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  return date.toISOString().slice(0, 10);
+};
 const formatSubmissionType = (value: string) => value.replaceAll('_', ' ');
 
 export default function CoachSubmissionReviewPage() {
@@ -59,6 +72,7 @@ export default function CoachSubmissionReviewPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSavingReview, setIsSavingReview] = useState(false);
   const [isSendingFeedback, setIsSendingFeedback] = useState(false);
+  const [isCreatingAvailabilityTask, setIsCreatingAvailabilityTask] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   const loadSubmission = async () => {
@@ -132,6 +146,81 @@ export default function CoachSubmissionReviewPage() {
     });
     setMessage('Submission marked as reviewed.');
     setIsSavingReview(false);
+  };
+
+  const createTrainingAvailabilityTask = async (outcome: WeeklyCallOutcome) => {
+    if (!submission || !client) return;
+
+    setIsCreatingAvailabilityTask(true);
+    setMessage(null);
+
+    const supabase = createClient();
+    const automatedMessage = outcome === 'complete' ? completedCallMessage : missedCallMessage;
+    const instructions = `${automatedMessage}\n\n${availabilityPrompt}`;
+    const privateNote = outcome === 'complete'
+      ? 'Weekly call completed. Training availability task sent.'
+      : 'Weekly call missed. Training availability task still sent to keep momentum.';
+
+    const { data: existingTaskData, error: existingTaskError } = await supabase
+      .from('assigned_tasks')
+      .select('id')
+      .eq('client_id', client.id)
+      .eq('task_type', 'training_availability')
+      .eq('active', true)
+      .limit(1);
+
+    if (existingTaskError) {
+      setMessage(existingTaskError.message);
+      setIsCreatingAvailabilityTask(false);
+      return;
+    }
+
+    const existingTaskId = (existingTaskData?.[0] as { id: string } | undefined)?.id;
+
+    const taskPayload = {
+      client_id: client.id,
+      task_name: 'Submit training availability',
+      task_type: 'training_availability',
+      frequency: 'one_off',
+      required: true,
+      start_date: todayDate(),
+      end_date: dateInDays(2),
+      active: true,
+      instructions,
+    };
+
+    const taskResult = existingTaskId
+      ? await supabase.from('assigned_tasks').update(taskPayload).eq('id', existingTaskId)
+      : await supabase.from('assigned_tasks').insert(taskPayload);
+
+    if (taskResult.error) {
+      setMessage(taskResult.error.message);
+      setIsCreatingAvailabilityTask(false);
+      return;
+    }
+
+    const mergedCoachNote = [coachNote.trim(), privateNote].filter(Boolean).join('\n');
+    const { error: reviewError } = await supabase
+      .from('task_submissions')
+      .update({
+        review_status: 'reviewed',
+        coach_note: mergedCoachNote || null,
+      })
+      .eq('id', submission.id);
+
+    if (reviewError) {
+      setMessage(reviewError.message);
+      setIsCreatingAvailabilityTask(false);
+      return;
+    }
+
+    setCoachNote(mergedCoachNote);
+    setSubmission({ ...submission, review_status: 'reviewed', coach_note: mergedCoachNote || null });
+    setMessage(outcome === 'complete'
+      ? 'Weekly call marked complete. Training availability task sent to client.'
+      : 'Weekly call marked missed. Training availability task still sent to client.'
+    );
+    setIsCreatingAvailabilityTask(false);
   };
 
   const sendFeedback = async () => {
@@ -252,6 +341,35 @@ export default function CoachSubmissionReviewPage() {
             </div>
           </Card>
         </div>
+
+        {submission.submission_type === 'weekly_checkin' && (
+          <div>
+            <SectionHeader title="WEEKLY CALL OUTCOME" accent />
+            <Card>
+              <p className="mb-4 text-sm text-gray-700">
+                Use this after the weekly review call. Both options send the client a training availability task for the week ahead.
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <Button
+                  type="button"
+                  onClick={() => createTrainingAvailabilityTask('complete')}
+                  isLoading={isCreatingAvailabilityTask}
+                  className="bg-[#FA0201] hover:bg-red-700"
+                >
+                  Mark call complete + send availability task
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => createTrainingAvailabilityTask('missed')}
+                  isLoading={isCreatingAvailabilityTask}
+                >
+                  Mark call missed + send availability task
+                </Button>
+              </div>
+            </Card>
+          </div>
+        )}
 
         <div>
           <SectionHeader title="COACH REVIEW" accent />
