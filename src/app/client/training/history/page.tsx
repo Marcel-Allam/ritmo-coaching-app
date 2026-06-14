@@ -16,7 +16,7 @@ type SessionRecord = {
   review_status: string;
   client_notes: string | null;
 };
-type WorkoutRecord = { id: string; title: string; day_label: string | null; program_id: string };
+type WorkoutRecord = { id: string; title: string; program_id: string };
 type ProgramRecord = { id: string; title: string };
 type PerformedSetRecord = {
   session_id: string;
@@ -93,7 +93,7 @@ export default function CompletedWorkoutHistoryPage() {
       if (workoutIds.length > 0) {
         const { data: workoutData, error: workoutError } = await supabase
           .from('program_workouts')
-          .select('id, title, day_label, program_id')
+          .select('id, title, program_id')
           .in('id', workoutIds);
 
         if (workoutError) {
@@ -205,7 +205,7 @@ export default function CompletedWorkoutHistoryPage() {
                           <div>
                             <p className="text-xs font-bold uppercase text-gray-500">{formatDate(session.completed_at)}</p>
                             <p className="mt-1 text-lg font-bold uppercase text-[#000000]">
-                              {workout?.day_label || workout?.title || 'Workout'}
+                              {workout?.title || 'Workout'}
                             </p>
                             <p className="mt-1 text-sm text-gray-600">
                               Programme: {program?.title || 'Programme not found'}
@@ -213,7 +213,7 @@ export default function CompletedWorkoutHistoryPage() {
                           </div>
                           <div className="flex items-center gap-3">
                             <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-bold uppercase text-gray-700">
-                              {workout?.title || 'Workout'}
+                              {session.review_status}
                             </span>
                             <span className="text-xl font-bold text-[#FA0201]">{isExpanded ? '−' : '+'}</span>
                           </div>
