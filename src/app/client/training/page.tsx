@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { PageHeader } from '@/components/layout/page-header';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -33,6 +34,18 @@ interface ExerciseCountRecord {
   workout_id: string;
 }
 
+interface CompletedSessionRecord {
+  id: string;
+  program_workout_id: string;
+  completed_at: string | null;
+  review_status: string;
+}
+
+interface WorkoutTitleRecord {
+  id: string;
+  title: string;
+}
+
 const formatDate = (value: string | null) => {
   if (!value) return 'Not scheduled';
 
@@ -45,9 +58,14 @@ const formatDate = (value: string | null) => {
 
 export default function ClientTrainingPage() {
   const { user } = useAuth();
+  const searchParams = useSearchParams();
+  const submitted = searchParams.get('submitted') === '1';
+
   const [client, setClient] = useState<ClientRecord | null>(null);
   const [workout, setWorkout] = useState<ProgramWorkoutRecord | null>(null);
   const [program, setProgram] = useState<TrainingProgramRecord | null>(null);
+  const [completedSessions, setCompletedSessions] = useState<CompletedSessionRecord[]>([]);
+  const [workoutTitles, setWorkoutTitles] = useState<Record<string, string>>({});
   const [exerciseCount, setExerciseCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
@@ -79,22 +97,54 @@ export default function ClientTrainingPage() {
       const linkedClient = clientData as ClientRecord;
       setClient(linkedClient);
 
-      const { data: workoutData, error: workoutError } = await supabase
-        .from('program_workouts')
-        .select('id, program_id, title, day_label, instructions, scheduled_date, workout_order')
-        .eq('client_id', linkedClient.id)
-        .eq('status', 'active')
-        .order('scheduled_date', { ascending: true, nullsFirst: false })
-        .order('workout_order', { ascending: true })
-        .limit(1);
+      const [workoutResult, completedResult] = await Promise.all([
+        supabase
+          .from('program_workouts')
+          .select('id, program_id, title, day_label, instructions, scheduled_date, workout_order')
+          .eq('client_id', linkedClient.id)
+          .eq('status', 'active')
+          .order('scheduled_date', { ascending: true, nullsFirst: false })
+          .order('workout_order', { ascending: true })
+          .limit(1),
+        supabase
+          .from('workout_sessions')
+          .select('id, program_workout_id, completed_at, review_status')
+          .eq('client_id', linkedClient.id)
+          .eq('status', 'completed')
+          .order('completed_at', { ascending: false })
+          .limit(3),
+      ]);
 
-      if (workoutError) {
-        setMessage(workoutError.message);
+      if (workoutResult.error) {
+        setMessage(workoutResult.error.message);
         setIsLoading(false);
         return;
       }
 
-      const nextWorkout = (workoutData?.[0] ?? null) as ProgramWorkoutRecord | null;
+      if (completedResult.error) {
+        setMessage(completedResult.error.message);
+        setIsLoading(false);
+        return;
+      }
+
+      const recentSessions = (completedResult.data ?? []) as CompletedSessionRecord[];
+      setCompletedSessions(recentSessions);
+
+      const completedWorkoutIds = [...new Set(recentSessions.map((session) => session.program_workout_id))];
+      if (completedWorkoutIds.length > 0) {
+        const { data: titleData } = await supabase
+          .from('program_workouts')
+          .select('id, title')
+          .in('id', completedWorkoutIds);
+
+        const titleMap = ((titleData ?? []) as WorkoutTitleRecord[]).reduce<Record<string, string>>((acc, item) => {
+          acc[item.id] = item.title;
+          return acc;
+        }, {});
+        setWorkoutTitles(titleMap);
+      }
+
+      const nextWorkout = (workoutResult.data?.[0] ?? null) as ProgramWorkoutRecord | null;
       setWorkout(nextWorkout);
 
       if (!nextWorkout) {
@@ -134,6 +184,39 @@ export default function ClientTrainingPage() {
     loadAssignedWorkout();
   }, [user]);
 
+  const completedWorkoutsSection = (
+    <section>
+      <div className="flex items-center justify-between gap-4">
+        <SectionHeader title="COMPLETED WORKOUTS" accent />
+        <Link href="/client/training/history" className="mb-4 text-xs font-bold uppercase text-[#FA0201] hover:underline">
+          View all
+        </Link>
+      </div>
+      <Card>
+        {completedSessions.length === 0 ? (
+          <p className="text-sm text-gray-600">No completed workouts yet.</p>
+        ) : (
+          <div className="space-y-4">
+            {completedSessions.map((session) => (
+              <Link
+                key={session.id}
+                href="/client/training/history"
+                className="block border-b border-gray-200 pb-4 last:border-b-0 last:pb-0 hover:bg-gray-50 rounded-lg"
+              >
+                <p className="font-bold uppercase text-[#000000]">
+                  {workoutTitles[session.program_workout_id] || 'Workout session'}
+                </p>
+                <p className="mt-1 text-xs text-gray-500">
+                  Completed: {formatDate(session.completed_at)} • Review: {session.review_status}
+                </p>
+              </Link>
+            ))}
+          </div>
+        )}
+      </Card>
+    </section>
+  );
+
   if (isLoading) {
     return (
       <div>
@@ -163,13 +246,19 @@ export default function ClientTrainingPage() {
     return (
       <div>
         <PageHeader title="START YOUR WORKOUT" subtitle={`Welcome, ${client.full_name}`} />
-        <div className="px-4 py-6 md:px-8 max-w-5xl mx-auto">
+        <div className="px-4 py-6 md:px-8 max-w-5xl mx-auto space-y-8">
+          {submitted && (
+            <Card className="border-2 border-green-200 bg-green-50">
+              <p className="text-sm font-bold uppercase text-green-700">Workout submitted successfully.</p>
+            </Card>
+          )}
           <Card>
             <p className="font-bold uppercase text-[#000000]">No workout assigned yet.</p>
             <p className="mt-2 text-sm text-gray-600">
               Your coach has not assigned an active workout companion session yet.
             </p>
           </Card>
+          {completedWorkoutsSection}
         </div>
       </div>
     );
@@ -179,6 +268,12 @@ export default function ClientTrainingPage() {
     <div>
       <PageHeader title="START YOUR WORKOUT" subtitle={`Welcome, ${client.full_name}`} />
       <div className="px-4 py-6 md:px-8 max-w-5xl mx-auto space-y-8">
+        {submitted && (
+          <Card className="border-2 border-green-200 bg-green-50">
+            <p className="text-sm font-bold uppercase text-green-700">Workout submitted successfully.</p>
+          </Card>
+        )}
+
         <section>
           <SectionHeader title="NEXT SESSION" accent />
           <Card variant="dark" className="p-8">
@@ -216,6 +311,8 @@ export default function ClientTrainingPage() {
             </div>
           </Card>
         </section>
+
+        {completedWorkoutsSection}
       </div>
     </div>
   );
