@@ -13,81 +13,17 @@ import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
 type ClientRecord = { id: string; full_name: string; email: string | null };
 type SetForm = { targetReps: string; targetWeightKg: string; notes: string };
 type ExerciseForm = { exerciseName: string; notes: string; sets: SetForm[] };
-type SessionRecord = { id: string; program_workout_id: string; completed_at: string | null; review_status: string; client_notes: string | null };
-type WorkoutRecord = { id: string; title: string };
-type PerformedSetRecord = {
-  id: string;
-  session_id: string;
-  program_exercise_id: string;
-  program_set_id: string | null;
-  set_order: number;
-  actual_weight_kg: number | null;
-  actual_reps: number | null;
-  actual_rpe: number | null;
-  completed: boolean;
-  notes: string | null;
-};
-type ProgramExerciseRecord = { id: string; exercise_order: number; exercise_name: string };
-type ProgramSetRecord = { id: string; target_reps: string | null; target_weight_kg: number | null; notes: string | null };
-type AnalysisSetRecord = {
-  sessionId: string;
-  exerciseOrder: number;
-  exerciseName: string;
-  setOrder: number;
-  targetReps: string | null;
-  targetWeightKg: number | null;
-  prescribedNotes: string | null;
-  actualWeightKg: number | null;
-  actualReps: number | null;
-  actualRpe: number | null;
-  completed: boolean;
-  clientSetNotes: string | null;
-};
 
 const blankSet = (): SetForm => ({ targetReps: '', targetWeightKg: '', notes: '' });
 const blankExercise = (): ExerciseForm => ({ exerciseName: '', notes: '', sets: [blankSet(), blankSet(), blankSet()] });
 const numberOrNull = (value: string) => (value.trim() ? Number(value) : null);
 const textOrNull = (value: string) => value.trim() || null;
 
-const formatDate = (value: string | null) => {
-  if (!value) return 'Not set';
-  return new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(value));
-};
-
-const formatWeight = (value: number | null) => {
-  if (value === null || value === undefined) return '-';
-  return `${value}kg`;
-};
-
-const formatReps = (value: string | number | null) => {
-  if (value === null || value === undefined || value === '') return '-';
-  return `${value} reps`;
-};
-
-const getRpeClassName = (rpe: number | null) => {
-  if (rpe === null || rpe === undefined) return 'bg-gray-100 text-gray-600';
-  if (rpe >= 9.5) return 'bg-red-100 text-red-700';
-  if (rpe >= 9) return 'bg-orange-100 text-orange-700';
-  if (rpe >= 8) return 'bg-yellow-100 text-yellow-700';
-  return 'bg-green-100 text-green-700';
-};
-
-const getRpeLabel = (rpe: number | null) => {
-  if (rpe === null || rpe === undefined) return 'No RPE';
-  if (rpe >= 9.5) return 'Near max';
-  if (rpe >= 9) return 'Very hard';
-  if (rpe >= 8) return 'Hard';
-  return 'Manageable';
-};
-
 export default function CoachClientTrainingPage() {
   const params = useParams();
   const clientId = params.id as string;
 
   const [client, setClient] = useState<ClientRecord | null>(null);
-  const [sessions, setSessions] = useState<SessionRecord[]>([]);
-  const [workoutTitles, setWorkoutTitles] = useState<Record<string, string>>({});
-  const [analysisSetsBySession, setAnalysisSetsBySession] = useState<Record<string, AnalysisSetRecord[]>>({});
   const [programTitle, setProgramTitle] = useState('RITMO Programme');
   const [workoutTitle, setWorkoutTitle] = useState('Upper Day');
   const [dayLabel, setDayLabel] = useState('');
@@ -118,121 +54,7 @@ export default function CoachClientTrainingPage() {
       return;
     }
 
-    const { data: sessionData, error: sessionError } = await supabase
-      .from('workout_sessions')
-      .select('id, program_workout_id, completed_at, review_status, client_notes')
-      .eq('client_id', clientId)
-      .order('completed_at', { ascending: false })
-      .limit(10);
-
-    if (sessionError) {
-      setError(sessionError.message);
-      setLoading(false);
-      return;
-    }
-
-    const loadedSessions = (sessionData ?? []) as SessionRecord[];
-    const workoutIds = [...new Set(loadedSessions.map((session) => session.program_workout_id))];
-    const sessionIds = loadedSessions.map((session) => session.id);
-    let titleMap: Record<string, string> = {};
-    let groupedAnalysisSets: Record<string, AnalysisSetRecord[]> = {};
-
-    if (workoutIds.length > 0) {
-      const { data: workoutData } = await supabase
-        .from('program_workouts')
-        .select('id, title')
-        .in('id', workoutIds);
-
-      titleMap = ((workoutData ?? []) as WorkoutRecord[]).reduce<Record<string, string>>((acc, workout) => {
-        acc[workout.id] = workout.title;
-        return acc;
-      }, {});
-    }
-
-    if (sessionIds.length > 0) {
-      const { data: performedData, error: performedError } = await supabase
-        .from('performed_sets')
-        .select('id, session_id, program_exercise_id, program_set_id, set_order, actual_weight_kg, actual_reps, actual_rpe, completed, notes')
-        .in('session_id', sessionIds)
-        .order('set_order', { ascending: true });
-
-      if (performedError) {
-        setError(performedError.message);
-        setLoading(false);
-        return;
-      }
-
-      const performedSets = (performedData ?? []) as PerformedSetRecord[];
-      const exerciseIds = [...new Set(performedSets.map((set) => set.program_exercise_id))];
-      const prescribedSetIds = [...new Set(performedSets.map((set) => set.program_set_id).filter(Boolean))] as string[];
-
-      const [exerciseResult, prescribedSetResult] = await Promise.all([
-        exerciseIds.length > 0
-          ? supabase
-              .from('program_exercises')
-              .select('id, exercise_order, exercise_name')
-              .in('id', exerciseIds)
-          : Promise.resolve({ data: [], error: null }),
-        prescribedSetIds.length > 0
-          ? supabase
-              .from('program_sets')
-              .select('id, target_reps, target_weight_kg, notes')
-              .in('id', prescribedSetIds)
-          : Promise.resolve({ data: [], error: null }),
-      ]);
-
-      if (exerciseResult.error) {
-        setError(exerciseResult.error.message);
-        setLoading(false);
-        return;
-      }
-
-      if (prescribedSetResult.error) {
-        setError(prescribedSetResult.error.message);
-        setLoading(false);
-        return;
-      }
-
-      const exerciseMap = ((exerciseResult.data ?? []) as ProgramExerciseRecord[]).reduce<Record<string, ProgramExerciseRecord>>((acc, exercise) => {
-        acc[exercise.id] = exercise;
-        return acc;
-      }, {});
-
-      const prescribedSetMap = ((prescribedSetResult.data ?? []) as ProgramSetRecord[]).reduce<Record<string, ProgramSetRecord>>((acc, set) => {
-        acc[set.id] = set;
-        return acc;
-      }, {});
-
-      groupedAnalysisSets = performedSets.reduce<Record<string, AnalysisSetRecord[]>>((acc, performedSet) => {
-        const exercise = exerciseMap[performedSet.program_exercise_id];
-        const prescribedSet = performedSet.program_set_id ? prescribedSetMap[performedSet.program_set_id] : undefined;
-        const row: AnalysisSetRecord = {
-          sessionId: performedSet.session_id,
-          exerciseOrder: exercise?.exercise_order ?? 999,
-          exerciseName: exercise?.exercise_name ?? 'Exercise',
-          setOrder: performedSet.set_order,
-          targetReps: prescribedSet?.target_reps ?? null,
-          targetWeightKg: prescribedSet?.target_weight_kg ?? null,
-          prescribedNotes: prescribedSet?.notes ?? null,
-          actualWeightKg: performedSet.actual_weight_kg,
-          actualReps: performedSet.actual_reps,
-          actualRpe: performedSet.actual_rpe,
-          completed: performedSet.completed,
-          clientSetNotes: performedSet.notes,
-        };
-
-        acc[performedSet.session_id] = [...(acc[performedSet.session_id] || []), row].sort((a, b) => {
-          if (a.exerciseOrder !== b.exerciseOrder) return a.exerciseOrder - b.exerciseOrder;
-          return a.setOrder - b.setOrder;
-        });
-        return acc;
-      }, {});
-    }
-
     setClient(clientData as ClientRecord);
-    setSessions(loadedSessions);
-    setWorkoutTitles(titleMap);
-    setAnalysisSetsBySession(groupedAnalysisSets);
     setLoading(false);
   };
 
@@ -367,7 +189,6 @@ export default function CoachClientTrainingPage() {
     setInstructions('');
     setExercises([blankExercise()]);
     setSaving(false);
-    await loadPage();
   };
 
   if (loading) {
@@ -382,10 +203,13 @@ export default function CoachClientTrainingPage() {
     <div className="p-6 md:p-8 space-y-8">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold uppercase text-[#000000] tracking-tight">Training for {client?.full_name}</h1>
+          <h1 className="text-3xl font-bold uppercase text-[#000000] tracking-tight">Create workout for {client?.full_name}</h1>
           {client?.email && <p className="mt-1 text-sm text-gray-600">{client.email}</p>}
         </div>
-        <Link href={`/coach/clients/${clientId}`} className="text-sm font-bold uppercase text-[#FA0201] hover:underline">Back to client</Link>
+        <div className="flex flex-col items-end gap-2">
+          <Link href={`/coach/clients/${clientId}`} className="text-sm font-bold uppercase text-[#FA0201] hover:underline">Back to client</Link>
+          <Link href={`/coach/clients/${clientId}/workout-history`} className="text-sm font-bold uppercase text-[#FA0201] hover:underline">Workout history</Link>
+        </div>
       </div>
 
       {message && <Card className="border-2 border-green-200 bg-green-50"><p className="text-sm font-semibold text-green-700">{message}</p></Card>}
@@ -398,7 +222,7 @@ export default function CoachClientTrainingPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <Input label="Programme title" value={programTitle} onChange={(e) => setProgramTitle(e.target.value)} required />
               <Input label="Workout title" value={workoutTitle} onChange={(e) => setWorkoutTitle(e.target.value)} required />
-              <Input label="Day label" value={dayLabel} onChange={(e) => setDayLabel(e.target.value)} placeholder="e.g. Week 1 Day 1" />
+              <Input label="Day label" value={dayLabel} onChange={(e) => setDayLabel(e.target.value)} placeholder="e.g. Upper A" />
               <Textarea label="Instructions" value={instructions} onChange={(e) => setInstructions(e.target.value)} />
             </div>
 
@@ -446,74 +270,6 @@ export default function CoachClientTrainingPage() {
               <Button type="submit" variant="primary" isLoading={saving} className="bg-[#FA0201] hover:bg-red-700">Save workout</Button>
             </div>
           </form>
-        </Card>
-      </section>
-
-      <section>
-        <SectionHeader title="COMPLETED WORKOUT ANALYSIS" accent />
-        <Card>
-          {sessions.length === 0 ? (
-            <p className="text-sm text-gray-600">No completed workout companion sessions yet.</p>
-          ) : (
-            <div className="space-y-8">
-              {sessions.map((session) => {
-                const analysisRows = analysisSetsBySession[session.id] || [];
-                const highRpeCount = analysisRows.filter((row) => (row.actualRpe ?? 0) >= 9).length;
-                const missedSetCount = analysisRows.filter((row) => !row.completed).length;
-
-                return (
-                  <div key={session.id} className="border-b border-gray-200 pb-8 last:border-b-0 last:pb-0">
-                    <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                      <div>
-                        <p className="font-bold uppercase text-[#000000]">{workoutTitles[session.program_workout_id] || 'Workout session'}</p>
-                        <p className="text-xs text-gray-500">Completed: {formatDate(session.completed_at)} • Review: {session.review_status}</p>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        {highRpeCount > 0 && <span className="rounded-full bg-red-100 px-3 py-1 text-xs font-bold uppercase text-red-700">{highRpeCount} high RPE</span>}
-                        {missedSetCount > 0 && <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-bold uppercase text-gray-700">{missedSetCount} incomplete</span>}
-                      </div>
-                    </div>
-
-                    {session.client_notes && <p className="mt-3 text-sm text-gray-700">Client notes: {session.client_notes}</p>}
-
-                    <div className="mt-5 overflow-x-auto">
-                      <div className="min-w-[820px] rounded-lg border border-gray-200">
-                        <div className="grid grid-cols-[1.5fr_0.7fr_1.3fr_1.3fr_0.9fr_0.9fr_1.5fr] gap-3 bg-gray-100 px-4 py-3 text-xs font-bold uppercase text-gray-600">
-                          <p>Exercise</p>
-                          <p>Set</p>
-                          <p>Prescribed</p>
-                          <p>Performed</p>
-                          <p>RPE</p>
-                          <p>Status</p>
-                          <p>Notes</p>
-                        </div>
-
-                        {analysisRows.length === 0 ? (
-                          <p className="px-4 py-4 text-sm text-gray-600">No set data found for this session.</p>
-                        ) : (
-                          analysisRows.map((row, index) => (
-                            <div key={`${session.id}-${index}`} className="grid grid-cols-[1.5fr_0.7fr_1.3fr_1.3fr_0.9fr_0.9fr_1.5fr] gap-3 border-t border-gray-200 px-4 py-3 text-sm text-gray-800">
-                              <p className="font-semibold">{row.exerciseName}</p>
-                              <p>Set {row.setOrder}</p>
-                              <p>{formatWeight(row.targetWeightKg)} × {formatReps(row.targetReps)}</p>
-                              <p>{formatWeight(row.actualWeightKg)} × {formatReps(row.actualReps)}</p>
-                              <p>
-                                <span className={`rounded-full px-2 py-1 text-xs font-bold uppercase ${getRpeClassName(row.actualRpe)}`}>
-                                  {row.actualRpe ?? '-'} • {getRpeLabel(row.actualRpe)}
-                                </span>
-                              </p>
-                              <p>{row.completed ? 'Complete' : 'Incomplete'}</p>
-                              <p className="text-gray-600">{row.clientSetNotes || row.prescribedNotes || '-'}</p>
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
         </Card>
       </section>
     </div>
