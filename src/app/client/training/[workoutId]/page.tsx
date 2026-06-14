@@ -20,14 +20,18 @@ type PrescribedSetRecord = {
   set_order: number;
   target_reps: string | null;
   target_weight_kg: number | null;
-  target_rpe: number | null;
-  target_rir: number | null;
 };
-type SetLog = { weight: string; reps: string; rpe: string; rir: string; completed: boolean; notes: string };
+type SetLog = { weight: string; reps: string; rpe: string; completed: boolean; notes: string };
 
-const emptyLog: SetLog = { weight: '', reps: '', rpe: '', rir: '', completed: true, notes: '' };
+const emptyLog: SetLog = { weight: '', reps: '', rpe: '', completed: true, notes: '' };
 const numberOrNull = (value: string) => (value.trim() ? Number(value) : null);
-const integerOrNull = (value: string) => (value.trim() ? Number.parseInt(value, 10) : null);
+const numberOrFallback = (value: string, fallback: number | null) => (value.trim() ? Number(value) : fallback);
+const integerOrFallback = (value: string, fallback: string | null) => {
+  if (value.trim()) return Number.parseInt(value, 10);
+  if (!fallback?.trim()) return null;
+  const parsed = Number.parseInt(fallback, 10);
+  return Number.isFinite(parsed) ? parsed : null;
+};
 
 export default function ClientWorkoutSessionPage() {
   const { user } = useAuth();
@@ -99,7 +103,7 @@ export default function ClientWorkoutSessionPage() {
       const setResult = exerciseIds.length
         ? await supabase
             .from('program_sets')
-            .select('id, exercise_id, set_order, target_reps, target_weight_kg, target_rpe, target_rir')
+            .select('id, exercise_id, set_order, target_reps, target_weight_kg')
             .in('exercise_id', exerciseIds)
             .order('set_order', { ascending: true })
         : { data: [], error: null };
@@ -112,12 +116,7 @@ export default function ClientWorkoutSessionPage() {
 
       const loadedSets = (setResult.data ?? []) as PrescribedSetRecord[];
       const initialLogs = loadedSets.reduce<Record<string, SetLog>>((acc, set) => {
-        acc[set.id] = {
-          ...emptyLog,
-          weight: set.target_weight_kg?.toString() ?? '',
-          rpe: set.target_rpe?.toString() ?? '',
-          rir: set.target_rir?.toString() ?? '',
-        };
+        acc[set.id] = { ...emptyLog };
         return acc;
       }, {});
 
@@ -175,10 +174,10 @@ export default function ClientWorkoutSessionPage() {
       program_exercise_id: set.exercise_id,
       program_set_id: set.id,
       set_order: set.set_order,
-      actual_weight_kg: numberOrNull(logs[set.id]?.weight || ''),
-      actual_reps: integerOrNull(logs[set.id]?.reps || ''),
+      actual_weight_kg: numberOrFallback(logs[set.id]?.weight || '', set.target_weight_kg),
+      actual_reps: integerOrFallback(logs[set.id]?.reps || '', set.target_reps),
       actual_rpe: numberOrNull(logs[set.id]?.rpe || ''),
-      actual_rir: numberOrNull(logs[set.id]?.rir || ''),
+      actual_rir: null,
       completed: logs[set.id]?.completed ?? true,
       notes: logs[set.id]?.notes.trim() || null,
     }));
@@ -190,7 +189,7 @@ export default function ClientWorkoutSessionPage() {
       return;
     }
 
-    router.push('/client/training');
+    router.push('/client/training?submitted=1');
   };
 
   if (loading) {
@@ -212,18 +211,33 @@ export default function ClientWorkoutSessionPage() {
             <section key={exercise.id}>
               <SectionHeader title={`${exercise.exercise_order}. ${exercise.exercise_name}`} accent />
               <Card className="space-y-4">
+                {exercise.notes && <p className="text-sm text-gray-700">{exercise.notes}</p>}
                 {setsByExercise[exercise.id]?.map((set) => {
                   const log = logs[set.id] || emptyLog;
                   return (
                     <div key={set.id} className="rounded-lg border border-gray-200 p-4">
-                      <p className="mb-3 text-sm font-bold uppercase text-[#000000]">
-                        Set {set.set_order}: target {set.target_reps || '-'} reps {set.target_weight_kg ? `@ ${set.target_weight_kg}kg` : ''}
-                      </p>
+                      <div className="mb-4 flex items-start justify-between gap-4">
+                        <div>
+                          <p className="text-sm font-bold uppercase text-[#000000]">Set {set.set_order}</p>
+                          <p className="text-xs text-gray-500">
+                            Target: {set.target_reps || '-'} reps {set.target_weight_kg ? `@ ${set.target_weight_kg}kg` : ''}
+                          </p>
+                        </div>
+                        <label className="flex items-center gap-2 text-xs font-bold uppercase text-gray-600">
+                          <input
+                            type="checkbox"
+                            checked={log.completed}
+                            onChange={(e) => updateLog(set.id, { completed: e.target.checked })}
+                          />
+                          Complete
+                        </label>
+                      </div>
+
                       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                        <Input label="Actual kg" type="number" step="0.5" value={log.weight} onChange={(e) => updateLog(set.id, { weight: e.target.value })} />
-                        <Input label="Actual reps" type="number" value={log.reps} onChange={(e) => updateLog(set.id, { reps: e.target.value })} />
-                        <Input label="Actual RPE" type="number" step="0.5" value={log.rpe} onChange={(e) => updateLog(set.id, { rpe: e.target.value })} />
-                        <Input label="Actual RIR" type="number" step="0.5" value={log.rir} onChange={(e) => updateLog(set.id, { rir: e.target.value })} />
+                        <Input label="Kg" type="number" step="0.5" value={log.weight} placeholder={set.target_weight_kg?.toString() || ''} onChange={(e) => updateLog(set.id, { weight: e.target.value })} />
+                        <Input label="Reps" type="number" value={log.reps} placeholder={set.target_reps || ''} onChange={(e) => updateLog(set.id, { reps: e.target.value })} />
+                        <Input label="RPE" type="number" step="0.5" value={log.rpe} placeholder="Rate difficulty" onChange={(e) => updateLog(set.id, { rpe: e.target.value })} />
+                        <Input label="Notes" value={log.notes} onChange={(e) => updateLog(set.id, { notes: e.target.value })} />
                       </div>
                     </div>
                   );
