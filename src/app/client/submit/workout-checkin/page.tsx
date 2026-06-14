@@ -1,4 +1,3 @@
-```tsx
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -82,7 +81,9 @@ export default function WorkoutCheckinPage() {
       const supabase = createClient();
 
       // Find the client record linked to the currently logged-in Supabase user.
-      // This prevents the form from trusting any manually entered client ID.
+      // We query by clients.user_id = user.id to prevent clients from manually
+      // entering a different client ID. This ensures the form only submits data
+      // for the linked client, maintaining proper access control.
       const { data, error } = await supabase
         .from('clients')
         .select('id, full_name')
@@ -150,7 +151,9 @@ export default function WorkoutCheckinPage() {
     const supabase = createClient();
 
     // Attach the submission to the latest active workout-check-in task if one exists.
-    // This keeps detailed workout_checkins and the generic review queue in sync.
+    // This synchronizes the detailed workout_checkins table with the generic task_submissions
+    // review queue, allowing coaches to track submissions in one place while maintaining
+    // specialized workout data in a dedicated table.
     const { data: taskData } = await supabase
       .from('assigned_tasks')
       .select('id')
@@ -163,9 +166,12 @@ export default function WorkoutCheckinPage() {
     const assignedTaskId = taskData?.[0]?.id ?? null;
     const notes = formData.notes.trim();
 
-    // Temporary follow-up logic until the workout form has dedicated pain/energy fields.
+    // Determine if coach follow-up is required: high RPE (8+) or incomplete volume.
+    // Until pain/energy fields are added to the form, these serve as basic indicators.
     const followupRequired = formData.rpe >= 8 || !formData.volumeCompleted;
 
+    // Insert workout-specific data into the dedicated workout_checkins table.
+    // This maintains detailed exercise history with specialized fields.
     const { error: workoutError } = await supabase.from('workout_checkins').insert({
       client_id: client.id,
       workout_date: formData.workoutDate,
@@ -185,6 +191,7 @@ export default function WorkoutCheckinPage() {
       return;
     }
 
+    // Build a summary for the review queue.
     const summary = [
       `Workout date: ${formData.workoutDate}`,
       `Session: ${formData.sessionName.trim()}`,
@@ -193,6 +200,9 @@ export default function WorkoutCheckinPage() {
       `Notes: ${notes || 'Not provided'}`,
     ].join('\n');
 
+    // Also insert into task_submissions to populate the coach review queue.
+    // This row enables coaches to review all submissions (weekly_checkin, workout_checkin, etc.)
+    // in a single queue, while allowing specialized queries on workout_checkins for detailed analytics.
     const { error: submissionError } = await supabase.from('task_submissions').insert({
       client_id: client.id,
       assigned_task_id: assignedTaskId,
@@ -209,6 +219,7 @@ export default function WorkoutCheckinPage() {
       return;
     }
 
+    // Both inserts succeeded; show success and redirect.
     setIsSuccess(true);
     setMessage('Workout check-in submitted successfully. Returning to your hub...');
     setSaving(false);
@@ -330,4 +341,3 @@ export default function WorkoutCheckinPage() {
     </div>
   );
 }
-```
