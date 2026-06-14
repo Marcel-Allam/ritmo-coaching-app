@@ -37,6 +37,7 @@ interface SubmissionRecord {
   submission_type: string;
   submitted_at: string;
   review_status: string;
+  answer_text?: string | null;
 }
 
 const emptyTaskForm = {
@@ -97,7 +98,7 @@ export default function ClientProfilePage() {
         .order('created_at', { ascending: false }),
       supabase
         .from('task_submissions')
-        .select('id, assigned_task_id, submission_type, submitted_at, review_status')
+        .select('id, assigned_task_id, submission_type, submitted_at, review_status, answer_text')
         .eq('client_id', clientId)
         .order('submitted_at', { ascending: false })
         .limit(5),
@@ -178,6 +179,13 @@ export default function ClientProfilePage() {
     return submissions.some((submission) => {
       return submission.assigned_task_id === task.id || submission.submission_type === task.task_type;
     });
+  };
+
+  const getSubmissionHref = (submission: SubmissionRecord) => {
+    if (submission.submission_type === 'workout_session' && submission.answer_text) {
+      return `/coach/clients/${clientId}/workout-history?session=${submission.answer_text}`;
+    }
+    return `/coach/submissions/${submission.id}`;
   };
 
   if (isLoading) {
@@ -278,6 +286,12 @@ export default function ClientProfilePage() {
                 Create Workout
               </Link>
               <Link
+                href={`/coach/clients/${clientId}/schedule-workouts`}
+                className="rounded-lg bg-[#FA0201] px-4 py-2 text-sm font-bold uppercase text-white hover:bg-red-700"
+              >
+                Schedule Workouts
+              </Link>
+              <Link
                 href={`/coach/clients/${clientId}/workout-history`}
                 className="rounded-lg bg-white px-4 py-2 text-sm font-bold uppercase text-[#000000] border border-gray-300 hover:bg-gray-100"
               >
@@ -307,6 +321,7 @@ export default function ClientProfilePage() {
                     className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm text-[#000000]"
                   >
                     <option value="weekly_checkin">Weekly check-in</option>
+                    <option value="training_availability">Training availability</option>
                     <option value="workout_checkin">Workout check-in</option>
                     <option value="key_lift">Key lift / top set</option>
                     <option value="nutrition">Nutrition submission</option>
@@ -372,14 +387,14 @@ export default function ClientProfilePage() {
           <div className="space-y-4">
             {tasks.length === 0 ? (
               <Card>
-                <p className="text-sm text-gray-600">No active tasks assigned yet.</p>
+                <p className="text-sm text-gray-600">No active tasks assigned.</p>
               </Card>
             ) : (
               tasks.map((task) => (
                 <TaskCard
                   key={task.id}
                   title={task.task_name}
-                  description={task.instructions || task.task_type}
+                  description={task.instructions || `${task.frequency} ${task.task_type}`}
                   status={isTaskComplete(task) ? 'completed' : 'pending'}
                   dueDate={formatDate(task.end_date)}
                 />
@@ -392,23 +407,15 @@ export default function ClientProfilePage() {
           <SectionHeader title="RECENT SUBMISSIONS" accent />
           <Card>
             {submissions.length === 0 ? (
-              <p className="text-sm text-gray-600">No recent submissions yet.</p>
+              <p className="text-sm text-gray-600">No submissions yet.</p>
             ) : (
               <div className="space-y-4">
                 {submissions.map((submission) => (
-                  <Link
-                    key={submission.id}
-                    href={`/coach/submissions/${submission.id}`}
-                    className="block rounded-lg hover:bg-gray-50"
-                  >
-                    <div className="flex items-center justify-between pb-4 border-b border-gray-200 last:border-b-0 last:pb-0">
+                  <Link key={submission.id} href={getSubmissionHref(submission)} className="block border-b border-gray-200 pb-4 last:border-b-0 last:pb-0 hover:bg-gray-50 rounded-lg">
+                    <div className="flex items-center justify-between gap-4">
                       <div>
-                        <p className="font-bold text-sm uppercase text-[#000000]">
-                          {submission.submission_type.replaceAll('_', ' ')}
-                        </p>
-                        <p className="text-xs text-gray-500 mt-1">
-                          {formatDate(submission.submitted_at)}
-                        </p>
+                        <p className="font-semibold uppercase text-[#000000]">{submission.submission_type.replaceAll('_', ' ')}</p>
+                        <p className="mt-1 text-xs text-gray-500">{formatDate(submission.submitted_at)}</p>
                       </div>
                       <Badge variant={submission.review_status === 'reviewed' ? 'success' : 'default'}>
                         {submission.review_status}
