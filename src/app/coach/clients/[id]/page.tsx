@@ -261,15 +261,23 @@ export default function ClientProfilePage() {
         </div>
 
         <div>
-          <div className="flex items-center justify-between gap-4">
+          <div className="flex items-start justify-between gap-4">
             <SectionHeader title="ASSIGNED TASKS" accent />
-            <button
-              type="button"
-              onClick={() => setIsTaskFormOpen(true)}
-              className="mb-4 rounded-lg bg-[#FA0201] px-4 py-2 text-sm font-bold uppercase text-white hover:bg-red-700"
-            >
-              Assign Task
-            </button>
+            <div className="mb-4 flex flex-col items-end gap-2">
+              <button
+                type="button"
+                onClick={() => setIsTaskFormOpen(true)}
+                className="rounded-lg bg-[#FA0201] px-4 py-2 text-sm font-bold uppercase text-white hover:bg-red-700"
+              >
+                Assign Task
+              </button>
+              <Link
+                href={`/coach/clients/${clientId}/training`}
+                className="rounded-lg bg-black px-4 py-2 text-sm font-bold uppercase text-white hover:bg-gray-900"
+              >
+                Create Workout
+              </Link>
+            </div>
           </div>
 
           {isTaskFormOpen && (
