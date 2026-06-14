@@ -24,8 +24,6 @@ interface ProgramWorkoutRecord {
   id: string;
   program_id: string;
   title: string;
-  day_label: string | null;
-  instructions: string | null;
   scheduled_date: string | null;
   workout_order: number;
 }
@@ -80,8 +78,6 @@ export default function ClientTrainingPage() {
 
       const supabase = createClient();
 
-      // Client accounts are linked to their coaching record through clients.user_id.
-      // This keeps the authentication identity separate from the coach-facing client profile.
       const { data: clientData, error: clientError } = await supabase
         .from('clients')
         .select('id, full_name')
@@ -100,7 +96,7 @@ export default function ClientTrainingPage() {
       const [workoutResult, completedResult] = await Promise.all([
         supabase
           .from('program_workouts')
-          .select('id, program_id, title, day_label, instructions, scheduled_date, workout_order')
+          .select('id, program_id, title, scheduled_date, workout_order')
           .eq('client_id', linkedClient.id)
           .eq('status', 'active')
           .order('scheduled_date', { ascending: true, nullsFirst: false })
@@ -283,11 +279,7 @@ export default function ClientTrainingPage() {
             <h1 className="text-3xl md:text-4xl font-bold text-white uppercase tracking-tight">
               Ready to start {workout.title}?
             </h1>
-            <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4 text-sm text-white/80">
-              <div>
-                <p className="text-xs font-bold uppercase text-white/50">Day</p>
-                <p className="mt-1">{workout.day_label || 'Training day'}</p>
-              </div>
+            <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-white/80">
               <div>
                 <p className="text-xs font-bold uppercase text-white/50">Exercises</p>
                 <p className="mt-1">{exerciseCount}</p>
@@ -297,11 +289,6 @@ export default function ClientTrainingPage() {
                 <p className="mt-1">{formatDate(workout.scheduled_date)}</p>
               </div>
             </div>
-            {workout.instructions && (
-              <p className="mt-6 border-t border-gray-700 pt-4 text-sm text-white/75">
-                {workout.instructions}
-              </p>
-            )}
             <div className="mt-8">
               <Link href={`/client/training/${workout.id}`}>
                 <Button variant="primary" size="lg" className="bg-[#FA0201] hover:bg-red-700">
