@@ -371,6 +371,22 @@ export default function CoachSubmissionReviewPage() {
           </div>
         )}
 
+        {submission.submission_type === 'training_availability' && client && (
+          <div>
+            <SectionHeader title="SCHEDULE WORKOUTS" accent />
+            <Card>
+              <p className="mb-4 text-sm text-gray-700">
+                Use this availability to assign created workouts to the client’s real training days.
+              </p>
+              <Link href={`/coach/clients/${client.id}/schedule-workouts`}>
+                <Button type="button" className="bg-[#FA0201] hover:bg-red-700">
+                  Schedule workouts
+                </Button>
+              </Link>
+            </Card>
+          </div>
+        )}
+
         <div>
           <SectionHeader title="COACH REVIEW" accent />
           <Card>
