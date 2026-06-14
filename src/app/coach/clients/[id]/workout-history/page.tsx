@@ -17,7 +17,7 @@ type SessionRecord = {
   review_status: string;
   client_notes: string | null;
 };
-type WorkoutRecord = { id: string; title: string; day_label: string | null; program_id: string };
+type WorkoutRecord = { id: string; title: string; program_id: string };
 type ProgramRecord = { id: string; title: string };
 type PerformedSetRecord = {
   id: string;
@@ -136,7 +136,7 @@ export default function CoachWorkoutHistoryPage() {
     if (workoutIds.length > 0) {
       const { data: workoutData, error: workoutError } = await supabase
         .from('program_workouts')
-        .select('id, title, day_label, program_id')
+        .select('id, title, program_id')
         .in('id', workoutIds);
 
       if (workoutError) {
@@ -335,9 +335,8 @@ export default function CoachWorkoutHistoryPage() {
                       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                         <div>
                           <p className="text-xs font-bold uppercase text-gray-500">{formatDate(session.completed_at)}</p>
-                          <p className="mt-1 text-lg font-bold uppercase text-[#000000]">{workout?.day_label || workout?.title || 'Workout'}</p>
+                          <p className="mt-1 text-lg font-bold uppercase text-[#000000]">{workout?.title || 'Workout'}</p>
                           <p className="mt-1 text-sm text-gray-600">Programme: {program?.title || 'Programme not found'}</p>
-                          <p className="mt-1 text-xs text-gray-500">Workout: {workout?.title || 'Workout session'}</p>
                         </div>
                         <div className="flex flex-wrap items-center gap-2">
                           <Badge variant={session.review_status === 'reviewed' ? 'success' : 'default'}>{session.review_status}</Badge>
