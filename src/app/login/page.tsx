@@ -16,6 +16,20 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  useEffect(() => {
+  const searchParams = new URLSearchParams(window.location.search);
+  const inviteToken = searchParams.get('invite');
+  const mode = searchParams.get('mode');
+
+  if (inviteToken) {
+    setRole('client');
+  }
+
+  if (inviteToken && mode === 'signup') {
+    setIsSignUp(true);
+  }
+}, []);
+
   // Redirect if already logged in
   useEffect(() => {
     if (user && profile && !loading) {
