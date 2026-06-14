@@ -57,11 +57,15 @@ export default function LoginPage() {
         return;
       }
 
+      const searchParams = new URLSearchParams(window.location.search);
+      const inviteToken = searchParams.get('invite');
+      
       const { error: signUpError } = await signUp(
         email,
         password,
         fullName,
-        role
+        role,
+        inviteToken
       );
       if (signUpError) {
         setError(signUpError.message);
@@ -174,7 +178,9 @@ export default function LoginPage() {
                   className="w-full px-4 py-2 bg-white text-black rounded border border-gray-300 focus:outline-none focus:ring-2 focus:ring-red-600 disabled:opacity-50"
                 >
                   <option value="client">Client</option>
-                  <option value="coach">Coach</option>
+                  {!(typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('invite')) && (
+                    <option value="coach">Coach</option>
+                  )}
                 </select>
               </div>
             )}
