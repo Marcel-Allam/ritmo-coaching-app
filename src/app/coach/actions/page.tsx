@@ -1,16 +1,17 @@
 'use client';
 
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { PageHeader } from '@/components/layout/page-header';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { SectionHeader } from '@/components/ui/section-header';
-import { useEffect, useMemo, useState } from 'react';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
 
 interface CoachActionRecord {
   id: string;
+  client_id: string;
   action_type: string;
   description: string;
   due_date: string | null;
@@ -49,6 +50,8 @@ interface CompletedWorkoutRecord {
   program_workout_id: string;
 }
 
+type ActionFilter = 'all' | 'pending' | 'in-progress' | 'waiting' | 'completed';
+
 const formatDate = (value: string | null) => {
   if (!value) return 'No due date';
 
@@ -69,51 +72,40 @@ const formatDateTime = (value: string) => {
   }).format(new Date(value));
 };
 
-const normaliseStatusForFilter = (status: string) => {
-  if (status === 'done') return 'completed';
+const normaliseActionStatusForFilter = (status: string): ActionFilter => {
+  if (status === 'done' || status === 'no_action_needed') return 'completed';
   if (status === 'in_progress') return 'in-progress';
-  if (status === 'new') return 'pending';
-  return status.replaceAll('_', '-');
+  if (status === 'waiting_on_client' || status === 'waiting_on_coach') return 'waiting';
+  return 'pending';
 };
+
+const formatLabel = (value: string) => value.replaceAll('_', ' ');
 
 const getStatusBadgeVariant = (status: string) => {
-  switch (status) {
-    case 'done':
-      return 'success';
-    case 'in_progress':
-    case 'waiting_on_client':
-    case 'waiting_on_coach':
-      return 'warning';
-    case 'new':
-      return 'default';
-    default:
-      return 'default';
-  }
+  if (status === 'done' || status === 'reviewed' || status === 'resolved') return 'success';
+  if (status === 'flagged') return 'danger';
+  if (status === 'in_progress' || status === 'waiting_on_client' || status === 'waiting_on_coach' || status === 'needs_feedback' || status === 'needs_action') return 'warning';
+  return 'default';
 };
 
-const getStatusLabel = (status: string) => {
-  if (status === 'new') return 'Pending';
-  if (status === 'in_progress') return 'In Progress';
-  if (status === 'done') return 'Completed';
-  if (status === 'no_action_needed') return 'No Action Needed';
-  return status.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
+const getPriorityBadgeVariant = (priority: string) => {
+  if (priority === 'high') return 'danger';
+  if (priority === 'medium') return 'warning';
+  return 'default';
 };
 
-const getActionTitle = (action: CoachActionRecord) => {
-  return action.description || action.action_type.replaceAll('_', ' ');
-};
-
-const formatSubmissionType = (value: string) => value.replaceAll('_', ' ');
-
-const submissionBadgeLabel = (submission: SubmissionRecord) => {
+const getSubmissionBadgeLabel = (submission: SubmissionRecord) => {
   if (submission.submission_type === 'weekly_checkin') return 'Review check-in';
   if (submission.submission_type === 'training_availability') return 'Use to schedule';
-  if (submission.submission_type === 'workout_session') return 'Review workout';
+  if (submission.submission_type === 'workout_session' || submission.submission_type === 'workout_checkin') return 'Review workout';
+  if (submission.submission_type === 'nutrition') return 'Review nutrition';
+  if (submission.submission_type === 'bodyweight') return 'Review bodyweight';
+  if (submission.submission_type === 'key_lift') return 'Review lift';
   return 'Review';
 };
 
 export default function CoachActionsPage() {
-  const [filteredStatus, setFilteredStatus] = useState('all');
+  const [filteredStatus, setFilteredStatus] = useState<ActionFilter>('all');
   const [actions, setActions] = useState<CoachActionRecord[]>([]);
   const [submissions, setSubmissions] = useState<SubmissionRecord[]>([]);
   const [clients, setClients] = useState<Record<string, string>>({});
@@ -134,13 +126,13 @@ export default function CoachActionsPage() {
     const [actionResult, submissionResult, workoutResult, completedWorkoutResult] = await Promise.all([
       supabase
         .from('coach_actions')
-        .select('id, action_type, description, due_date, status, priority, clients(full_name)')
+        .select('id, client_id, action_type, description, due_date, status, priority, clients(full_name)')
         .order('due_date', { ascending: true }),
       supabase
         .from('task_submissions')
         .select('id, client_id, submission_type, submitted_at, answer_value, answer_text, review_status, followup_required')
         .order('submitted_at', { ascending: false })
-        .limit(50),
+        .limit(75),
       supabase
         .from('program_workouts')
         .select('id, client_id, title, scheduled_date, status')
@@ -179,7 +171,9 @@ export default function CoachActionsPage() {
 
     const loadedSubmissions = (submissionResult.data ?? []) as SubmissionRecord[];
     const loadedWorkouts = (workoutResult.data ?? []) as WorkoutRecord[];
-    const completedWorkoutIds = new Set(((completedWorkoutResult.data ?? []) as CompletedWorkoutRecord[]).map((session) => session.program_workout_id));
+    const completedWorkoutIds = new Set(
+      ((completedWorkoutResult.data ?? []) as CompletedWorkoutRecord[]).map((session) => session.program_workout_id)
+    );
     const activeIncompleteWorkouts = loadedWorkouts.filter((workout) => !completedWorkoutIds.has(workout.id));
 
     const clientIds = Array.from(new Set([
@@ -210,7 +204,7 @@ export default function CoachActionsPage() {
     setActions((actionResult.data ?? []) as CoachActionRecord[]);
     setSubmissions(loadedSubmissions);
     setUnscheduledWorkouts(activeIncompleteWorkouts.filter((workout) => !workout.scheduled_date));
-    setUpcomingWorkouts(activeIncompleteWorkouts.filter((workout) => workout.scheduled_date).slice(0, 10));
+    setUpcomingWorkouts(activeIncompleteWorkouts.filter((workout) => workout.scheduled_date).slice(0, 8));
     setIsLoading(false);
   };
 
@@ -218,19 +212,23 @@ export default function CoachActionsPage() {
     loadActions();
   }, []);
 
-  const filteredActions = useMemo(
-    () =>
-      filteredStatus === 'all'
-        ? actions
-        : actions.filter(
-            (action) => normaliseStatusForFilter(action.status) === filteredStatus
-          ),
-    [actions, filteredStatus]
-  );
-
-  const newSubmissions = submissions.filter((submission) => submission.review_status !== 'reviewed');
-  const recentlyReviewed = submissions.filter((submission) => submission.review_status === 'reviewed').slice(0, 6);
+  const newSubmissions = submissions.filter((submission) => submission.review_status !== 'reviewed' && submission.review_status !== 'resolved');
+  const highAttentionSubmissions = newSubmissions.filter((submission) => submission.followup_required || submission.review_status === 'flagged' || submission.review_status === 'needs_action');
+  const normalReviewSubmissions = newSubmissions.filter((submission) => !highAttentionSubmissions.some((item) => item.id === submission.id));
+  const recentlyReviewed = submissions.filter((submission) => submission.review_status === 'reviewed' || submission.review_status === 'resolved').slice(0, 6);
   const trainingAvailabilityToSchedule = newSubmissions.filter((submission) => submission.submission_type === 'training_availability');
+
+  const filteredActions = useMemo(() => {
+    if (filteredStatus === 'all') return actions;
+    return actions.filter((action) => normaliseActionStatusForFilter(action.status) === filteredStatus);
+  }, [actions, filteredStatus]);
+
+  const queueCounts = {
+    needsReview: newSubmissions.length,
+    highAttention: highAttentionSubmissions.length,
+    scheduling: trainingAvailabilityToSchedule.length + unscheduledWorkouts.length,
+    manualOpen: actions.filter((action) => normaliseActionStatusForFilter(action.status) !== 'completed').length,
+  };
 
   const handleComplete = async (actionId: string) => {
     if (!isSupabaseConfigured) return;
@@ -262,7 +260,7 @@ export default function CoachActionsPage() {
       return `/coach/clients/${submission.client_id}/workout-history?session=${submission.answer_text}`;
     }
 
-    return `/coach/submissions/${submission.id}`;
+    return `/coach/actions/submissions/${submission.id}`;
   };
 
   const renderSubmission = (submission: SubmissionRecord) => (
@@ -274,7 +272,7 @@ export default function CoachActionsPage() {
       <div className="flex items-start justify-between gap-4">
         <div>
           <p className="font-bold text-sm uppercase text-[#000000]">
-            {formatSubmissionType(submission.submission_type)}
+            {formatLabel(submission.submission_type)}
           </p>
           <p className="mt-1 text-xs text-gray-500">
             {clients[submission.client_id] || 'Client'} • {formatDateTime(submission.submitted_at)}
@@ -287,7 +285,7 @@ export default function CoachActionsPage() {
           {submission.answer_value !== null && (
             <span className="text-sm font-bold text-gray-700">{submission.answer_value}/10</span>
           )}
-          <Badge variant="default">{submissionBadgeLabel(submission)}</Badge>
+          <Badge variant={getStatusBadgeVariant(submission.review_status) as any}>{getSubmissionBadgeLabel(submission)}</Badge>
         </div>
       </div>
     </Link>
@@ -297,7 +295,7 @@ export default function CoachActionsPage() {
     <div className="p-6 md:p-8">
       <PageHeader
         title="ACTION QUEUE"
-        subtitle="Everything that needs coach attention in one place"
+        subtitle="Submissions, scheduling work, and manual coach actions in one place"
       />
 
       <div className="mt-8 space-y-8">
@@ -315,13 +313,43 @@ export default function CoachActionsPage() {
 
         {!isLoading && !error && (
           <>
+            <section className="grid grid-cols-1 gap-4 md:grid-cols-4">
+              <Card>
+                <p className="text-xs font-bold uppercase text-gray-500">Needs Review</p>
+                <p className="mt-2 text-3xl font-black text-[#000000]">{queueCounts.needsReview}</p>
+              </Card>
+              <Card>
+                <p className="text-xs font-bold uppercase text-gray-500">High Attention</p>
+                <p className="mt-2 text-3xl font-black text-[#FA0201]">{queueCounts.highAttention}</p>
+              </Card>
+              <Card>
+                <p className="text-xs font-bold uppercase text-gray-500">Needs Scheduling</p>
+                <p className="mt-2 text-3xl font-black text-[#000000]">{queueCounts.scheduling}</p>
+              </Card>
+              <Card>
+                <p className="text-xs font-bold uppercase text-gray-500">Open Manual Actions</p>
+                <p className="mt-2 text-3xl font-black text-[#000000]">{queueCounts.manualOpen}</p>
+              </Card>
+            </section>
+
+            <section>
+              <SectionHeader title="HIGH ATTENTION" accent />
+              <Card>
+                {highAttentionSubmissions.length === 0 ? (
+                  <p className="text-sm text-gray-600">No high-attention submissions right now.</p>
+                ) : (
+                  <div className="space-y-3">{highAttentionSubmissions.map(renderSubmission)}</div>
+                )}
+              </Card>
+            </section>
+
             <section>
               <SectionHeader title="NEEDS REVIEW" accent />
               <Card>
-                {newSubmissions.length === 0 ? (
-                  <p className="text-sm text-gray-600">No new submissions need review.</p>
+                {normalReviewSubmissions.length === 0 ? (
+                  <p className="text-sm text-gray-600">No standard submissions need review.</p>
                 ) : (
-                  <div className="space-y-3">{newSubmissions.map(renderSubmission)}</div>
+                  <div className="space-y-3">{normalReviewSubmissions.map(renderSubmission)}</div>
                 )}
               </Card>
             </section>
@@ -352,6 +380,76 @@ export default function CoachActionsPage() {
             </section>
 
             <section>
+              <SectionHeader title="MANUAL COACH ACTIONS" accent />
+              <div className="bg-white p-4 rounded-lg border border-gray-200 flex flex-wrap gap-2 mb-4">
+                {[
+                  { label: 'All', value: 'all' },
+                  { label: 'Pending', value: 'pending' },
+                  { label: 'In Progress', value: 'in-progress' },
+                  { label: 'Waiting', value: 'waiting' },
+                  { label: 'Completed', value: 'completed' },
+                ].map((filter) => (
+                  <button
+                    key={filter.value}
+                    onClick={() => setFilteredStatus(filter.value as ActionFilter)}
+                    className={`px-4 py-2 font-semibold uppercase text-sm rounded-lg transition-colors ${
+                      filteredStatus === filter.value
+                        ? 'bg-[#FA0201] text-white'
+                        : 'bg-gray-200 text-[#000000] hover:bg-gray-300'
+                    }`}
+                  >
+                    {filter.label}
+                  </button>
+                ))}
+              </div>
+
+              {filteredActions.length === 0 ? (
+                <div className="text-center py-8 bg-white rounded-lg border border-gray-200">
+                  <p className="text-gray-600 font-semibold">No manual actions found.</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {filteredActions.map((action) => (
+                    <Card key={action.id} className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                      <div className="flex-1">
+                        <div className="mb-2 flex items-start justify-between gap-4">
+                          <h3 className="text-lg font-bold uppercase text-[#000000]">{action.description}</h3>
+                          <div className="flex flex-wrap justify-end gap-2">
+                            <Badge variant={getPriorityBadgeVariant(action.priority) as any}>{action.priority}</Badge>
+                            <Badge variant={getStatusBadgeVariant(action.status) as any}>{formatLabel(action.status)}</Badge>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 gap-4 text-sm md:grid-cols-3">
+                          <div>
+                            <p className="text-xs font-semibold uppercase text-gray-500">Type</p>
+                            <p className="text-gray-700">{formatLabel(action.action_type)}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs font-semibold uppercase text-gray-500">Client</p>
+                            <p className="text-gray-700">{action.clients?.full_name ?? clients[action.client_id] ?? 'No client linked'}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs font-semibold uppercase text-gray-500">Due Date</p>
+                            <p className="text-gray-700">{formatDate(action.due_date)}</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {normaliseActionStatusForFilter(action.status) !== 'completed' ? (
+                        <Button onClick={() => handleComplete(action.id)} variant="primary" size="md" className="w-full md:w-auto">
+                          Complete
+                        </Button>
+                      ) : (
+                        <div className="text-sm font-semibold uppercase text-green-600">Done</div>
+                      )}
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            <section>
               <SectionHeader title="UPCOMING SCHEDULED WORKOUTS" accent />
               <Card>
                 {upcomingWorkouts.length === 0 ? (
@@ -367,90 +465,6 @@ export default function CoachActionsPage() {
                   </div>
                 )}
               </Card>
-            </section>
-
-            <section>
-              <SectionHeader title="MANUAL COACH ACTIONS" accent />
-              <div className="bg-white p-4 rounded-lg border border-gray-200 flex flex-wrap gap-2 mb-4">
-                {['all', 'pending', 'in-progress', 'completed'].map((filter) => (
-                  <button
-                    key={filter}
-                    onClick={() => setFilteredStatus(filter)}
-                    className={`px-4 py-2 font-semibold uppercase text-sm rounded-lg transition-colors ${
-                      filteredStatus === filter
-                        ? 'bg-[#FA0201] text-white'
-                        : 'bg-gray-200 text-[#000000] hover:bg-gray-300'
-                    }`}
-                  >
-                    {filter.charAt(0).toUpperCase() + filter.slice(1)}
-                  </button>
-                ))}
-              </div>
-
-              {filteredActions.length === 0 ? (
-                <div className="text-center py-8 bg-white rounded-lg border border-gray-200">
-                  <p className="text-gray-600 font-semibold">
-                    No {filteredStatus === 'all' ? '' : filteredStatus} manual actions found
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {filteredActions.map((action) => (
-                    <Card key={action.id} className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                      <div className="flex-1">
-                        <div className="flex items-start justify-between gap-4 mb-2">
-                          <h3 className="text-lg font-bold uppercase text-[#000000]">
-                            {getActionTitle(action)}
-                          </h3>
-                          <Badge
-                            variant={getStatusBadgeVariant(action.status) as any}
-                          >
-                            {getStatusLabel(action.status)}
-                          </Badge>
-                        </div>
-
-                        <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-                          <div>
-                            <p className="text-xs font-semibold uppercase text-gray-500">
-                              Type
-                            </p>
-                            <p className="text-gray-700">{action.action_type.replaceAll('_', ' ')}</p>
-                          </div>
-                          <div>
-                            <p className="text-xs font-semibold uppercase text-gray-500">
-                              Client
-                            </p>
-                            <p className="text-gray-700">{action.clients?.full_name ?? 'No client linked'}</p>
-                          </div>
-                          <div>
-                            <p className="text-xs font-semibold uppercase text-gray-500">
-                              Due Date
-                            </p>
-                            <p className="text-gray-700">{formatDate(action.due_date)}</p>
-                          </div>
-                        </div>
-                      </div>
-
-                      {action.status !== 'done' && (
-                        <Button
-                          onClick={() => handleComplete(action.id)}
-                          variant="primary"
-                          size="md"
-                          className="w-full md:w-auto"
-                        >
-                          Complete
-                        </Button>
-                      )}
-
-                      {action.status === 'done' && (
-                        <div className="text-sm font-semibold text-green-600 uppercase">
-                          ✓ Done
-                        </div>
-                      )}
-                    </Card>
-                  ))}
-                </div>
-              )}
             </section>
 
             <section>
