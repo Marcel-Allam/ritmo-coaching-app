@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -13,6 +13,15 @@ import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
 type ClientRecord = { id: string; full_name: string; email: string | null };
 type SetForm = { targetReps: string; targetWeightKg: string; notes: string };
 type ExerciseForm = { exerciseName: string; notes: string; sets: SetForm[] };
+type ExerciseCatalogueRecord = {
+  id: string;
+  name: string;
+  category: string;
+  movement_pattern: string | null;
+  primary_muscles: string[];
+  equipment: string | null;
+  default_notes: string | null;
+};
 
 const blankSet = (): SetForm => ({ targetReps: '', targetWeightKg: '', notes: '' });
 const blankExercise = (): ExerciseForm => ({ exerciseName: '', notes: '', sets: [blankSet(), blankSet(), blankSet()] });
@@ -24,6 +33,7 @@ export default function CoachClientTrainingPage() {
   const clientId = params.id as string;
 
   const [client, setClient] = useState<ClientRecord | null>(null);
+  const [exerciseCatalogue, setExerciseCatalogue] = useState<ExerciseCatalogueRecord[]>([]);
   const [programTitle, setProgramTitle] = useState('RITMO Programme');
   const [workoutTitle, setWorkoutTitle] = useState('Upper Day');
   const [exercises, setExercises] = useState<ExerciseForm[]>([blankExercise()]);
@@ -40,19 +50,34 @@ export default function CoachClientTrainingPage() {
     }
 
     const supabase = createClient();
-    const { data: clientData, error: clientError } = await supabase
-      .from('clients')
-      .select('id, full_name, email')
-      .eq('id', clientId)
-      .single();
+    const [clientResult, catalogueResult] = await Promise.all([
+      supabase
+        .from('clients')
+        .select('id, full_name, email')
+        .eq('id', clientId)
+        .single(),
+      supabase
+        .from('exercise_catalogue')
+        .select('id, name, category, movement_pattern, primary_muscles, equipment, default_notes')
+        .eq('is_active', true)
+        .order('category', { ascending: true })
+        .order('name', { ascending: true }),
+    ]);
 
-    if (clientError || !clientData) {
-      setError(clientError?.message || 'Client not found.');
+    if (clientResult.error || !clientResult.data) {
+      setError(clientResult.error?.message || 'Client not found.');
       setLoading(false);
       return;
     }
 
-    setClient(clientData as ClientRecord);
+    if (catalogueResult.error) {
+      setError(catalogueResult.error.message);
+      setLoading(false);
+      return;
+    }
+
+    setClient(clientResult.data as ClientRecord);
+    setExerciseCatalogue((catalogueResult.data ?? []) as ExerciseCatalogueRecord[]);
     setLoading(false);
   };
 
@@ -60,8 +85,36 @@ export default function CoachClientTrainingPage() {
     loadPage();
   }, [clientId]);
 
+  const catalogueByName = useMemo(() => {
+    return exerciseCatalogue.reduce<Record<string, ExerciseCatalogueRecord>>((acc, exercise) => {
+      acc[exercise.name] = exercise;
+      return acc;
+    }, {});
+  }, [exerciseCatalogue]);
+
+  const groupedCatalogue = useMemo(() => {
+    return exerciseCatalogue.reduce<Record<string, ExerciseCatalogueRecord[]>>((acc, exercise) => {
+      acc[exercise.category] = [...(acc[exercise.category] || []), exercise];
+      return acc;
+    }, {});
+  }, [exerciseCatalogue]);
+
   const updateExercise = (index: number, updates: Partial<ExerciseForm>) => {
     setExercises((current) => current.map((exercise, i) => (i === index ? { ...exercise, ...updates } : exercise)));
+  };
+
+  const selectCatalogueExercise = (index: number, exerciseName: string) => {
+    const selectedExercise = catalogueByName[exerciseName];
+
+    setExercises((current) => current.map((exercise, i) => {
+      if (i !== index) return exercise;
+
+      return {
+        ...exercise,
+        exerciseName,
+        notes: exercise.notes || selectedExercise?.default_notes || '',
+      };
+    }));
   };
 
   const removeExercise = (index: number) => {
@@ -220,44 +273,89 @@ export default function CoachClientTrainingPage() {
               <Input label="Workout title" value={workoutTitle} onChange={(e) => setWorkoutTitle(e.target.value)} required />
             </div>
 
-            {exercises.map((exercise, exerciseIndex) => (
-              <div key={exerciseIndex} className="rounded-xl border border-gray-200 p-4 space-y-4">
-                <div className="flex items-center justify-between gap-4">
-                  <p className="text-sm font-bold uppercase text-[#000000]">Exercise {exerciseIndex + 1}</p>
-                  {exercises.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => removeExercise(exerciseIndex)}
-                      className="text-xs font-bold uppercase text-[#FA0201] hover:underline"
-                    >
-                      Remove exercise
-                    </button>
+            {exercises.map((exercise, exerciseIndex) => {
+              const selectedCatalogueExercise = catalogueByName[exercise.exerciseName];
+
+              return (
+                <div key={exerciseIndex} className="rounded-xl border border-gray-200 p-4 space-y-4">
+                  <div className="flex items-center justify-between gap-4">
+                    <p className="text-sm font-bold uppercase text-[#000000]">Exercise {exerciseIndex + 1}</p>
+                    {exercises.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => removeExercise(exerciseIndex)}
+                        className="text-xs font-bold uppercase text-[#FA0201] hover:underline"
+                      >
+                        Remove exercise
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="mb-2 block text-xs font-bold uppercase text-gray-600">Exercise catalogue</label>
+                      <select
+                        value={selectedCatalogueExercise ? exercise.exerciseName : ''}
+                        onChange={(event) => selectCatalogueExercise(exerciseIndex, event.target.value)}
+                        className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm text-[#000000]"
+                      >
+                        <option value="">Select from catalogue</option>
+                        {Object.entries(groupedCatalogue).map(([category, categoryExercises]) => (
+                          <optgroup key={category} label={category}>
+                            {categoryExercises.map((catalogueExercise) => (
+                              <option key={catalogueExercise.id} value={catalogueExercise.name}>
+                                {catalogueExercise.name}
+                              </option>
+                            ))}
+                          </optgroup>
+                        ))}
+                      </select>
+                    </div>
+
+                    <Input
+                      label="Exercise name"
+                      value={exercise.exerciseName}
+                      onChange={(e) => updateExercise(exerciseIndex, { exerciseName: e.target.value })}
+                      placeholder="Or type a custom exercise"
+                    />
+                  </div>
+
+                  {selectedCatalogueExercise && (
+                    <div className="rounded-lg bg-gray-100 p-3 text-xs text-gray-700">
+                      <p className="font-bold uppercase text-[#000000]">
+                        {selectedCatalogueExercise.category}
+                        {selectedCatalogueExercise.movement_pattern ? ` • ${selectedCatalogueExercise.movement_pattern}` : ''}
+                        {selectedCatalogueExercise.equipment ? ` • ${selectedCatalogueExercise.equipment}` : ''}
+                      </p>
+                      {selectedCatalogueExercise.primary_muscles.length > 0 && (
+                        <p className="mt-1">Primary: {selectedCatalogueExercise.primary_muscles.join(', ')}</p>
+                      )}
+                    </div>
                   )}
-                </div>
 
-                <Input value={exercise.exerciseName} onChange={(e) => updateExercise(exerciseIndex, { exerciseName: e.target.value })} placeholder="e.g. Bench press" />
-                <Textarea label="Exercise notes" value={exercise.notes} onChange={(e) => updateExercise(exerciseIndex, { notes: e.target.value })} />
+                  <Textarea label="Exercise notes" value={exercise.notes} onChange={(e) => updateExercise(exerciseIndex, { notes: e.target.value })} />
 
-                <div className="overflow-x-auto rounded-lg bg-gray-50 p-3">
-                  <div className="grid min-w-[640px] grid-cols-[80px_1fr_1fr_2fr] gap-3 px-1 pb-2 text-xs font-bold uppercase text-gray-600">
-                    <div />
-                    <p>Kg</p>
-                    <p>Reps</p>
-                    <p>Notes</p>
-                  </div>
-                  <div className="space-y-3">
-                    {exercise.sets.map((set, setIndex) => (
-                      <div key={setIndex} className="grid min-w-[640px] grid-cols-[80px_1fr_1fr_2fr] items-center gap-3">
-                        <p className="text-sm font-bold uppercase text-[#000000]">Set {setIndex + 1}</p>
-                        <Input type="number" step="0.5" value={set.targetWeightKg} onChange={(e) => updateSet(exerciseIndex, setIndex, { targetWeightKg: e.target.value })} />
-                        <Input value={set.targetReps} onChange={(e) => updateSet(exerciseIndex, setIndex, { targetReps: e.target.value })} placeholder="6-8" />
-                        <Input value={set.notes} onChange={(e) => updateSet(exerciseIndex, setIndex, { notes: e.target.value })} />
-                      </div>
-                    ))}
+                  <div className="overflow-x-auto rounded-lg bg-gray-50 p-3">
+                    <div className="grid min-w-[640px] grid-cols-[80px_1fr_1fr_2fr] gap-3 px-1 pb-2 text-xs font-bold uppercase text-gray-600">
+                      <div />
+                      <p>Kg</p>
+                      <p>Reps</p>
+                      <p>Notes</p>
+                    </div>
+                    <div className="space-y-3">
+                      {exercise.sets.map((set, setIndex) => (
+                        <div key={setIndex} className="grid min-w-[640px] grid-cols-[80px_1fr_1fr_2fr] items-center gap-3">
+                          <p className="text-sm font-bold uppercase text-[#000000]">Set {setIndex + 1}</p>
+                          <Input type="number" step="0.5" value={set.targetWeightKg} onChange={(e) => updateSet(exerciseIndex, setIndex, { targetWeightKg: e.target.value })} />
+                          <Input value={set.targetReps} onChange={(e) => updateSet(exerciseIndex, setIndex, { targetReps: e.target.value })} placeholder="6-8" />
+                          <Input value={set.notes} onChange={(e) => updateSet(exerciseIndex, setIndex, { notes: e.target.value })} />
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
 
             <div className="flex flex-col md:flex-row gap-3">
               <Button type="button" variant="outline" onClick={() => setExercises((current) => [...current, blankExercise()])}>Add exercise</Button>
