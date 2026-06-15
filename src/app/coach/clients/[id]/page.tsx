@@ -476,6 +476,12 @@ export default function ClientProfilePage() {
               Risk Signals
             </Link>
             <Link
+              href={`/coach/clients/${clientId}/settings`}
+              className="rounded-lg bg-white px-4 py-2 text-sm font-bold uppercase text-[#000000] border border-gray-300 hover:bg-gray-100"
+            >
+              Client Settings
+            </Link>
+            <Link
               href="/coach/clients"
               className="text-sm font-semibold text-[#FA0201] uppercase hover:underline"
             >
