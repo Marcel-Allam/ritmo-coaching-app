@@ -14,6 +14,7 @@ interface ClientRecord {
   id: string;
   full_name: string;
   email: string | null;
+  user_id: string | null;
   status: string;
   current_focus: string | null;
   next_review_date: string | null;
@@ -74,6 +75,9 @@ export default function ClientProfilePage() {
   const [isTaskFormOpen, setIsTaskFormOpen] = useState(false);
   const [isSavingTask, setIsSavingTask] = useState(false);
   const [taskForm, setTaskForm] = useState(emptyTaskForm);
+  const [inviteLink, setInviteLink] = useState<string | null>(null);
+  const [isCreatingInvite, setIsCreatingInvite] = useState(false);
+  const [inviteMessage, setInviteMessage] = useState<string | null>(null);
 
   const loadClientProfile = async () => {
     if (!isSupabaseConfigured) {
@@ -87,7 +91,7 @@ export default function ClientProfilePage() {
     const [clientResult, tasksResult, submissionsResult] = await Promise.all([
       supabase
         .from('clients')
-        .select('id, full_name, email, status, current_focus, next_review_date, next_call_date, start_date')
+        .select('id, full_name, email, user_id, status, current_focus, next_review_date, next_call_date, start_date')
         .eq('id', clientId)
         .single(),
       supabase
@@ -131,6 +135,41 @@ export default function ClientProfilePage() {
   useEffect(() => {
     loadClientProfile();
   }, [clientId]);
+
+  const handleCreateInvite = async () => {
+    if (!isSupabaseConfigured || !client) return;
+
+    setIsCreatingInvite(true);
+    setInviteMessage(null);
+    setError(null);
+
+    const supabase = createClient();
+    const { data: token, error: inviteError } = await supabase.rpc('generate_client_invite', {
+      p_client_id: client.id,
+    });
+
+    if (inviteError || !token) {
+      setError(inviteError?.message || 'Could not create invite link.');
+      setIsCreatingInvite(false);
+      return;
+    }
+
+    const link = `${window.location.origin}/invite/${token as string}`;
+    setInviteLink(link);
+    setInviteMessage('Invite link created. Send this to the client.');
+    setIsCreatingInvite(false);
+  };
+
+  const handleCopyInvite = async () => {
+    if (!inviteLink) return;
+
+    try {
+      await navigator.clipboard.writeText(inviteLink);
+      setInviteMessage('Invite link copied.');
+    } catch {
+      setInviteMessage('Copy failed. Select and copy the link manually.');
+    }
+  };
 
   const handleCreateTask = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -229,13 +268,49 @@ export default function ClientProfilePage() {
               {client.status}
             </Badge>
           </div>
-          <Link
-            href="/coach/clients"
-            className="text-sm font-semibold text-[#FA0201] uppercase hover:underline"
-          >
-            Back to Clients
-          </Link>
+          <div className="flex flex-col items-end gap-2">
+            {!client.user_id && (
+              <button
+                type="button"
+                onClick={handleCreateInvite}
+                disabled={isCreatingInvite}
+                className="rounded-lg bg-[#FA0201] px-4 py-2 text-sm font-bold uppercase text-white hover:bg-red-700 disabled:opacity-60"
+              >
+                {isCreatingInvite ? 'Creating invite...' : 'Invite Client'}
+              </button>
+            )}
+            <Link
+              href="/coach/clients"
+              className="text-sm font-semibold text-[#FA0201] uppercase hover:underline"
+            >
+              Back to Clients
+            </Link>
+          </div>
         </div>
+
+        {!client.user_id && inviteLink && (
+          <Card className="mt-4 border-2 border-[#FA0201]">
+            <div className="space-y-3">
+              <p className="text-sm font-bold uppercase text-[#000000]">Client invite link</p>
+              <p className="text-sm text-gray-600">Send this link to the client. Once they create their account, this invite button will disappear from the profile.</p>
+              <div className="flex flex-col gap-3 md:flex-row">
+                <input
+                  readOnly
+                  value={inviteLink}
+                  className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm text-[#000000]"
+                />
+                <button
+                  type="button"
+                  onClick={handleCopyInvite}
+                  className="rounded-lg bg-black px-4 py-3 text-sm font-bold uppercase text-white hover:bg-gray-900"
+                >
+                  Copy
+                </button>
+              </div>
+              {inviteMessage && <p className="text-sm font-semibold text-gray-700">{inviteMessage}</p>}
+            </div>
+          </Card>
+        )}
       </div>
 
       <div className="space-y-8">
