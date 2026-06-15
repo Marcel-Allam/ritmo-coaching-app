@@ -15,6 +15,8 @@ create table if not exists public.client_settings (
   updated_at timestamptz not null default now()
 );
 
+grant select, insert, update on table client_settings to authenticated;
+
 create or replace function public.set_client_settings_updated_at()
 returns trigger
 language plpgsql
