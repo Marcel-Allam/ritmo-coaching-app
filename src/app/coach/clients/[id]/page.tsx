@@ -41,12 +41,40 @@ interface SubmissionRecord {
   answer_text?: string | null;
 }
 
+interface LatestFeedbackRecord {
+  feedback_date: string;
+  main_win: string | null;
+  main_focus: string | null;
+  agreed_action: string | null;
+  next_review_date: string | null;
+}
+
+interface ClientSnapshot {
+  weekStart: string;
+  weekEnd: string;
+  workoutsScheduledThisWeek: number;
+  workoutsCompletedThisWeek: number;
+  workoutsRemainingThisWeek: number;
+  reviewsNeedingAction: number;
+  latestFeedback: LatestFeedbackRecord | null;
+}
+
 const emptyTaskForm = {
   taskName: '',
   taskType: 'weekly_checkin',
   frequency: 'weekly',
   endDate: '',
   instructions: '',
+};
+
+const emptySnapshot: ClientSnapshot = {
+  weekStart: '',
+  weekEnd: '',
+  workoutsScheduledThisWeek: 0,
+  workoutsCompletedThisWeek: 0,
+  workoutsRemainingThisWeek: 0,
+  reviewsNeedingAction: 0,
+  latestFeedback: null,
 };
 
 const formatDate = (value: string | null) => {
@@ -63,6 +91,62 @@ const getStatusBadgeVariant = (status: string) => {
   return status === 'active' ? 'success' : 'warning';
 };
 
+const getCurrentWeekRange = () => {
+  const today = new Date();
+  const day = today.getDay();
+  const mondayOffset = day === 0 ? -6 : 1 - day;
+  const monday = new Date(today);
+  monday.setDate(today.getDate() + mondayOffset);
+  monday.setHours(0, 0, 0, 0);
+
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  sunday.setHours(23, 59, 59, 999);
+
+  return {
+    weekStartDate: monday.toISOString().slice(0, 10),
+    weekEndDate: sunday.toISOString().slice(0, 10),
+    weekStartTimestamp: monday.toISOString(),
+    weekEndTimestamp: sunday.toISOString(),
+  };
+};
+
+const SnapshotMetric = ({
+  label,
+  value,
+  helper,
+}: {
+  label: string;
+  value: string | number;
+  helper: string;
+}) => (
+  <div className="rounded-xl border border-gray-200 bg-white p-4">
+    <p className="text-xs font-bold uppercase text-gray-500">{label}</p>
+    <p className="mt-2 text-3xl font-black text-[#000000]">{value}</p>
+    <p className="mt-1 text-xs font-semibold text-gray-600">{helper}</p>
+  </div>
+);
+
+const FutureAnalyticsCard = ({ title, description }: { title: string; description: string }) => (
+  <div className="rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 p-4">
+    <div className="mb-3 h-24 rounded-lg bg-white/70 p-3">
+      <div className="h-2 w-2/3 rounded bg-gray-300" />
+      <div className="mt-4 flex h-12 items-end gap-2">
+        <div className="h-4 w-full rounded bg-gray-200" />
+        <div className="h-8 w-full rounded bg-gray-300" />
+        <div className="h-6 w-full rounded bg-gray-200" />
+        <div className="h-10 w-full rounded bg-gray-300" />
+        <div className="h-7 w-full rounded bg-gray-200" />
+      </div>
+    </div>
+    <p className="text-sm font-bold uppercase text-[#000000]">{title}</p>
+    <p className="mt-1 text-xs text-gray-600">{description}</p>
+    <p className="mt-3 inline-block rounded bg-black px-2 py-1 text-[10px] font-bold uppercase text-white">
+      Future interactive graph
+    </p>
+  </div>
+);
+
 export default function ClientProfilePage() {
   const params = useParams();
   const clientId = params.id as string;
@@ -70,6 +154,7 @@ export default function ClientProfilePage() {
   const [client, setClient] = useState<ClientRecord | null>(null);
   const [tasks, setTasks] = useState<AssignedTaskRecord[]>([]);
   const [submissions, setSubmissions] = useState<SubmissionRecord[]>([]);
+  const [snapshot, setSnapshot] = useState<ClientSnapshot>(emptySnapshot);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isTaskFormOpen, setIsTaskFormOpen] = useState(false);
@@ -87,8 +172,17 @@ export default function ClientProfilePage() {
     }
 
     const supabase = createClient();
+    const weekRange = getCurrentWeekRange();
 
-    const [clientResult, tasksResult, submissionsResult] = await Promise.all([
+    const [
+      clientResult,
+      tasksResult,
+      submissionsResult,
+      scheduledWorkoutsResult,
+      completedWorkoutsResult,
+      reviewCountResult,
+      latestFeedbackResult,
+    ] = await Promise.all([
       supabase
         .from('clients')
         .select('id, full_name, email, user_id, status, current_focus, next_review_date, next_call_date, start_date')
@@ -106,6 +200,33 @@ export default function ClientProfilePage() {
         .eq('client_id', clientId)
         .order('submitted_at', { ascending: false })
         .limit(5),
+      supabase
+        .from('program_workouts')
+        .select('id, scheduled_date, status')
+        .eq('client_id', clientId)
+        .neq('status', 'archived')
+        .not('scheduled_date', 'is', null)
+        .gte('scheduled_date', weekRange.weekStartDate)
+        .lte('scheduled_date', weekRange.weekEndDate),
+      supabase
+        .from('workout_sessions')
+        .select('id, status, completed_at')
+        .eq('client_id', clientId)
+        .eq('status', 'completed')
+        .gte('completed_at', weekRange.weekStartTimestamp)
+        .lte('completed_at', weekRange.weekEndTimestamp),
+      supabase
+        .from('task_submissions')
+        .select('id', { count: 'exact', head: true })
+        .eq('client_id', clientId)
+        .neq('review_status', 'reviewed'),
+      supabase
+        .from('feedback_notes')
+        .select('feedback_date, main_win, main_focus, agreed_action, next_review_date')
+        .eq('client_id', clientId)
+        .order('feedback_date', { ascending: false })
+        .order('created_at', { ascending: false })
+        .limit(1),
     ]);
 
     if (clientResult.error) {
@@ -126,9 +247,46 @@ export default function ClientProfilePage() {
       return;
     }
 
+    if (scheduledWorkoutsResult.error) {
+      setError(scheduledWorkoutsResult.error.message);
+      setIsLoading(false);
+      return;
+    }
+
+    if (completedWorkoutsResult.error) {
+      setError(completedWorkoutsResult.error.message);
+      setIsLoading(false);
+      return;
+    }
+
+    if (reviewCountResult.error) {
+      setError(reviewCountResult.error.message);
+      setIsLoading(false);
+      return;
+    }
+
+    if (latestFeedbackResult.error) {
+      setError(latestFeedbackResult.error.message);
+      setIsLoading(false);
+      return;
+    }
+
+    const workoutsScheduledThisWeek = scheduledWorkoutsResult.data?.length ?? 0;
+    const workoutsCompletedThisWeek = completedWorkoutsResult.data?.length ?? 0;
+    const workoutsRemainingThisWeek = Math.max(workoutsScheduledThisWeek - workoutsCompletedThisWeek, 0);
+
     setClient(clientResult.data as ClientRecord);
     setTasks((tasksResult.data ?? []) as AssignedTaskRecord[]);
     setSubmissions((submissionsResult.data ?? []) as SubmissionRecord[]);
+    setSnapshot({
+      weekStart: weekRange.weekStartDate,
+      weekEnd: weekRange.weekEndDate,
+      workoutsScheduledThisWeek,
+      workoutsCompletedThisWeek,
+      workoutsRemainingThisWeek,
+      reviewsNeedingAction: reviewCountResult.count ?? 0,
+      latestFeedback: ((latestFeedbackResult.data ?? [])[0] as LatestFeedbackRecord | undefined) ?? null,
+    });
     setIsLoading(false);
   };
 
@@ -227,6 +385,14 @@ export default function ClientProfilePage() {
     return `/coach/submissions/${submission.id}`;
   };
 
+  const getNextAction = () => {
+    if (!client?.user_id) return 'Invite client to create their account';
+    if (snapshot.reviewsNeedingAction > 0) return 'Review latest client submission';
+    if (snapshot.workoutsScheduledThisWeek === 0) return 'Schedule this week\'s training';
+    if (snapshot.workoutsRemainingThisWeek > 0) return 'Monitor remaining scheduled workouts';
+    return 'Send feedback or plan next progression';
+  };
+
   if (isLoading) {
     return (
       <div className="p-6 md:p-8">
@@ -314,6 +480,102 @@ export default function ClientProfilePage() {
       </div>
 
       <div className="space-y-8">
+        <div>
+          <SectionHeader title="CLIENT SNAPSHOT" accent />
+          <Card>
+            <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <p className="text-xs font-bold uppercase text-gray-500">Current week</p>
+                <p className="text-sm font-semibold text-[#000000]">
+                  {formatDate(snapshot.weekStart)} → {formatDate(snapshot.weekEnd)}
+                </p>
+              </div>
+              <div className="rounded-xl bg-black px-4 py-3 text-white">
+                <p className="text-xs font-bold uppercase text-gray-400">Next action</p>
+                <p className="text-sm font-bold uppercase">{getNextAction()}</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+              <SnapshotMetric
+                label="Account"
+                value={client.user_id ? 'Linked' : 'Invite'}
+                helper={client.user_id ? 'Client account connected' : 'Invite still needed'}
+              />
+              <SnapshotMetric
+                label="Scheduled"
+                value={snapshot.workoutsScheduledThisWeek}
+                helper="Workouts this week"
+              />
+              <SnapshotMetric
+                label="Completed"
+                value={snapshot.workoutsCompletedThisWeek}
+                helper={`${snapshot.workoutsRemainingThisWeek} remaining`}
+              />
+              <SnapshotMetric
+                label="Needs review"
+                value={snapshot.reviewsNeedingAction}
+                helper="Open coach actions"
+              />
+            </div>
+
+            <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                <p className="text-xs font-bold uppercase text-gray-500">Latest feedback</p>
+                {snapshot.latestFeedback ? (
+                  <div className="mt-2 space-y-2">
+                    <p className="text-sm font-bold text-[#000000]">Sent {formatDate(snapshot.latestFeedback.feedback_date)}</p>
+                    <p className="text-sm text-gray-700">
+                      <span className="font-semibold">Main focus:</span>{' '}
+                      {snapshot.latestFeedback.main_focus || 'Not recorded'}
+                    </p>
+                    <p className="text-sm text-gray-700">
+                      <span className="font-semibold">Agreed action:</span>{' '}
+                      {snapshot.latestFeedback.agreed_action || 'Not recorded'}
+                    </p>
+                  </div>
+                ) : (
+                  <p className="mt-2 text-sm text-gray-600">No feedback sent yet.</p>
+                )}
+              </div>
+
+              <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                <p className="text-xs font-bold uppercase text-gray-500">Current coaching focus</p>
+                <p className="mt-2 text-sm font-semibold text-[#000000]">
+                  {client.current_focus || 'No current focus set'}
+                </p>
+                <p className="mt-2 text-sm text-gray-700">
+                  <span className="font-semibold">Next review:</span> {formatDate(client.next_review_date)}
+                </p>
+              </div>
+            </div>
+          </Card>
+        </div>
+
+        <div>
+          <SectionHeader title="FUTURE PERFORMANCE TRACKING" accent />
+          <Card>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+              <FutureAnalyticsCard
+                title="Exercise progress"
+                description="Interactive lift-specific graphs for load, reps, estimated strength, and progression history."
+              />
+              <FutureAnalyticsCard
+                title="Volume trend"
+                description="Weekly hard sets, total load, and training density by muscle group or movement pattern."
+              />
+              <FutureAnalyticsCard
+                title="Bodyweight trend"
+                description="Client bodyweight, adherence, and nutrition trend overlays for coaching decisions."
+              />
+              <FutureAnalyticsCard
+                title="Performance timeline"
+                description="Major PRs, missed sessions, pain reports, and coach feedback shown as a single timeline."
+              />
+            </div>
+          </Card>
+        </div>
+
         <div>
           <SectionHeader title="CURRENT FOCUS" accent />
           <Card variant="dark">
