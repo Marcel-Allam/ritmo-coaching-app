@@ -46,6 +46,14 @@ export default function LoginPage() {
     setIsCapsLockOn(event.getModifierState('CapsLock'));
   };
 
+  const getReadableAuthError = (message: string) => {
+    if (message.toLowerCase().includes('invalid login credentials')) {
+      return 'Invalid login credentials. Check your email, password, and Caps Lock.';
+    }
+
+    return message;
+  };
+
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -54,7 +62,7 @@ export default function LoginPage() {
     try {
       const { error: signInError } = await signIn(email, password);
       if (signInError) {
-        setError(signInError.message);
+        setError(getReadableAuthError(signInError.message));
       }
     } catch (err) {
       setError('An error occurred. Please try again.');
@@ -87,7 +95,7 @@ export default function LoginPage() {
         inviteToken
       );
       if (signUpError) {
-        setError(signUpError.message);
+        setError(getReadableAuthError(signUpError.message));
       } else {
         setError(null);
         // Signup successful, user should be logged in now
