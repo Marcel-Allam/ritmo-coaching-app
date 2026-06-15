@@ -15,7 +15,10 @@ interface FormData {
   workoutDate: string;
   sessionName: string;
   rpe: number;
+  energyRating: number;
   volumeCompleted: boolean;
+  painReported: boolean;
+  painNotes: string;
   notes: string;
 }
 
@@ -25,14 +28,16 @@ type ClientRecord = {
 };
 
 const RatingButtons = ({
+  label,
   value,
   onChange,
 }: {
+  label: string;
   value: number;
   onChange: (val: number) => void;
 }) => (
   <div className="mb-6">
-    <label className="block text-sm font-semibold uppercase mb-3">RPE (1-10)</label>
+    <label className="block text-sm font-semibold uppercase mb-3">{label}</label>
     <div className="flex gap-2 flex-wrap">
       {Array.from({ length: 10 }, (_, i) => i + 1).map((num) => (
         <button
@@ -66,7 +71,10 @@ export default function WorkoutCheckinPage() {
     workoutDate: '',
     sessionName: '',
     rpe: 0,
+    energyRating: 0,
     volumeCompleted: false,
+    painReported: false,
+    painNotes: '',
     notes: '',
   });
 
@@ -114,10 +122,20 @@ export default function WorkoutCheckinPage() {
     }));
   };
 
-  const handleCheckboxChange = (e: ChangeEvent<HTMLInputElement>) => {
+  const handleVolumeCheckboxChange = (e: ChangeEvent<HTMLInputElement>) => {
     setFormData((prev) => ({
       ...prev,
       volumeCompleted: e.target.checked,
+    }));
+  };
+
+  const handlePainCheckboxChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const isPainReported = e.target.checked;
+
+    setFormData((prev) => ({
+      ...prev,
+      painReported: isPainReported,
+      painNotes: isPainReported ? prev.painNotes : '',
     }));
   };
 
@@ -144,6 +162,16 @@ export default function WorkoutCheckinPage() {
       return;
     }
 
+    if (formData.energyRating < 1 || formData.energyRating > 10) {
+      setMessage('Select an energy rating from 1 to 10.');
+      return;
+    }
+
+    if (formData.painReported && !formData.painNotes.trim()) {
+      setMessage('Add a short pain note so your coach knows what happened.');
+      return;
+    }
+
     setSaving(true);
     setMessage(null);
     setIsSuccess(false);
@@ -165,10 +193,14 @@ export default function WorkoutCheckinPage() {
 
     const assignedTaskId = taskData?.[0]?.id ?? null;
     const notes = formData.notes.trim();
+    const painNotes = formData.painNotes.trim();
 
-    // Determine if coach follow-up is required: high RPE (8+) or incomplete volume.
-    // Until pain/energy fields are added to the form, these serve as basic indicators.
-    const followupRequired = formData.rpe >= 8 || !formData.volumeCompleted;
+    // Determine if coach follow-up is required from key safety/recovery indicators.
+    const followupRequired =
+      formData.rpe >= 8 ||
+      formData.energyRating <= 3 ||
+      formData.painReported ||
+      !formData.volumeCompleted;
 
     // Insert workout-specific data into the dedicated workout_checkins table.
     // This maintains detailed exercise history with specialized fields.
@@ -178,9 +210,9 @@ export default function WorkoutCheckinPage() {
       workout_name: formData.sessionName.trim(),
       completed: formData.volumeCompleted,
       difficulty_rating: formData.rpe,
-      energy_rating: null,
-      pain_reported: false,
-      pain_notes: null,
+      energy_rating: formData.energyRating,
+      pain_reported: formData.painReported,
+      pain_notes: formData.painReported ? painNotes : null,
       workout_notes: notes || null,
       review_status: 'new',
     });
@@ -196,7 +228,10 @@ export default function WorkoutCheckinPage() {
       `Workout date: ${formData.workoutDate}`,
       `Session: ${formData.sessionName.trim()}`,
       `RPE: ${formData.rpe}/10`,
+      `Energy: ${formData.energyRating}/10`,
       `Volume completed: ${formData.volumeCompleted ? 'Yes' : 'No'}`,
+      `Pain reported: ${formData.painReported ? 'Yes' : 'No'}`,
+      `Pain notes: ${formData.painReported ? painNotes : 'Not reported'}`,
       `Notes: ${notes || 'Not provided'}`,
     ].join('\n');
 
@@ -292,6 +327,7 @@ export default function WorkoutCheckinPage() {
             />
 
             <RatingButtons
+              label="RPE (1-10)"
               value={formData.rpe}
               onChange={(val) =>
                 setFormData((prev) => ({
@@ -301,19 +337,53 @@ export default function WorkoutCheckinPage() {
               }
             />
 
-            <div className="mb-6">
+            <RatingButtons
+              label="Energy Rating (1-10)"
+              value={formData.energyRating}
+              onChange={(val) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  energyRating: val,
+                }))
+              }
+            />
+
+            <div className="mb-6 space-y-4">
               <label className="flex items-center gap-3 cursor-pointer">
                 <input
                   type="checkbox"
                   checked={formData.volumeCompleted}
-                  onChange={handleCheckboxChange}
+                  onChange={handleVolumeCheckboxChange}
                   className="w-6 h-6 rounded border-2 border-gray-300 cursor-pointer accent-[#FA0201]"
                 />
                 <span className="text-sm font-semibold uppercase">
                   Volume Completed
                 </span>
               </label>
+
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={formData.painReported}
+                  onChange={handlePainCheckboxChange}
+                  className="w-6 h-6 rounded border-2 border-gray-300 cursor-pointer accent-[#FA0201]"
+                />
+                <span className="text-sm font-semibold uppercase">
+                  Pain Reported
+                </span>
+              </label>
             </div>
+
+            {formData.painReported && (
+              <Textarea
+                label="PAIN NOTES"
+                name="painNotes"
+                placeholder="Where was the pain, when did it happen, and how severe was it?"
+                value={formData.painNotes}
+                onChange={handleInputChange}
+                required
+              />
+            )}
 
             <Textarea
               label="NOTES"
