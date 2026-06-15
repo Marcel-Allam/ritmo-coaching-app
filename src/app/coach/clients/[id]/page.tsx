@@ -452,6 +452,12 @@ export default function ClientProfilePage() {
               Exercise Progress
             </Link>
             <Link
+              href={`/coach/clients/${clientId}/bodyweight`}
+              className="rounded-lg bg-white px-4 py-2 text-sm font-bold uppercase text-[#000000] border border-gray-300 hover:bg-gray-100"
+            >
+              Bodyweight Trend
+            </Link>
+            <Link
               href="/coach/clients"
               className="text-sm font-semibold text-[#FA0201] uppercase hover:underline"
             >
@@ -563,14 +569,22 @@ export default function ClientProfilePage() {
           <Card>
             <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <p className="text-sm text-gray-700">
-                Exercise progress tracking is now live. More analytics will be layered in as the data set grows.
+                Exercise and bodyweight tracking are now live. More analytics will be layered in as the data set grows.
               </p>
-              <Link
-                href={`/coach/clients/${clientId}/progress`}
-                className="rounded-lg bg-[#FA0201] px-4 py-3 text-sm font-bold uppercase text-white hover:bg-red-700"
-              >
-                Open Exercise Progress
-              </Link>
+              <div className="flex flex-col gap-2 md:flex-row">
+                <Link
+                  href={`/coach/clients/${clientId}/progress`}
+                  className="rounded-lg bg-[#FA0201] px-4 py-3 text-sm font-bold uppercase text-white hover:bg-red-700"
+                >
+                  Open Exercise Progress
+                </Link>
+                <Link
+                  href={`/coach/clients/${clientId}/bodyweight`}
+                  className="rounded-lg bg-black px-4 py-3 text-sm font-bold uppercase text-white hover:bg-gray-900"
+                >
+                  Open Bodyweight Trend
+                </Link>
+              </div>
             </div>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
               <FutureAnalyticsCard
