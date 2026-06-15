@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { Card } from '@/components/ui/card';
@@ -17,7 +17,7 @@ interface SubmissionRecord {
   submitted_at: string;
   answer_value: number | null;
   answer_text: string | null;
-  review_status: string;
+  review_status: ReviewStatus;
   followup_required: boolean;
   coach_note: string | null;
 }
@@ -29,6 +29,16 @@ interface ClientRecord {
 }
 
 type WeeklyCallOutcome = 'complete' | 'missed';
+type ReviewStatus = 'new' | 'reviewed' | 'needs_feedback' | 'needs_action' | 'flagged' | 'resolved';
+type ActionPriority = 'low' | 'medium' | 'high';
+type CoachActionType = 'review_submission' | 'send_feedback' | 'adjust_plan' | 'check_in_client' | 'resolve_issue';
+
+interface ActionFormState {
+  actionType: CoachActionType;
+  priority: ActionPriority;
+  dueDate: string;
+  description: string;
+}
 
 const availabilityPrompt = `Set your training days now.\n\nWhen your workouts have a clear day attached, they stop being “I’ll fit it in” and become part of the plan. Pick the days you can realistically train next week.`;
 
@@ -49,12 +59,39 @@ const formatDate = (value: string | null) => {
 };
 
 const todayDate = () => new Date().toISOString().slice(0, 10);
+
 const dateInDays = (days: number) => {
   const date = new Date();
   date.setDate(date.getDate() + days);
   return date.toISOString().slice(0, 10);
 };
+
 const formatSubmissionType = (value: string) => value.replaceAll('_', ' ');
+
+const formatStatus = (value: string) => value.replaceAll('_', ' ');
+
+const statusVariant = (status: ReviewStatus) => {
+  if (status === 'reviewed' || status === 'resolved') return 'success';
+  if (status === 'needs_feedback' || status === 'needs_action') return 'warning';
+  if (status === 'flagged') return 'danger';
+  return 'default';
+};
+
+const defaultActionForm: ActionFormState = {
+  actionType: 'check_in_client',
+  priority: 'medium',
+  dueDate: todayDate(),
+  description: '',
+};
+
+const suggestedActionCopy: Record<string, string> = {
+  weekly_checkin: 'Review this weekly check-in and decide what needs to change before the next coaching touchpoint.',
+  nutrition: 'Review nutrition adherence, identify the main bottleneck, and decide whether feedback or a plan adjustment is needed.',
+  bodyweight: 'Review bodyweight trend context and decide whether to adjust calories, expectations, or follow-up questions.',
+  workout_checkin: 'Review the workout notes and decide whether load, volume, or exercise selection needs adjusting.',
+  key_lift: 'Review the top-set performance and decide whether progression should continue, hold, or deload.',
+  training_availability: 'Use this availability to schedule the next workouts.',
+};
 
 export default function CoachSubmissionReviewPage() {
   const params = useParams();
@@ -69,11 +106,19 @@ export default function CoachSubmissionReviewPage() {
   const [agreedAction, setAgreedAction] = useState('');
   const [planChange, setPlanChange] = useState('');
   const [nextReviewDate, setNextReviewDate] = useState('');
+  const [actionForm, setActionForm] = useState<ActionFormState>(defaultActionForm);
   const [isLoading, setIsLoading] = useState(true);
   const [isSavingReview, setIsSavingReview] = useState(false);
+  const [isSavingStatus, setIsSavingStatus] = useState(false);
   const [isSendingFeedback, setIsSendingFeedback] = useState(false);
+  const [isCreatingAction, setIsCreatingAction] = useState(false);
   const [isCreatingAvailabilityTask, setIsCreatingAvailabilityTask] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+
+  const suggestedAction = useMemo(() => {
+    if (!submission) return '';
+    return suggestedActionCopy[submission.submission_type] ?? 'Review this submission and decide the next coach action.';
+  }, [submission]);
 
   const loadSubmission = async () => {
     if (!isSupabaseConfigured) {
@@ -99,6 +144,10 @@ export default function CoachSubmissionReviewPage() {
     const loadedSubmission = submissionData as SubmissionRecord;
     setSubmission(loadedSubmission);
     setCoachNote(loadedSubmission.coach_note || '');
+    setActionForm((current) => ({
+      ...current,
+      description: suggestedActionCopy[loadedSubmission.submission_type] ?? current.description,
+    }));
 
     const { data: clientData, error: clientError } = await supabase
       .from('clients')
@@ -117,35 +166,145 @@ export default function CoachSubmissionReviewPage() {
     loadSubmission();
   }, [submissionId]);
 
+  const updateSubmissionReview = async ({
+    status,
+    note,
+    followupRequired,
+  }: {
+    status: ReviewStatus;
+    note?: string | null;
+    followupRequired?: boolean;
+  }) => {
+    if (!submission) return { error: null };
+
+    const supabase = createClient();
+    const payload: Record<string, string | boolean | null> = {
+      review_status: status,
+    };
+
+    if (note !== undefined) payload.coach_note = note;
+    if (followupRequired !== undefined) payload.followup_required = followupRequired;
+
+    const result = await supabase
+      .from('task_submissions')
+      .update(payload)
+      .eq('id', submission.id);
+
+    if (!result.error) {
+      setSubmission({
+        ...submission,
+        review_status: status,
+        coach_note: note !== undefined ? note : submission.coach_note,
+        followup_required: followupRequired !== undefined ? followupRequired : submission.followup_required,
+      });
+    }
+
+    return result;
+  };
+
   const markReviewed = async () => {
     if (!submission) return;
 
     setIsSavingReview(true);
     setMessage(null);
 
-    const supabase = createClient();
+    const result = await updateSubmissionReview({
+      status: 'reviewed',
+      note: coachNote.trim() || null,
+      followupRequired: false,
+    });
 
-    const { error } = await supabase
-      .from('task_submissions')
-      .update({
-        review_status: 'reviewed',
-        coach_note: coachNote.trim() || null,
-      })
-      .eq('id', submission.id);
-
-    if (error) {
-      setMessage(error.message);
+    if (result.error) {
+      setMessage(result.error.message);
       setIsSavingReview(false);
       return;
     }
 
-    setSubmission({
-      ...submission,
-      review_status: 'reviewed',
-      coach_note: coachNote.trim() || null,
-    });
     setMessage('Submission marked as reviewed.');
     setIsSavingReview(false);
+  };
+
+  const setReviewStatus = async (status: ReviewStatus) => {
+    if (!submission) return;
+
+    setIsSavingStatus(true);
+    setMessage(null);
+
+    const result = await updateSubmissionReview({
+      status,
+      note: coachNote.trim() || null,
+      followupRequired: ['needs_feedback', 'needs_action', 'flagged'].includes(status),
+    });
+
+    if (result.error) {
+      setMessage(result.error.message);
+      setIsSavingStatus(false);
+      return;
+    }
+
+    setMessage(`Submission set to ${formatStatus(status)}.`);
+    setIsSavingStatus(false);
+  };
+
+  const createCoachAction = async () => {
+    if (!submission || !client) return;
+
+    if (!actionForm.description.trim()) {
+      setMessage('Add an action description before creating an action.');
+      return;
+    }
+
+    setIsCreatingAction(true);
+    setMessage(null);
+
+    const supabase = createClient();
+    const actionNote = [
+      `Created from ${formatSubmissionType(submission.submission_type)} submission.`,
+      submission.answer_text ? `Submission summary:\n${submission.answer_text}` : null,
+      coachNote.trim() ? `Private coach note:\n${coachNote.trim()}` : null,
+    ]
+      .filter(Boolean)
+      .join('\n\n');
+
+    const { error: actionError } = await supabase.from('coach_actions').insert({
+      client_id: client.id,
+      action_type: actionForm.actionType,
+      description: actionForm.description.trim(),
+      priority: actionForm.priority,
+      due_date: actionForm.dueDate || null,
+      status: 'new',
+      notes: actionNote,
+    });
+
+    if (actionError) {
+      setMessage(actionError.message);
+      setIsCreatingAction(false);
+      return;
+    }
+
+    const mergedCoachNote = [
+      coachNote.trim(),
+      `Coach action created: ${actionForm.description.trim()}`,
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    const result = await updateSubmissionReview({
+      status: 'needs_action',
+      note: mergedCoachNote || null,
+      followupRequired: true,
+    });
+
+    if (result.error) {
+      setMessage(result.error.message);
+      setIsCreatingAction(false);
+      return;
+    }
+
+    setCoachNote(mergedCoachNote);
+    setActionForm(defaultActionForm);
+    setMessage('Coach action created and submission moved to needs action.');
+    setIsCreatingAction(false);
   };
 
   const createTrainingAvailabilityTask = async (outcome: WeeklyCallOutcome) => {
@@ -200,22 +359,19 @@ export default function CoachSubmissionReviewPage() {
     }
 
     const mergedCoachNote = [coachNote.trim(), privateNote].filter(Boolean).join('\n');
-    const { error: reviewError } = await supabase
-      .from('task_submissions')
-      .update({
-        review_status: 'reviewed',
-        coach_note: mergedCoachNote || null,
-      })
-      .eq('id', submission.id);
+    const reviewResult = await updateSubmissionReview({
+      status: 'reviewed',
+      note: mergedCoachNote || null,
+      followupRequired: false,
+    });
 
-    if (reviewError) {
-      setMessage(reviewError.message);
+    if (reviewResult.error) {
+      setMessage(reviewResult.error.message);
       setIsCreatingAvailabilityTask(false);
       return;
     }
 
     setCoachNote(mergedCoachNote);
-    setSubmission({ ...submission, review_status: 'reviewed', coach_note: mergedCoachNote || null });
     setMessage(outcome === 'complete'
       ? 'Weekly call marked complete. Training availability task sent to client.'
       : 'Weekly call marked missed. Training availability task still sent to client.'
@@ -254,18 +410,18 @@ export default function CoachSubmissionReviewPage() {
       return;
     }
 
-    const { error: reviewError } = await supabase
-      .from('task_submissions')
-      .update({ review_status: 'reviewed', coach_note: coachNote.trim() || null })
-      .eq('id', submission.id);
+    const result = await updateSubmissionReview({
+      status: 'reviewed',
+      note: coachNote.trim() || null,
+      followupRequired: false,
+    });
 
-    if (reviewError) {
-      setMessage(reviewError.message);
+    if (result.error) {
+      setMessage(result.error.message);
       setIsSendingFeedback(false);
       return;
     }
 
-    setSubmission({ ...submission, review_status: 'reviewed', coach_note: coachNote.trim() || null });
     setMainWin('');
     setMainFocus('');
     setAgreedAction('');
@@ -310,8 +466,8 @@ export default function CoachSubmissionReviewPage() {
             {client?.full_name || 'Client'} - {formatDate(submission.submitted_at)}
           </p>
         </div>
-        <Badge variant={submission.review_status === 'reviewed' ? 'success' : 'default'}>
-          {submission.review_status}
+        <Badge variant={statusVariant(submission.review_status) as any}>
+          {formatStatus(submission.review_status)}
         </Badge>
       </div>
 
@@ -338,6 +494,88 @@ export default function CoachSubmissionReviewPage() {
               <pre className="whitespace-pre-wrap text-sm text-gray-800 font-sans">
                 {submission.answer_text || 'No written answers saved.'}
               </pre>
+            </div>
+          </Card>
+        </div>
+
+        <div>
+          <SectionHeader title="REVIEW DECISION" accent />
+          <Card>
+            <p className="mb-4 text-sm text-gray-700">
+              Decide what this submission needs. This keeps the queue useful without forcing a full feedback note every time.
+            </p>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+              <Button type="button" variant="outline" isLoading={isSavingStatus} onClick={() => setReviewStatus('needs_feedback')}>
+                Needs feedback
+              </Button>
+              <Button type="button" variant="outline" isLoading={isSavingStatus} onClick={() => setReviewStatus('needs_action')}>
+                Needs action
+              </Button>
+              <Button type="button" variant="outline" isLoading={isSavingStatus} onClick={() => setReviewStatus('flagged')}>
+                Flag
+              </Button>
+              <Button type="button" variant="outline" isLoading={isSavingStatus} onClick={() => setReviewStatus('resolved')}>
+                Resolve
+              </Button>
+            </div>
+          </Card>
+        </div>
+
+        <div>
+          <SectionHeader title="CREATE COACH ACTION" accent />
+          <Card>
+            <p className="mb-4 text-sm text-gray-700">
+              Turn this submission into a clear action in the coach action queue. Use this when a submission needs more than simple review.
+            </p>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              <div>
+                <label className="mb-2 block text-xs font-bold uppercase text-gray-600">Action Type</label>
+                <select
+                  value={actionForm.actionType}
+                  onChange={(event) => setActionForm((current) => ({ ...current, actionType: event.target.value as CoachActionType }))}
+                  className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm text-[#000000]"
+                >
+                  <option value="check_in_client">Check in client</option>
+                  <option value="send_feedback">Send feedback</option>
+                  <option value="adjust_plan">Adjust plan</option>
+                  <option value="resolve_issue">Resolve issue</option>
+                  <option value="review_submission">Review submission</option>
+                </select>
+              </div>
+              <div>
+                <label className="mb-2 block text-xs font-bold uppercase text-gray-600">Priority</label>
+                <select
+                  value={actionForm.priority}
+                  onChange={(event) => setActionForm((current) => ({ ...current, priority: event.target.value as ActionPriority }))}
+                  className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm text-[#000000]"
+                >
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                </select>
+              </div>
+              <div>
+                <label className="mb-2 block text-xs font-bold uppercase text-gray-600">Due Date</label>
+                <input
+                  type="date"
+                  value={actionForm.dueDate}
+                  onChange={(event) => setActionForm((current) => ({ ...current, dueDate: event.target.value }))}
+                  className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm text-[#000000]"
+                />
+              </div>
+            </div>
+            <div className="mt-4">
+              <label className="mb-2 block text-xs font-bold uppercase text-gray-600">Action Description</label>
+              <textarea
+                value={actionForm.description || suggestedAction}
+                onChange={(event) => setActionForm((current) => ({ ...current, description: event.target.value }))}
+                className="min-h-28 w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm text-[#000000]"
+              />
+            </div>
+            <div className="mt-4 flex justify-end">
+              <Button type="button" onClick={createCoachAction} isLoading={isCreatingAction} className="bg-[#FA0201] hover:bg-red-700">
+                Create action
+              </Button>
             </div>
           </Card>
         </div>
