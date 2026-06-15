@@ -15,20 +15,21 @@ export default function LoginPage() {
   const [role, setRole] = useState<'coach' | 'client'>('client');
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isCapsLockOn, setIsCapsLockOn] = useState(false);
 
   useEffect(() => {
-  const searchParams = new URLSearchParams(window.location.search);
-  const inviteToken = searchParams.get('invite');
-  const mode = searchParams.get('mode');
+    const searchParams = new URLSearchParams(window.location.search);
+    const inviteToken = searchParams.get('invite');
+    const mode = searchParams.get('mode');
 
-  if (inviteToken) {
-    setRole('client');
-  }
+    if (inviteToken) {
+      setRole('client');
+    }
 
-  if (inviteToken && mode === 'signup') {
-    setIsSignUp(true);
-  }
-}, []);
+    if (inviteToken && mode === 'signup') {
+      setIsSignUp(true);
+    }
+  }, []);
 
   // Redirect if already logged in
   useEffect(() => {
@@ -40,6 +41,10 @@ export default function LoginPage() {
       }
     }
   }, [user, profile, loading, router]);
+
+  const updateCapsLockState = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    setIsCapsLockOn(event.getModifierState('CapsLock'));
+  };
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -172,10 +177,18 @@ export default function LoginPage() {
                 placeholder="Enter your password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                onKeyDown={updateCapsLockState}
+                onKeyUp={updateCapsLockState}
+                onBlur={() => setIsCapsLockOn(false)}
                 disabled={isSubmitting}
                 required
                 className="w-full px-4 py-2 bg-white text-black rounded border border-gray-300 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-red-600 disabled:opacity-50"
               />
+              {isCapsLockOn && (
+                <div className="mt-2 rounded border border-yellow-500 bg-yellow-500/10 px-3 py-2 text-sm font-semibold text-yellow-300">
+                  Caps Lock is on. Passwords are case-sensitive.
+                </div>
+              )}
             </div>
 
             {/* Role Selector (Sign Up Only) */}
