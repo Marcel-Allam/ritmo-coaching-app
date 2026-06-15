@@ -194,13 +194,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       // Create the RITMO profile row that extends the Supabase auth user.
       // This insert must stay aligned with the live public.profiles table schema.
-      const { error: profileError } = await supabase.from('profiles').insert({
+      const profilePayload: UserProfile = {
         id: newUser.id,
         email: normalisedEmail,
         full_name: fullName,
         role,
         created_at: new Date().toISOString(),
-      });
+      };
+
+      const { error: profileError } = await supabase.from('profiles').insert(profilePayload);
 
       if (profileError) {
         console.error('Error creating profile:', profileError);
@@ -220,6 +222,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return { error: inviteError };
         }
       }
+
+      // The auth listener can fire before the profile row exists, leaving the login page
+      // waiting for profile state and preventing the post-signup redirect. Set both pieces
+      // of auth state immediately after the profile and invite claim are complete.
+      setUser(newUser);
+      setProfile(profilePayload);
 
       return { error: null };
     } catch (error) {
