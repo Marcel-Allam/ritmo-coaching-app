@@ -458,6 +458,12 @@ export default function ClientProfilePage() {
               Bodyweight Trend
             </Link>
             <Link
+              href={`/coach/clients/${clientId}/nutrition`}
+              className="rounded-lg bg-[#FA0201] px-4 py-2 text-sm font-bold uppercase text-white hover:bg-red-700"
+            >
+              Nutrition
+            </Link>
+            <Link
               href={`/coach/clients/${clientId}/timeline`}
               className="rounded-lg bg-[#FA0201] px-4 py-2 text-sm font-bold uppercase text-white hover:bg-red-700"
             >
@@ -593,7 +599,7 @@ export default function ClientProfilePage() {
           <Card>
             <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <p className="text-sm text-gray-700">
-                Exercise, bodyweight, timeline, adherence and risk tracking are now live. More analytics will be layered in as the data set grows.
+                Exercise, bodyweight, nutrition, timeline, adherence and risk tracking are now live. More analytics will be layered in as the data set grows.
               </p>
               <div className="flex flex-col gap-2 md:flex-row">
                 <Link
@@ -607,6 +613,12 @@ export default function ClientProfilePage() {
                   className="rounded-lg bg-black px-4 py-3 text-sm font-bold uppercase text-white hover:bg-gray-900"
                 >
                   Open Bodyweight Trend
+                </Link>
+                <Link
+                  href={`/coach/clients/${clientId}/nutrition`}
+                  className="rounded-lg bg-[#FA0201] px-4 py-3 text-sm font-bold uppercase text-white hover:bg-red-700"
+                >
+                  Open Nutrition
                 </Link>
                 <Link
                   href={`/coach/clients/${clientId}/timeline`}
