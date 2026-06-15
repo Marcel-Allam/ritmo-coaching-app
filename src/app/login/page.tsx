@@ -125,7 +125,7 @@ export default function LoginPage() {
           </h2>
 
           {error && (
-            <div className="mb-4 p-3 bg-red-600 bg-opacity-10 border border-red-600 rounded text-red-500 text-sm">
+            <div className="mb-4 p-3 bg-red-600 bg-opacity-10 border border-red-600 rounded text-white text-sm font-semibold">
               {error}
             </div>
           )}
