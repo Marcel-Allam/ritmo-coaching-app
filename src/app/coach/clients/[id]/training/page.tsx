@@ -241,16 +241,16 @@ export default function CoachClientTrainingPage() {
                 <div className="overflow-x-auto rounded-lg bg-gray-50 p-3">
                   <div className="grid min-w-[640px] grid-cols-[80px_1fr_1fr_2fr] gap-3 px-1 pb-2 text-xs font-bold uppercase text-gray-600">
                     <div />
-                    <p>Reps</p>
                     <p>Kg</p>
+                    <p>Reps</p>
                     <p>Notes</p>
                   </div>
                   <div className="space-y-3">
                     {exercise.sets.map((set, setIndex) => (
                       <div key={setIndex} className="grid min-w-[640px] grid-cols-[80px_1fr_1fr_2fr] items-center gap-3">
                         <p className="text-sm font-bold uppercase text-[#000000]">Set {setIndex + 1}</p>
-                        <Input value={set.targetReps} onChange={(e) => updateSet(exerciseIndex, setIndex, { targetReps: e.target.value })} placeholder="6-8" />
                         <Input type="number" step="0.5" value={set.targetWeightKg} onChange={(e) => updateSet(exerciseIndex, setIndex, { targetWeightKg: e.target.value })} />
+                        <Input value={set.targetReps} onChange={(e) => updateSet(exerciseIndex, setIndex, { targetReps: e.target.value })} placeholder="6-8" />
                         <Input value={set.notes} onChange={(e) => updateSet(exerciseIndex, setIndex, { notes: e.target.value })} />
                       </div>
                     ))}
