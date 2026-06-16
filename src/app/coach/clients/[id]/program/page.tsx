@@ -16,7 +16,7 @@ type ProgramRecord = { id: string; title: string; goal: string | null; status: s
 type WorkoutRecord = { id: string; program_id: string; title: string; scheduled_date: string | null; workout_order: number; status: string };
 type SessionRecord = { program_workout_id: string };
 type ExerciseCountRecord = { workout_id: string };
-type TemplateSet = { reps: string; weightKg?: number | null; notes?: string };
+type TemplateSet = { reps: string; weightKg?: number | null; rpe?: number | null; notes?: string };
 type TemplateExercise = { name: string; notes?: string; sets: TemplateSet[] };
 type ProgramTemplate = {
   id: string;
@@ -28,6 +28,7 @@ type ProgramTemplate = {
   instructions: string;
   exercises: TemplateExercise[];
 };
+type PrescribedSetForm = { reps: string; weightKg: string; rpe: string; notes: string };
 
 const templates: ProgramTemplate[] = [
   {
@@ -82,16 +83,25 @@ const formatDate = (value: string | null) => {
   return new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(value));
 };
 
+const numberOrNull = (value: string) => (value.trim() ? Number(value) : null);
 const statusForWorkout = (workout: WorkoutRecord, completedIds: Set<string>) => {
   if (completedIds.has(workout.id)) return 'completed';
   if (workout.scheduled_date) return 'scheduled';
   return 'unscheduled';
 };
+const statusVariant = (status: string) => (status === 'completed' ? 'success' : status === 'scheduled' ? 'default' : 'warning');
 
-const statusVariant = (status: string) => {
-  if (status === 'completed') return 'success';
-  if (status === 'scheduled') return 'default';
-  return 'warning';
+// Convert the selected template into editable prescription rows.
+// This keeps templates reusable while letting the coach manually prescribe load/RPE per client.
+const buildPrescriptionForm = (template: ProgramTemplate) => {
+  return template.exercises.map((exercise) =>
+    exercise.sets.map((set) => ({
+      reps: set.reps,
+      weightKg: typeof set.weightKg === 'number' ? set.weightKg.toString() : '',
+      rpe: typeof set.rpe === 'number' ? set.rpe.toString() : '',
+      notes: set.notes || '',
+    }))
+  );
 };
 
 export default function CoachClientProgramPage() {
@@ -108,6 +118,7 @@ export default function CoachClientProgramPage() {
   const [workoutTitle, setWorkoutTitle] = useState(templates[0].defaultWorkoutTitle);
   const [scheduledDate, setScheduledDate] = useState('');
   const [instructions, setInstructions] = useState(templates[0].instructions);
+  const [prescription, setPrescription] = useState<PrescribedSetForm[][]>(buildPrescriptionForm(templates[0]));
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -176,6 +187,16 @@ export default function CoachClientProgramPage() {
     setProgramTitle(template.defaultProgramTitle);
     setWorkoutTitle(template.defaultWorkoutTitle);
     setInstructions(template.instructions);
+    setPrescription(buildPrescriptionForm(template));
+  };
+
+  const updatePrescriptionSet = (exerciseIndex: number, setIndex: number, updates: Partial<PrescribedSetForm>) => {
+    setPrescription((current) =>
+      current.map((exerciseSets, currentExerciseIndex) => {
+        if (currentExerciseIndex !== exerciseIndex) return exerciseSets;
+        return exerciseSets.map((set, currentSetIndex) => (currentSetIndex === setIndex ? { ...set, ...updates } : set));
+      })
+    );
   };
 
   const assignTemplate = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -244,14 +265,14 @@ export default function CoachClientProgramPage() {
       }
 
       const exerciseId = (exerciseData as { id: string }).id;
-      const setRows = exercise.sets.map((set, setIndex) => ({
+      const setRows = (prescription[exerciseIndex] || []).map((set, setIndex) => ({
         exercise_id: exerciseId,
         set_order: setIndex + 1,
-        target_reps: set.reps,
-        target_weight_kg: typeof set.weightKg === 'number' ? set.weightKg : null,
-        target_rpe: null,
+        target_reps: set.reps.trim() || null,
+        target_weight_kg: numberOrNull(set.weightKg),
+        target_rpe: numberOrNull(set.rpe),
         target_rir: null,
-        notes: set.notes || null,
+        notes: set.notes.trim() || null,
       }));
 
       const { error: setsError } = await supabase.from('program_sets').insert(setRows);
@@ -262,7 +283,7 @@ export default function CoachClientProgramPage() {
       }
     }
 
-    setMessage('Programme workout assigned. The client can now see it in Hub and Start your workout.');
+    setMessage('Programme workout assigned with prescribed reps, KG and target RPE.');
     setSaving(false);
     setLoading(true);
     await loadPage();
@@ -277,7 +298,7 @@ export default function CoachClientProgramPage() {
         <div>
           <h1 className="text-3xl font-bold uppercase tracking-tight text-[#000000]">Client Program</h1>
           <p className="mt-1 text-sm text-gray-600">{client?.full_name}{client?.email ? ` • ${client.email}` : ''}</p>
-          <p className="mt-1 text-xs font-bold uppercase text-gray-500">Assign simple sessions now. Personalised progression rules come later.</p>
+          <p className="mt-1 text-xs font-bold uppercase text-gray-500">Assign sessions, prescribe starting loads, and keep progression rules for later.</p>
         </div>
         <div className="flex flex-col items-start gap-2 md:items-end">
           <Link href={`/coach/clients/${clientId}`} className="text-sm font-bold uppercase text-[#FA0201] hover:underline">Back to client</Link>
@@ -305,17 +326,28 @@ export default function CoachClientProgramPage() {
               <Input label="Workout title" value={workoutTitle} onChange={(event) => setWorkoutTitle(event.target.value)} required />
             </div>
             <Textarea label="Client-facing instructions" value={instructions} onChange={(event) => setInstructions(event.target.value)} />
+
             <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
               <div className="mb-3 flex flex-wrap items-center gap-2">
                 <Badge variant="default">{selectedTemplate.category}</Badge>
                 <p className="text-sm font-bold uppercase text-[#000000]">{selectedTemplate.name}</p>
               </div>
               <p className="mb-4 text-sm text-gray-700">{selectedTemplate.goal}</p>
-              <div className="space-y-3">
-                {selectedTemplate.exercises.map((exercise, index) => (
-                  <div key={`${exercise.name}-${index}`} className="rounded-lg bg-white p-3">
-                    <p className="text-sm font-bold uppercase text-[#000000]">{index + 1}. {exercise.name}</p>
-                    <p className="mt-1 text-xs text-gray-600">{exercise.sets.map((set) => set.reps).join(' / ')}</p>
+              <div className="space-y-4">
+                {selectedTemplate.exercises.map((exercise, exerciseIndex) => (
+                  <div key={`${exercise.name}-${exerciseIndex}`} className="rounded-lg bg-white p-4">
+                    <p className="text-sm font-bold uppercase text-[#000000]">{exerciseIndex + 1}. {exercise.name}</p>
+                    <div className="mt-3 space-y-3">
+                      {(prescription[exerciseIndex] || []).map((set, setIndex) => (
+                        <div key={`${exercise.name}-${setIndex}`} className="grid grid-cols-1 gap-3 md:grid-cols-[70px_1fr_1fr_1fr_2fr] md:items-end">
+                          <p className="pb-2 text-xs font-bold uppercase text-gray-500">Set {setIndex + 1}</p>
+                          <Input label="Reps" value={set.reps} onChange={(event) => updatePrescriptionSet(exerciseIndex, setIndex, { reps: event.target.value })} />
+                          <Input label="KG" type="number" step="0.5" value={set.weightKg} onChange={(event) => updatePrescriptionSet(exerciseIndex, setIndex, { weightKg: event.target.value })} placeholder="Optional" />
+                          <Input label="Target RPE" type="number" step="0.5" min="1" max="10" value={set.rpe} onChange={(event) => updatePrescriptionSet(exerciseIndex, setIndex, { rpe: event.target.value })} placeholder="Optional" />
+                          <Input label="Set notes" value={set.notes} onChange={(event) => updatePrescriptionSet(exerciseIndex, setIndex, { notes: event.target.value })} placeholder="Optional" />
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 ))}
               </div>
