@@ -23,6 +23,8 @@ interface ClientSettingsRecord {
   show_today_actions_card: boolean;
   show_upcoming_actions_card: boolean;
   show_latest_feedback_card: boolean;
+  bodyweight_enabled: boolean;
+  training_availability_enabled: boolean;
 }
 
 interface AssignedTaskRecord {
@@ -85,6 +87,8 @@ const defaultSettings: ClientSettingsRecord = {
   show_today_actions_card: true,
   show_upcoming_actions_card: true,
   show_latest_feedback_card: true,
+  bodyweight_enabled: true,
+  training_availability_enabled: true,
 };
 
 const formatDate = (value: string | null) => {
@@ -132,7 +136,7 @@ const getTaskHref = (taskType: string) => {
     training_availability: '/client/submit/training-availability',
   };
 
-  return routes[taskType] ?? '/client/submit';
+  return routes[taskType] ?? '/client/check-in';
 };
 
 const calculateWindowTrend = <T,>(
@@ -306,7 +310,7 @@ export default function ClientHub() {
       const [settingsResult, taskResult, submissionResult, feedbackResult, keyLiftResult, bodyweightResult, workoutResult] = await Promise.all([
         supabase
           .from('client_settings')
-          .select('show_calorie_target, show_key_lift_card, show_bodyweight_card, show_calorie_guideline_card, show_today_actions_card, show_upcoming_actions_card, show_latest_feedback_card')
+          .select('show_calorie_target, show_key_lift_card, show_bodyweight_card, show_calorie_guideline_card, show_today_actions_card, show_upcoming_actions_card, show_latest_feedback_card, bodyweight_enabled, training_availability_enabled')
           .eq('client_id', linkedClient.id)
           .maybeSingle(),
         supabase
@@ -430,9 +434,36 @@ export default function ClientHub() {
   const bodyweightFourWeek = calculateWindowTrend(bodyweightEntries, (entry) => entry.entry_date, (entry) => entry.bodyweight_kg, 28);
   const calorieGuideline = getCalorieGuideline(bodyweightFourWeek);
 
+  const weeklyCalendarActions = useMemo<ActionItem[]>(() => {
+    const actions: ActionItem[] = [];
+
+    if (settings.training_availability_enabled) {
+      actions.push({
+        id: 'weekly-training-availability',
+        title: 'Training availability',
+        description: 'Confirm the days you can train next week. You can configure when this reminder appears.',
+        href: '/client/submit/training-availability',
+        date: null,
+      });
+    }
+
+    if (settings.bodyweight_enabled) {
+      actions.push({
+        id: 'weekly-bodyweight',
+        title: 'Bodyweight check-in',
+        description: 'Log your weekly bodyweight. You can configure when this reminder appears.',
+        href: '/client/submit/nutrition-bodyweight',
+        date: null,
+      });
+    }
+
+    return actions;
+  }, [settings.training_availability_enabled, settings.bodyweight_enabled]);
+
   const todayActions = useMemo<ActionItem[]>(() => {
     const today = todayIso();
     const activeTaskActions = tasks
+      .filter((task) => !['training_availability', 'bodyweight'].includes(task.task_type))
       .filter((task) => !isTaskComplete(task) && task.end_date && task.end_date <= today)
       .map((task) => ({
         id: task.id,
@@ -458,6 +489,7 @@ export default function ClientHub() {
   const upcomingActions = useMemo<ActionItem[]>(() => {
     const today = todayIso();
     const upcomingTaskActions = tasks
+      .filter((task) => !['training_availability', 'bodyweight'].includes(task.task_type))
       .filter((task) => !isTaskComplete(task) && (!task.end_date || task.end_date > today))
       .map((task) => ({
         id: task.id,
@@ -568,6 +600,20 @@ export default function ClientHub() {
             </p>
           </Card>
         </section>
+
+        {weeklyCalendarActions.length > 0 && (
+          <section>
+            <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+              <SectionHeader title="WEEKLY CALENDAR" accent />
+              <Link href="/client/configure" className="mb-4 text-xs font-bold uppercase text-[#FA0201] hover:underline">
+                Configure reminders
+              </Link>
+            </div>
+            <div className="space-y-3">
+              {weeklyCalendarActions.map((item) => <HubActionCard key={item.id} item={item} />)}
+            </div>
+          </section>
+        )}
 
         {settings.show_today_actions_card && (
           <section>
