@@ -21,6 +21,10 @@ interface ClientRecord {
   full_name: string;
 }
 
+type ExerciseNote = { exerciseName: string; note: string };
+
+const EXERCISE_NOTES_MARKER = '[RITMO_EXERCISE_NOTES]';
+
 const formatDate = (value: string | null) => {
   if (!value) return 'Not set';
 
@@ -31,12 +35,42 @@ const formatDate = (value: string | null) => {
   }).format(new Date(value));
 };
 
+const parsePlanChange = (value: string | null) => {
+  if (!value) return { legacyPlanChange: '', exerciseNotes: [] as ExerciseNote[] };
+
+  if (!value.includes(EXERCISE_NOTES_MARKER)) {
+    return { legacyPlanChange: value.trim(), exerciseNotes: [] as ExerciseNote[] };
+  }
+
+  const [legacyPlanChange, rawExerciseNotes = ''] = value.split(EXERCISE_NOTES_MARKER);
+  const exerciseNotes = rawExerciseNotes
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => line.replace(/^-\s*/, ''))
+    .map((line) => {
+      const separatorIndex = line.indexOf(':');
+      if (separatorIndex === -1) return { exerciseName: 'Exercise', note: line };
+
+      return {
+        exerciseName: line.slice(0, separatorIndex).trim() || 'Exercise',
+        note: line.slice(separatorIndex + 1).trim(),
+      };
+    })
+    .filter((item) => item.note.length > 0);
+
+  return { legacyPlanChange: legacyPlanChange.trim(), exerciseNotes };
+};
+
 const buildPreview = (feedback: FeedbackRecord) => {
+  const parsedPlanChange = parsePlanChange(feedback.plan_change);
+
   return [
     feedback.main_win,
     feedback.main_focus,
     feedback.agreed_action,
-    feedback.plan_change,
+    parsedPlanChange.legacyPlanChange,
+    ...parsedPlanChange.exerciseNotes.map((item) => `${item.exerciseName}: ${item.note}`),
   ]
     .filter(Boolean)
     .join(' ');
@@ -130,6 +164,7 @@ export default function FeedbackPage() {
               {feedback.map((feedbackItem) => {
                 const isExpanded = expandedId === feedbackItem.id;
                 const preview = buildPreview(feedbackItem);
+                const parsedPlanChange = parsePlanChange(feedbackItem.plan_change);
 
                 return (
                   <Card
@@ -150,12 +185,25 @@ export default function FeedbackPage() {
                       <div className="h-px bg-gray-200 mb-3" />
 
                       {isExpanded ? (
-                        <div className="space-y-3 text-sm text-gray-700 leading-relaxed">
-                          {feedbackItem.main_win && <p><strong>Main win:</strong> {feedbackItem.main_win}</p>}
-                          {feedbackItem.main_focus && <p><strong>Main focus:</strong> {feedbackItem.main_focus}</p>}
-                          {feedbackItem.agreed_action && <p><strong>Agreed action:</strong> {feedbackItem.agreed_action}</p>}
-                          {feedbackItem.plan_change && <p><strong>Plan change:</strong> {feedbackItem.plan_change}</p>}
-                          <p className="text-xs font-semibold uppercase text-gray-500">Next review: {formatDate(feedbackItem.next_review_date)}</p>
+                        <div className="space-y-4 text-sm text-gray-700 leading-relaxed">
+                          {feedbackItem.main_win && <p><strong>Win:</strong> {feedbackItem.main_win}</p>}
+                          {feedbackItem.main_focus && <p><strong>What to improve:</strong> {feedbackItem.main_focus}</p>}
+                          {feedbackItem.agreed_action && <p><strong>Adjustment:</strong> {feedbackItem.agreed_action}</p>}
+                          {parsedPlanChange.legacyPlanChange && <p><strong>Plan change:</strong> {parsedPlanChange.legacyPlanChange}</p>}
+                          {parsedPlanChange.exerciseNotes.length > 0 && (
+                            <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                              <p className="mb-3 text-xs font-bold uppercase text-gray-500">Exercise notes</p>
+                              <div className="space-y-3">
+                                {parsedPlanChange.exerciseNotes.map((item, index) => (
+                                  <div key={`${item.exerciseName}-${index}`}>
+                                    <p className="text-xs font-bold uppercase text-[#000000]">{item.exerciseName}</p>
+                                    <p className="mt-1 whitespace-pre-line text-sm text-gray-700">{item.note}</p>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          {feedbackItem.next_review_date && <p className="text-xs font-semibold uppercase text-gray-500">Next review: {formatDate(feedbackItem.next_review_date)}</p>}
                         </div>
                       ) : (
                         <p className="text-sm text-gray-700 leading-relaxed line-clamp-3">
