@@ -5,10 +5,8 @@ import { useEffect, useState } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { SectionHeader } from '@/components/ui/section-header';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
-import { useAuth } from '@/lib/auth-context';
 
 type ClientRecord = { id: string; full_name: string; email: string | null };
 type SessionRecord = {
@@ -48,21 +46,6 @@ type AnalysisSetRecord = {
   completed: boolean;
   clientSetNotes: string | null;
 };
-type FeedbackForm = {
-  mainWin: string;
-  mainFocus: string;
-  agreedAction: string;
-  planChange: string;
-  nextReviewDate: string;
-};
-
-const blankFeedbackForm = (): FeedbackForm => ({
-  mainWin: '',
-  mainFocus: '',
-  agreedAction: '',
-  planChange: '',
-  nextReviewDate: '',
-});
 
 const formatDate = (value: string | null) => {
   if (!value) return 'Not set';
@@ -73,7 +56,6 @@ const formatDate = (value: string | null) => {
   return `${day}/${month}/${year}`;
 };
 
-const todayDate = () => new Date().toISOString().slice(0, 10);
 const formatWeight = (value: number | null) => (value === null || value === undefined ? '-' : `${value}kg`);
 const formatReps = (value: string | number | null) => (value === null || value === undefined || value === '' ? '-' : `${value} reps`);
 
@@ -98,7 +80,6 @@ export default function CoachWorkoutHistoryPage() {
   const searchParams = useSearchParams();
   const clientId = params.id as string;
   const requestedSessionId = searchParams.get('session');
-  const { user } = useAuth();
 
   const [client, setClient] = useState<ClientRecord | null>(null);
   const [sessions, setSessions] = useState<SessionRecord[]>([]);
@@ -106,11 +87,7 @@ export default function CoachWorkoutHistoryPage() {
   const [programs, setPrograms] = useState<Record<string, ProgramRecord>>({});
   const [analysisSetsBySession, setAnalysisSetsBySession] = useState<Record<string, AnalysisSetRecord[]>>({});
   const [expandedSessionId, setExpandedSessionId] = useState<string | null>(requestedSessionId);
-  const [feedbackForms, setFeedbackForms] = useState<Record<string, FeedbackForm>>({});
   const [loading, setLoading] = useState(true);
-  const [savingReviewSessionId, setSavingReviewSessionId] = useState<string | null>(null);
-  const [sendingFeedbackSessionId, setSendingFeedbackSessionId] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const loadHistory = async () => {
@@ -216,14 +193,8 @@ export default function CoachWorkoutHistoryPage() {
           : Promise.resolve({ data: [], error: null }),
       ]);
 
-      if (exerciseResult.error) {
-        setError(exerciseResult.error.message);
-        setLoading(false);
-        return;
-      }
-
-      if (prescribedSetResult.error) {
-        setError(prescribedSetResult.error.message);
+      if (exerciseResult.error || prescribedSetResult.error) {
+        setError(exerciseResult.error?.message || prescribedSetResult.error?.message || 'Could not load set details.');
         setLoading(false);
         return;
       }
@@ -276,137 +247,29 @@ export default function CoachWorkoutHistoryPage() {
     loadHistory();
   }, [clientId]);
 
-  const updateFeedbackForm = (sessionId: string, updates: Partial<FeedbackForm>) => {
-    setFeedbackForms((current) => ({
-      ...current,
-      [sessionId]: { ...(current[sessionId] || blankFeedbackForm()), ...updates },
-    }));
-  };
-
-  const markReviewed = async (sessionId: string) => {
-    setSavingReviewSessionId(sessionId);
-    setMessage(null);
-    setError(null);
-
-    const supabase = createClient();
-    const [sessionResult, submissionResult] = await Promise.all([
-      supabase.from('workout_sessions').update({ review_status: 'reviewed' }).eq('id', sessionId),
-      supabase
-        .from('task_submissions')
-        .update({ review_status: 'reviewed' })
-        .eq('submission_type', 'workout_session')
-        .eq('answer_text', sessionId),
-    ]);
-
-    if (sessionResult.error) {
-      setError(sessionResult.error.message);
-      setSavingReviewSessionId(null);
-      return;
-    }
-
-    if (submissionResult.error) {
-      setError(submissionResult.error.message);
-      setSavingReviewSessionId(null);
-      return;
-    }
-
-    setSessions((current) => current.map((session) => (
-      session.id === sessionId ? { ...session, review_status: 'reviewed' } : session
-    )));
-    setMessage('Workout marked as reviewed.');
-    setSavingReviewSessionId(null);
-  };
-
-  const sendWorkoutFeedback = async (sessionId: string) => {
-    if (!client) return;
-
-    const form = feedbackForms[sessionId] || blankFeedbackForm();
-    if (!form.mainWin.trim() && !form.mainFocus.trim() && !form.agreedAction.trim() && !form.planChange.trim()) {
-      setError('Add at least one feedback field before sending.');
-      return;
-    }
-
-    setSendingFeedbackSessionId(sessionId);
-    setMessage(null);
-    setError(null);
-
-    const supabase = createClient();
-    const { error: feedbackError } = await supabase.from('feedback_notes').insert({
-      client_id: client.id,
-      coach_id: user?.id ?? null,
-      feedback_date: todayDate(),
-      main_win: form.mainWin.trim() || null,
-      main_focus: form.mainFocus.trim() || null,
-      agreed_action: form.agreedAction.trim() || null,
-      plan_change: form.planChange.trim() || null,
-      next_review_date: form.nextReviewDate || null,
-      client_visible: true,
-    });
-
-    if (feedbackError) {
-      setError(feedbackError.message);
-      setSendingFeedbackSessionId(null);
-      return;
-    }
-
-    const [sessionResult, submissionResult] = await Promise.all([
-      supabase.from('workout_sessions').update({ review_status: 'reviewed' }).eq('id', sessionId),
-      supabase
-        .from('task_submissions')
-        .update({ review_status: 'reviewed' })
-        .eq('submission_type', 'workout_session')
-        .eq('answer_text', sessionId),
-    ]);
-
-    if (sessionResult.error) {
-      setError(sessionResult.error.message);
-      setSendingFeedbackSessionId(null);
-      return;
-    }
-
-    if (submissionResult.error) {
-      setError(submissionResult.error.message);
-      setSendingFeedbackSessionId(null);
-      return;
-    }
-
-    setSessions((current) => current.map((session) => (
-      session.id === sessionId ? { ...session, review_status: 'reviewed' } : session
-    )));
-    setFeedbackForms((current) => ({ ...current, [sessionId]: blankFeedbackForm() }));
-    setMessage('Workout feedback sent to client and session marked as reviewed.');
-    setSendingFeedbackSessionId(null);
-  };
-
-  if (loading) {
-    return <div className="p-6 md:p-8"><Card>Loading workout history...</Card></div>;
-  }
-
-  if (error && !client) {
-    return <div className="p-6 md:p-8"><Card><p className="text-sm font-semibold text-red-700">{error}</p></Card></div>;
-  }
+  if (loading) return <div className="p-6 md:p-8"><Card>Loading workout history...</Card></div>;
+  if (error && !client) return <div className="p-6 md:p-8"><Card><p className="text-sm font-semibold text-red-700">{error}</p></Card></div>;
 
   return (
-    <div className="p-6 md:p-8 space-y-8">
+    <div className="space-y-8 p-6 md:p-8">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold uppercase text-[#000000] tracking-tight">Workout history</h1>
-          <p className="mt-1 text-sm text-gray-600">{client?.full_name} • Expand each workout for set-by-set analysis.</p>
+          <h1 className="text-3xl font-bold uppercase tracking-tight text-[#000000]">Workout history</h1>
+          <p className="mt-1 text-sm text-gray-600">{client?.full_name} • Completed workout archive.</p>
         </div>
         <div className="flex flex-col items-end gap-2">
           <Link href={`/coach/clients/${clientId}`} className="text-sm font-bold uppercase text-[#FA0201] hover:underline">Back to client</Link>
-          <Link href={`/coach/clients/${clientId}/training`} className="text-sm font-bold uppercase text-[#FA0201] hover:underline">Create workout</Link>
+          <Link href={`/coach/clients/${clientId}/program`} className="text-sm font-bold uppercase text-[#FA0201] hover:underline">Programme</Link>
         </div>
       </div>
 
-      {message && <Card className="border-2 border-green-200 bg-green-50"><p className="text-sm font-semibold text-green-700">{message}</p></Card>}
       {error && <Card className="border-2 border-red-200 bg-red-50"><p className="text-sm font-semibold text-red-700">{error}</p></Card>}
 
       <section>
         <SectionHeader title="COMPLETED WORKOUTS" accent />
         <Card>
           {sessions.length === 0 ? (
-            <p className="text-sm text-gray-600">No completed workout companion sessions yet.</p>
+            <p className="text-sm text-gray-600">No completed workout sessions yet.</p>
           ) : (
             <div className="space-y-4">
               {sessions.map((session) => {
@@ -416,29 +279,29 @@ export default function CoachWorkoutHistoryPage() {
                 const isExpanded = expandedSessionId === session.id;
                 const highRpeCount = analysisRows.filter((row) => (row.actualRpe ?? 0) >= 9).length;
                 const missedSetCount = analysisRows.filter((row) => !row.completed).length;
-                const form = feedbackForms[session.id] || blankFeedbackForm();
 
                 return (
                   <div key={session.id} className="rounded-xl border border-gray-200 bg-white">
-                    <button type="button" onClick={() => setExpandedSessionId(isExpanded ? null : session.id)} className="w-full p-4 text-left">
+                    <div className="p-4">
                       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                        <div>
+                        <button type="button" onClick={() => setExpandedSessionId(isExpanded ? null : session.id)} className="text-left">
                           <p className="text-xs font-bold uppercase text-gray-500">{formatDate(session.completed_at)}</p>
                           <p className="mt-1 text-lg font-bold uppercase text-[#000000]">{workout?.title || 'Workout'}</p>
                           <p className="mt-1 text-sm text-gray-600">Programme: {program?.title || 'Programme not found'}</p>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-2">
+                        </button>
+                        <div className="flex flex-wrap items-center gap-2 md:justify-end">
                           <Badge variant={session.review_status === 'reviewed' ? 'success' : 'default'}>{session.review_status}</Badge>
                           {highRpeCount > 0 && <span className="rounded-full bg-red-100 px-3 py-1 text-xs font-bold uppercase text-red-700">{highRpeCount} high RPE</span>}
                           {missedSetCount > 0 && <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-bold uppercase text-gray-700">{missedSetCount} incomplete</span>}
-                          <span className="text-xl font-bold text-[#FA0201]">{isExpanded ? '−' : '+'}</span>
+                          <button type="button" onClick={() => setExpandedSessionId(isExpanded ? null : session.id)} className="text-xl font-bold text-[#FA0201]">{isExpanded ? '−' : '+'}</button>
+                          <Link href={`/coach/clients/${clientId}/workout-review/${session.id}`} className="rounded-lg bg-[#FA0201] px-4 py-2 text-xs font-bold uppercase text-white hover:bg-red-700">Review workout</Link>
                         </div>
                       </div>
-                    </button>
+                    </div>
 
                     {isExpanded && (
-                      <div className="border-t border-gray-200 p-4 space-y-6">
-                        {session.client_notes && <p className="text-sm text-gray-700">Client notes: {session.client_notes}</p>}
+                      <div className="space-y-4 border-t border-gray-200 p-4">
+                        {session.client_notes && <p className="text-sm text-gray-700"><span className="font-bold">Client notes:</span> {session.client_notes}</p>}
                         <div className="overflow-x-auto">
                           <div className="min-w-[820px] rounded-lg border border-gray-200">
                             <div className="grid grid-cols-[1.5fr_0.7fr_1.3fr_1.3fr_0.9fr_0.9fr_1.5fr] gap-3 bg-gray-100 px-4 py-3 text-xs font-bold uppercase text-gray-600">
@@ -459,47 +322,13 @@ export default function CoachWorkoutHistoryPage() {
                                   <p>Set {row.setOrder}</p>
                                   <p>{formatWeight(row.targetWeightKg)} × {formatReps(row.targetReps)}</p>
                                   <p>{formatWeight(row.actualWeightKg)} × {formatReps(row.actualReps)}</p>
-                                  <p>
-                                    <span className={`rounded-full px-2 py-1 text-xs font-bold uppercase ${getRpeClassName(row.actualRpe)}`}>
-                                      {row.actualRpe ?? '-'} • {getRpeLabel(row.actualRpe)}
-                                    </span>
-                                  </p>
+                                  <p><span className={`rounded-full px-2 py-1 text-xs font-bold uppercase ${getRpeClassName(row.actualRpe)}`}>{row.actualRpe ?? '-'} • {getRpeLabel(row.actualRpe)}</span></p>
                                   <p>{row.completed ? 'Complete' : 'Incomplete'}</p>
                                   <p className="text-gray-600">{row.clientSetNotes || row.prescribedNotes || '-'}</p>
                                 </div>
                               ))
                             )}
                           </div>
-                        </div>
-
-                        <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
-                          <p className="mb-3 text-sm font-bold uppercase text-[#000000]">Send workout feedback to client</p>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                            <textarea value={form.mainWin} onChange={(event) => updateFeedbackForm(session.id, { mainWin: event.target.value })} placeholder="Main win" className="min-h-20 rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm" />
-                            <textarea value={form.mainFocus} onChange={(event) => updateFeedbackForm(session.id, { mainFocus: event.target.value })} placeholder="Main focus" className="min-h-20 rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm" />
-                            <textarea value={form.agreedAction} onChange={(event) => updateFeedbackForm(session.id, { agreedAction: event.target.value })} placeholder="Agreed action" className="min-h-20 rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm" />
-                            <textarea value={form.planChange} onChange={(event) => updateFeedbackForm(session.id, { planChange: event.target.value })} placeholder="Plan change" className="min-h-20 rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm" />
-                          </div>
-                          <div className="mt-3 grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3 md:items-end">
-                            <div>
-                              <label className="mb-2 block text-xs font-bold uppercase text-gray-600">Next review date</label>
-                              <input type="date" value={form.nextReviewDate} onChange={(event) => updateFeedbackForm(session.id, { nextReviewDate: event.target.value })} className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm" />
-                            </div>
-                            <Button type="button" onClick={() => sendWorkoutFeedback(session.id)} isLoading={sendingFeedbackSessionId === session.id} className="bg-[#FA0201] hover:bg-red-700">
-                              Send feedback
-                            </Button>
-                          </div>
-                        </div>
-
-                        <div className="flex justify-end">
-                          <Button
-                            type="button"
-                            onClick={() => markReviewed(session.id)}
-                            isLoading={savingReviewSessionId === session.id}
-                            disabled={session.review_status === 'reviewed'}
-                          >
-                            {session.review_status === 'reviewed' ? 'Reviewed' : 'Mark reviewed without feedback'}
-                          </Button>
                         </div>
                       </div>
                     )}
