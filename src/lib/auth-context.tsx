@@ -175,6 +175,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       setLoading(true);
       const normalisedEmail = email.trim().toLowerCase();
+      const trimmedInviteToken = inviteToken?.trim();
+
+      // RITMO is invite-only. Do not create a Supabase auth user unless a valid,
+      // unclaimed, unexpired invite exists first. This prevents public self-registration.
+      if (!trimmedInviteToken) {
+        return { error: new Error('Account creation is invite-only. Ask your coach for a RITMO invite link.') };
+      }
+
+      if (role !== 'client') {
+        return { error: new Error('Coach accounts cannot be created from the public signup form.') };
+      }
+
+      const { data: inviteRows, error: inviteValidationError } = await supabase.rpc('validate_client_invite', {
+        p_token: trimmedInviteToken,
+      });
+
+      if (inviteValidationError) {
+        return { error: inviteValidationError };
+      }
+
+      const invite = Array.isArray(inviteRows) ? inviteRows[0] : null;
+      if (!invite?.valid) {
+        return { error: new Error('This invite link is invalid, expired, or already used.') };
+      }
+
+      if (invite.client_email && invite.client_email.toLowerCase() !== normalisedEmail) {
+        return { error: new Error(`This invite was created for ${invite.client_email}. Sign up with that email address.`) };
+      }
 
       const {
         data: { user: newUser },
@@ -209,18 +237,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { error: profileError };
       }
 
-      if (role === 'client' && inviteToken) {
-        // Secure client linking rule:
-        // The client can only attach their login to a coach-created client record
-        // by claiming a valid one-time invite token through the database RPC.
-        const { error: inviteError } = await supabase.rpc('claim_client_invite', {
-          p_token: inviteToken,
-        });
+      // Secure client linking rule:
+      // The client can only attach their login to a coach-created client record
+      // by claiming the same valid one-time invite token after the auth user exists.
+      const { error: inviteError } = await supabase.rpc('claim_client_invite', {
+        p_token: trimmedInviteToken,
+      });
 
-        if (inviteError) {
-          console.error('Error claiming client invite:', inviteError);
-          return { error: inviteError };
-        }
+      if (inviteError) {
+        console.error('Error claiming client invite:', inviteError);
+        return { error: inviteError };
       }
 
       // The auth listener can fire before the profile row exists, leaving the login page
