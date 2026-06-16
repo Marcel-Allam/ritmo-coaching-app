@@ -11,12 +11,6 @@ type ClientRecord = {
   id: string;
 };
 
-type ClientSettingsRecord = {
-  nutrition_enabled: boolean;
-  bodyweight_enabled: boolean;
-  training_availability_enabled: boolean;
-};
-
 type AssignedTaskRecord = {
   task_type: string;
 };
@@ -29,13 +23,6 @@ type CheckInCard = {
   href: string;
   icon: string;
   alwaysShow?: boolean;
-  isEnabledBySettings?: (settings: ClientSettingsRecord) => boolean;
-};
-
-const defaultSettings: ClientSettingsRecord = {
-  nutrition_enabled: false,
-  bodyweight_enabled: true,
-  training_availability_enabled: true,
 };
 
 const checkInTypes: CheckInCard[] = [
@@ -50,33 +37,13 @@ const checkInTypes: CheckInCard[] = [
     alwaysShow: true,
   },
   {
-    id: 'training-availability',
-    taskTypes: ['training_availability'],
-    title: 'Training Availability',
-    description:
-      'Confirm the days you can realistically train next week so your coach can schedule your programme properly.',
-    href: '/client/submit/training-availability',
-    icon: '02',
-    isEnabledBySettings: (settings) => settings.training_availability_enabled,
-  },
-  {
-    id: 'bodyweight',
-    taskTypes: ['bodyweight'],
-    title: 'Bodyweight Check-in',
-    description:
-      'Log your bodyweight when your coach has assigned it. This helps track trend direction without overreacting to one weigh-in.',
-    href: '/client/submit/nutrition-bodyweight',
-    icon: '03',
-    isEnabledBySettings: (settings) => settings.bodyweight_enabled,
-  },
-  {
     id: 'key-lift',
     taskTypes: ['key_lift'],
     title: 'Key Lift / Top Set',
     description:
       'Record a top set or key lift update so your coach can track performance and adjust progression.',
     href: '/client/submit/key-lift',
-    icon: '04',
+    icon: '02',
   },
   {
     id: 'workout-checkin',
@@ -85,14 +52,13 @@ const checkInTypes: CheckInCard[] = [
     description:
       'Use this only if your coach asks for a standalone workout check-in outside the full workout logging flow.',
     href: '/client/submit/workout-checkin',
-    icon: '05',
+    icon: '03',
   },
 ];
 
 export default function ClientCheckInHub() {
   const { user } = useAuth();
   const [client, setClient] = useState<ClientRecord | null>(null);
-  const [settings, setSettings] = useState<ClientSettingsRecord>(defaultSettings);
   const [tasks, setTasks] = useState<AssignedTaskRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
@@ -122,33 +88,19 @@ export default function ClientCheckInHub() {
       const linkedClient = clientData as ClientRecord;
       setClient(linkedClient);
 
-      const [settingsResult, taskResult] = await Promise.all([
-        supabase
-          .from('client_settings')
-          .select('nutrition_enabled, bodyweight_enabled, training_availability_enabled')
-          .eq('client_id', linkedClient.id)
-          .maybeSingle(),
-        supabase
-          .from('assigned_tasks')
-          .select('task_type')
-          .eq('client_id', linkedClient.id)
-          .eq('active', true),
-      ]);
+      const { data: taskData, error: taskError } = await supabase
+        .from('assigned_tasks')
+        .select('task_type')
+        .eq('client_id', linkedClient.id)
+        .eq('active', true);
 
-      if (settingsResult.error) {
-        setMessage(settingsResult.error.message);
+      if (taskError) {
+        setMessage(taskError.message);
         setLoading(false);
         return;
       }
 
-      if (taskResult.error) {
-        setMessage(taskResult.error.message);
-        setLoading(false);
-        return;
-      }
-
-      setSettings((settingsResult.data as ClientSettingsRecord | null) ?? defaultSettings);
-      setTasks((taskResult.data ?? []) as AssignedTaskRecord[]);
+      setTasks((taskData ?? []) as AssignedTaskRecord[]);
       setLoading(false);
     };
 
@@ -160,13 +112,12 @@ export default function ClientCheckInHub() {
   const visibleCheckInTypes = useMemo(() => {
     return checkInTypes.filter((checkInType) => {
       const hasAssignedTask = checkInType.taskTypes.some((taskType) => activeTaskTypes.has(taskType));
-      const enabledBySettings = checkInType.isEnabledBySettings?.(settings) ?? false;
 
-      // Weekly check-in remains visible as the core RITMO accountability anchor
-      // even if the assigned task has not been created yet during early setup.
-      return checkInType.alwaysShow || hasAssignedTask || enabledBySettings;
+      // Weekly check-in remains visible as the core RITMO accountability anchor.
+      // Other cards appear only when the coach assigns them.
+      return checkInType.alwaysShow || hasAssignedTask;
     });
-  }, [activeTaskTypes, settings]);
+  }, [activeTaskTypes]);
 
   if (loading) {
     return (
@@ -199,15 +150,15 @@ export default function ClientCheckInHub() {
 
   return (
     <div className="flex h-screen flex-col overflow-hidden">
-      <PageHeader title="CHECK IN" subtitle="Weekly accountability, availability, bodyweight, and coach-requested updates." />
+      <PageHeader title="CHECK IN" subtitle="Weekly coaching check-in and coach-requested updates." />
 
       <main className="flex-1 overflow-y-auto pb-20 md:pb-0">
         <div className="mx-auto max-w-4xl px-4 py-6 md:px-8">
           <Card className="mb-6 border-2 border-gray-200 bg-gray-50">
             <p className="text-xs font-bold uppercase text-gray-500">RITMO accountability</p>
-            <h2 className="mt-1 text-xl font-black uppercase text-[#000000]">Check in with what your coach needs right now.</h2>
+            <h2 className="mt-1 text-xl font-black uppercase text-[#000000]">Use this for coach review, not routine calendar tasks.</h2>
             <p className="mt-2 text-sm text-gray-700">
-              Your coach controls which check-ins are active. Diet gets its own tab later, so this page stays focused on accountability tasks.
+              Training availability and bodyweight check-ins now live on your Hub weekly calendar. This page stays focused on your weekly coaching check-in and any extra updates your coach requests.
             </p>
           </Card>
 
