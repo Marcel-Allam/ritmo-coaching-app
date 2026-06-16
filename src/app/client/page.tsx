@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { PageHeader } from '@/components/layout/page-header';
 import { Card } from '@/components/ui/card';
-import { TaskCard } from '@/components/ui/task-card';
 import { SectionHeader } from '@/components/ui/section-header';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
 import { useAuth } from '@/lib/auth-context';
@@ -434,7 +433,7 @@ export default function ClientHub() {
   const todayActions = useMemo<ActionItem[]>(() => {
     const today = todayIso();
     const activeTaskActions = tasks
-      .filter((task) => !isTaskComplete(task) && (!task.end_date || task.end_date <= today))
+      .filter((task) => !isTaskComplete(task) && task.end_date && task.end_date <= today)
       .map((task) => ({
         id: task.id,
         title: task.task_name,
@@ -459,11 +458,13 @@ export default function ClientHub() {
   const upcomingActions = useMemo<ActionItem[]>(() => {
     const today = todayIso();
     const upcomingTaskActions = tasks
-      .filter((task) => !isTaskComplete(task) && task.end_date && task.end_date > today)
+      .filter((task) => !isTaskComplete(task) && (!task.end_date || task.end_date > today))
       .map((task) => ({
         id: task.id,
         title: task.task_name,
-        description: `${task.instructions || task.task_type.replaceAll('_', ' ')} • Due ${formatDate(task.end_date)}`,
+        description: task.end_date
+          ? `${task.instructions || task.task_type.replaceAll('_', ' ')} • Due ${formatDate(task.end_date)}`
+          : `${task.instructions || task.task_type.replaceAll('_', ' ')} • Assigned task`,
         href: getTaskHref(task.task_type),
         date: task.end_date,
       }));
@@ -479,8 +480,13 @@ export default function ClientHub() {
       }));
 
     return [...workoutActions, ...upcomingTaskActions]
-      .sort((a, b) => new Date(a.date || '').getTime() - new Date(b.date || '').getTime())
-      .slice(0, 6);
+      .sort((a, b) => {
+        if (!a.date && !b.date) return a.title.localeCompare(b.title);
+        if (!a.date) return 1;
+        if (!b.date) return -1;
+        return new Date(a.date).getTime() - new Date(b.date).getTime();
+      })
+      .slice(0, 8);
   }, [scheduledWorkouts, submissions, tasks]);
 
   if (loading) {
@@ -588,25 +594,6 @@ export default function ClientHub() {
             </div>
           </section>
         )}
-
-        <section>
-          <SectionHeader title="ASSIGNED TASKS" accent />
-          <div className="space-y-4">
-            {tasks.length === 0 ? (
-              <Card><p className="text-sm text-gray-600">No active tasks assigned yet.</p></Card>
-            ) : (
-              tasks.map((task) => (
-                <TaskCard
-                  key={task.id}
-                  title={task.task_name}
-                  description={task.instructions || task.task_type}
-                  status={isTaskComplete(task) ? 'completed' : 'pending'}
-                  dueDate={formatDate(task.end_date)}
-                />
-              ))
-            )}
-          </div>
-        </section>
 
         {settings.show_latest_feedback_card && (
           <section>
