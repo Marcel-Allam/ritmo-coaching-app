@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { Card } from '@/components/ui/card';
 import { SectionHeader } from '@/components/ui/section-header';
@@ -394,7 +395,7 @@ export function WorkoutNextSessionDecision({ clientId, sessionId }: WorkoutNextS
           {error && <p className="text-xs font-semibold text-red-700">{error}</p>}
           {message && <p className="text-xs font-semibold text-green-700">{message}</p>}
 
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               disabled={isSaving || isApplying}
@@ -411,6 +412,12 @@ export function WorkoutNextSessionDecision({ clientId, sessionId }: WorkoutNextS
             >
               Apply to programme
             </button>
+            <Link
+              href={`/coach/clients/${clientId}/program`}
+              className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-center text-xs font-bold uppercase text-[#000000] hover:bg-gray-50 md:ml-auto md:w-auto"
+            >
+              Client programme
+            </Link>
           </div>
         </Card>
       </section>
