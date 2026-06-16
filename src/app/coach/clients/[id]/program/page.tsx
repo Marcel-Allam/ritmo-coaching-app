@@ -16,6 +16,16 @@ type ProgramRecord = { id: string; title: string; goal: string | null; status: s
 type WorkoutRecord = { id: string; program_id: string; title: string; scheduled_date: string | null; workout_order: number; status: string };
 type SessionRecord = { program_workout_id: string };
 type ExerciseCountRecord = { workout_id: string };
+type CoachActionRecord = {
+  id: string;
+  action_type: string;
+  description: string;
+  priority: 'low' | 'medium' | 'high' | string;
+  due_date: string | null;
+  status: string;
+  notes: string | null;
+  created_at: string;
+};
 type TemplateSet = { reps: string; weightKg?: number | null; rpe?: number | null; notes?: string };
 type TemplateExercise = { name: string; notes?: string; sets: TemplateSet[] };
 type ProgramTemplate = {
@@ -90,6 +100,7 @@ const statusForWorkout = (workout: WorkoutRecord, completedIds: Set<string>) => 
   return 'unscheduled';
 };
 const statusVariant = (status: string) => (status === 'completed' ? 'success' : status === 'scheduled' ? 'default' : 'warning');
+const priorityVariant = (priority: string) => (priority === 'high' ? 'danger' : priority === 'medium' ? 'warning' : 'default');
 
 // Convert the selected template into editable prescription rows.
 // This keeps templates reusable while letting the coach manually prescribe load/RPE per client.
@@ -111,6 +122,7 @@ export default function CoachClientProgramPage() {
   const [client, setClient] = useState<ClientRecord | null>(null);
   const [programs, setPrograms] = useState<ProgramRecord[]>([]);
   const [workouts, setWorkouts] = useState<WorkoutRecord[]>([]);
+  const [pendingAdjustments, setPendingAdjustments] = useState<CoachActionRecord[]>([]);
   const [completedIds, setCompletedIds] = useState<Set<string>>(new Set());
   const [exerciseCounts, setExerciseCounts] = useState<Record<string, number>>({});
   const [templateId, setTemplateId] = useState(templates[0].id);
@@ -121,6 +133,7 @@ export default function CoachClientProgramPage() {
   const [prescription, setPrescription] = useState<PrescribedSetForm[][]>(buildPrescriptionForm(templates[0]));
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [updatingActionId, setUpdatingActionId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -135,11 +148,18 @@ export default function CoachClientProgramPage() {
     }
 
     const supabase = createClient();
-    const [clientResult, programResult, workoutResult, sessionResult] = await Promise.all([
+    const [clientResult, programResult, workoutResult, sessionResult, actionResult] = await Promise.all([
       supabase.from('clients').select('id, full_name, email').eq('id', clientId).single(),
       supabase.from('training_programs').select('id, title, goal, status').eq('client_id', clientId).eq('status', 'active').order('created_at', { ascending: false }),
       supabase.from('program_workouts').select('id, program_id, title, scheduled_date, workout_order, status').eq('client_id', clientId).neq('status', 'archived').order('scheduled_date', { ascending: true, nullsFirst: false }).order('workout_order', { ascending: true }),
       supabase.from('workout_sessions').select('program_workout_id').eq('client_id', clientId).eq('status', 'completed'),
+      supabase
+        .from('coach_actions')
+        .select('id, action_type, description, priority, due_date, status, notes, created_at')
+        .eq('client_id', clientId)
+        .eq('action_type', 'programme_adjustment')
+        .not('status', 'in', '(done,no_action_needed)')
+        .order('created_at', { ascending: false }),
     ]);
 
     if (clientResult.error || !clientResult.data) {
@@ -147,8 +167,8 @@ export default function CoachClientProgramPage() {
       setLoading(false);
       return;
     }
-    if (programResult.error || workoutResult.error || sessionResult.error) {
-      setError(programResult.error?.message || workoutResult.error?.message || sessionResult.error?.message || 'Could not load programme.');
+    if (programResult.error || workoutResult.error || sessionResult.error || actionResult.error) {
+      setError(programResult.error?.message || workoutResult.error?.message || sessionResult.error?.message || actionResult.error?.message || 'Could not load programme.');
       setLoading(false);
       return;
     }
@@ -172,6 +192,7 @@ export default function CoachClientProgramPage() {
     setClient(clientResult.data as ClientRecord);
     setPrograms((programResult.data ?? []) as ProgramRecord[]);
     setWorkouts(loadedWorkouts);
+    setPendingAdjustments((actionResult.data ?? []) as CoachActionRecord[]);
     setCompletedIds(new Set(((sessionResult.data ?? []) as SessionRecord[]).map((session) => session.program_workout_id)));
     setExerciseCounts(counts);
     setLoading(false);
@@ -197,6 +218,31 @@ export default function CoachClientProgramPage() {
         return exerciseSets.map((set, currentSetIndex) => (currentSetIndex === setIndex ? { ...set, ...updates } : set));
       })
     );
+  };
+
+  const markAdjustmentHandled = async (actionId: string) => {
+    if (!isSupabaseConfigured) return;
+
+    setUpdatingActionId(actionId);
+    setError(null);
+    setMessage(null);
+
+    const supabase = createClient();
+    const { error: actionError } = await supabase
+      .from('coach_actions')
+      .update({ status: 'done' })
+      .eq('id', actionId)
+      .eq('client_id', clientId);
+
+    if (actionError) {
+      setError(actionError.message);
+      setUpdatingActionId(null);
+      return;
+    }
+
+    setPendingAdjustments((current) => current.filter((action) => action.id !== actionId));
+    setMessage('Programme adjustment marked as handled.');
+    setUpdatingActionId(null);
   };
 
   const assignTemplate = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -303,12 +349,46 @@ export default function CoachClientProgramPage() {
         <div className="flex flex-col items-start gap-2 md:items-end">
           <Link href={`/coach/clients/${clientId}`} className="text-sm font-bold uppercase text-[#FA0201] hover:underline">Back to client</Link>
           <Link href={`/coach/clients/${clientId}/current-workouts`} className="text-sm font-bold uppercase text-[#FA0201] hover:underline">Current workouts</Link>
-          <Link href={`/coach/clients/${clientId}/workout-history`} className="text-sm font-bold uppercase text-[#FA0201] hover:underline">Workout history</Link>
         </div>
       </div>
 
       {message && <Card className="border-2 border-green-200 bg-green-50"><p className="text-sm font-semibold text-green-700">{message}</p></Card>}
       {error && <Card className="border-2 border-red-200 bg-red-50"><p className="text-sm font-semibold text-red-700">{error}</p></Card>}
+
+      <section>
+        <SectionHeader title="PENDING PROGRAMME ADJUSTMENTS" accent />
+        <Card>
+          {pendingAdjustments.length === 0 ? (
+            <p className="text-sm text-gray-600">No pending programme adjustments from workout review.</p>
+          ) : (
+            <div className="space-y-4">
+              {pendingAdjustments.map((action) => (
+                <div key={action.id} className="rounded-xl border border-gray-200 bg-white p-4">
+                  <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                    <div className="space-y-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge variant={priorityVariant(action.priority) as any}>{action.priority}</Badge>
+                        <Badge variant="default">{action.status}</Badge>
+                      </div>
+                      <p className="whitespace-pre-line text-sm font-semibold text-[#000000]">{action.description}</p>
+                      {action.notes && <p className="whitespace-pre-line text-xs text-gray-500">{action.notes}</p>}
+                      <p className="text-xs font-semibold uppercase text-gray-400">Created: {formatDate(action.created_at)}{action.due_date ? ` • Due: ${formatDate(action.due_date)}` : ''}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => markAdjustmentHandled(action.id)}
+                      disabled={updatingActionId === action.id}
+                      className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-bold uppercase text-[#000000] hover:bg-gray-50 disabled:opacity-60"
+                    >
+                      {updatingActionId === action.id ? 'Updating...' : 'Mark handled'}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+      </section>
 
       <section>
         <SectionHeader title="ASSIGN TEMPLATE" accent />
@@ -342,7 +422,7 @@ export default function CoachClientProgramPage() {
                         <div key={`${exercise.name}-${setIndex}`} className="grid grid-cols-1 gap-3 md:grid-cols-[70px_1fr_1fr_1fr_2fr] md:items-end">
                           <p className="pb-2 text-xs font-bold uppercase text-gray-500">Set {setIndex + 1}</p>
                           <Input label="Reps" value={set.reps} onChange={(event) => updatePrescriptionSet(exerciseIndex, setIndex, { reps: event.target.value })} />
-                          <Input label="KG" type="number" step="0.5" value={set.weightKg} onChange={(event) => updatePrescriptionSet(exerciseIndex, setIndex, { weightKg: event.target.value })} placeholder="Optional" />
+                          <Input label="KG" type="number" step="2.5" value={set.weightKg} onChange={(event) => updatePrescriptionSet(exerciseIndex, setIndex, { weightKg: event.target.value })} placeholder="Optional" />
                           <Input label="Target RPE" type="number" step="0.5" min="1" max="10" value={set.rpe} onChange={(event) => updatePrescriptionSet(exerciseIndex, setIndex, { rpe: event.target.value })} placeholder="Optional" />
                           <Input label="Set notes" value={set.notes} onChange={(event) => updatePrescriptionSet(exerciseIndex, setIndex, { notes: event.target.value })} placeholder="Optional" />
                         </div>
