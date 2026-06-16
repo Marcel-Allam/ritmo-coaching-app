@@ -34,12 +34,6 @@ const MessageIcon = () => (
   </svg>
 );
 
-const CheckIcon = () => (
-  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-  </svg>
-);
-
 const PlusIcon = () => (
   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -74,7 +68,6 @@ const coachNavItems = [
 
 const clientNavItems = [
   { label: 'Hub', href: '/client', icon: HomeIcon },
-  { label: 'Tasks', href: '/client/tasks', icon: CheckIcon },
   { label: 'Start your workout', href: '/client/training', icon: DumbbellIcon },
   { label: 'Completed Workouts', href: '/client/training/history', icon: HistoryIcon },
   { label: 'Submit', href: '/client/submit', icon: PlusIcon },
