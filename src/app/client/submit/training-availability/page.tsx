@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { SectionHeader } from '@/components/ui/section-header';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
+import { completeCurrentAndCreateNextWeeklyTask } from '@/lib/recurring-tasks';
 import { useAuth } from '@/lib/auth-context';
 
 type ClientRecord = { id: string; full_name: string };
@@ -28,7 +29,9 @@ const trainingDays: TrainingDay[] = [
   { label: 'Sunday', value: 'Sunday' },
 ];
 
-const promptCopy = `Set your training days now.\n\nWhen your workouts have a clear day attached, they stop being “I’ll fit it in” and become part of the plan. Pick the days you can realistically train next week.`;
+const promptCopy = `Set your training days now.
+
+When your workouts have a clear day attached, they stop being “I’ll fit it in” and become part of the plan. Pick the days you can realistically train next week.`;
 
 export default function TrainingAvailabilityPage() {
   const router = useRouter();
@@ -138,22 +141,23 @@ export default function TrainingAvailabilityPage() {
       return;
     }
 
-    if (assignedTask?.id) {
-      const { error: taskError } = await supabase
-        .from('assigned_tasks')
-        .update({ active: false })
-        .eq('id', assignedTask.id);
+    const { error: recurringTaskError, nextTaskDate } = await completeCurrentAndCreateNextWeeklyTask({
+      supabase,
+      clientId: client.id,
+      taskType: 'training_availability',
+      taskName: 'Submit training availability',
+      instructions: promptCopy,
+    });
 
-      if (taskError) {
-        setMessage(taskError.message);
-        setSaving(false);
-        return;
-      }
+    if (recurringTaskError) {
+      setMessage(recurringTaskError.message);
+      setSaving(false);
+      return;
     }
 
-    setMessage('Training availability submitted. Your coach can now schedule your workouts.');
+    setMessage(`Training availability submitted. Next availability check-in is set for ${nextTaskDate}.`);
     setSaving(false);
-    setTimeout(() => router.push('/client/tasks'), 1200);
+    setTimeout(() => router.push('/client'), 1200);
   };
 
   if (loading) {
