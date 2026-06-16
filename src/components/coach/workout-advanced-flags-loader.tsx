@@ -277,9 +277,9 @@ export function WorkoutAdvancedFlagsLoader({ clientId, sessionId }: WorkoutAdvan
 
   if (error) {
     return (
-      <div className="px-6 pt-6 md:px-8 md:pt-8">
-        <Card className="border-2 border-red-200 bg-red-50">
-          <p className="text-sm font-semibold text-red-700">{error}</p>
+      <div className="px-6 pt-4 md:px-8 md:pt-5">
+        <Card className="border-2 border-red-200 bg-red-50 p-4">
+          <p className="text-xs font-semibold text-red-700">{error}</p>
         </Card>
       </div>
     );
@@ -289,22 +289,22 @@ export function WorkoutAdvancedFlagsLoader({ clientId, sessionId }: WorkoutAdvan
   if (flags.length === 0) return null;
 
   return (
-    <div className="px-6 pt-6 md:px-8 md:pt-8">
+    <div className="px-6 pt-4 md:px-8 md:pt-5">
       <section>
         <SectionHeader title="ADVANCED WORKOUT FLAGS" accent />
-        <Card>
-          <div className="space-y-3">
+        <Card className="p-4">
+          <div className="space-y-2">
             {flags.map((flag) => (
-              <div key={flag.id} className={`rounded-xl border p-4 ${flagClasses[flag.tone]}`}>
-                <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+              <div key={flag.id} className={`rounded-lg border p-3 ${flagClasses[flag.tone]}`}>
+                <div className="flex flex-col gap-1 md:flex-row md:items-start md:justify-between">
                   <div>
-                    <p className="text-sm font-black uppercase">{flag.label}</p>
-                    {flag.exerciseName && <p className="mt-1 text-xs font-bold uppercase opacity-70">{flag.exerciseName}</p>}
+                    <p className="text-xs font-black uppercase">{flag.label}</p>
+                    {flag.exerciseName && <p className="mt-0.5 text-[11px] font-bold uppercase opacity-70">{flag.exerciseName}</p>}
                   </div>
-                  <span className={`rounded px-2 py-1 text-xs font-bold uppercase ${flagLabelClasses[flag.tone]}`}>{flag.tone}</span>
+                  <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${flagLabelClasses[flag.tone]}`}>{flag.tone}</span>
                 </div>
-                <p className="mt-3 text-sm font-semibold">{flag.detail}</p>
-                <p className="mt-1 text-xs opacity-80"><span className="font-bold">Impact:</span> {flag.impact}</p>
+                <p className="mt-2 text-xs font-semibold">{flag.detail}</p>
+                <p className="mt-1 text-[11px] opacity-80"><span className="font-bold">Impact:</span> {flag.impact}</p>
               </div>
             ))}
           </div>
