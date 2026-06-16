@@ -44,6 +44,11 @@ export default function CoachActionSubmissionRouterPage() {
         return;
       }
 
+      if (submission.submission_type === 'weekly_checkin') {
+        router.replace(`/coach/clients/${submission.client_id}/weekly-review/${submissionId}`);
+        return;
+      }
+
       setShouldUseLegacyReview(true);
     };
 
