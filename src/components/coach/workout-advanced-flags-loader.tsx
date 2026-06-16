@@ -77,6 +77,28 @@ const getActualSet = (set: ProgramSetRecord, exercise: ProgramExerciseRecord, pe
     || performedSets.find((performed) => performed.program_exercise_id === exercise.id && performed.set_order === set.set_order);
 };
 
+const groupAdvancedFlags = (flags: AdvancedFlag[]) => {
+  const grouped = new Map<string, AdvancedFlag & { details: string[] }>();
+
+  flags.forEach((flag) => {
+    const key = [flag.tone, flag.label, flag.exerciseName || 'workout-level', flag.impact].join('|');
+    const existing = grouped.get(key);
+
+    if (existing) {
+      existing.details.push(flag.detail);
+      existing.id = `${existing.id}-${flag.id}`;
+      return;
+    }
+
+    grouped.set(key, { ...flag, details: [flag.detail] });
+  });
+
+  return Array.from(grouped.values()).map((flag) => ({
+    ...flag,
+    detail: flag.details.length === 1 ? flag.details[0] : `${flag.details.length} related flags: ${flag.details.join(' • ')}`,
+  }));
+};
+
 const buildAdvancedFlags = (
   exercises: ProgramExerciseRecord[],
   programSets: ProgramSetRecord[],
@@ -196,7 +218,7 @@ const buildAdvancedFlags = (
     });
   }
 
-  return flags;
+  return groupAdvancedFlags(flags);
 };
 
 export function WorkoutAdvancedFlagsLoader({ clientId, sessionId }: WorkoutAdvancedFlagsLoaderProps) {
