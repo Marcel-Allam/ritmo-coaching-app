@@ -91,31 +91,31 @@ export function WorkoutNoteFlagsLoader({ sessionId }: WorkoutNoteFlagsLoaderProp
 
   if (error) {
     return (
-      <div className="px-6 pt-6 md:px-8 md:pt-8">
-        <Card className="border-2 border-red-200 bg-red-50">
-          <p className="text-sm font-semibold text-red-700">{error}</p>
+      <div className="px-6 pt-4 md:px-8 md:pt-5">
+        <Card className="border-2 border-red-200 bg-red-50 p-4">
+          <p className="text-xs font-semibold text-red-700">{error}</p>
         </Card>
       </div>
     );
   }
 
   return (
-    <div className="px-6 pt-6 md:px-8 md:pt-8">
+    <div className="px-6 pt-4 md:px-8 md:pt-5">
       <section>
         <SectionHeader title="CLIENT NOTE FLAGS" accent />
-        <Card>
-          <div className="space-y-3">
+        <Card className="p-4">
+          <div className="space-y-2">
             {noteFlags.map((flag) => (
-              <div key={flag.id} className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-blue-900">
-                <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+              <div key={flag.id} className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-blue-900">
+                <div className="flex flex-col gap-1 md:flex-row md:items-start md:justify-between">
                   <div>
-                    <p className="text-sm font-black uppercase">Client note added</p>
-                    <p className="mt-1 text-xs font-bold uppercase opacity-70">{flag.exerciseName} • Set {flag.setOrder}</p>
+                    <p className="text-xs font-black uppercase">Client note added</p>
+                    <p className="mt-0.5 text-[11px] font-bold uppercase opacity-70">{flag.exerciseName} • Set {flag.setOrder}</p>
                   </div>
-                  <span className="rounded bg-blue-100 px-2 py-1 text-xs font-bold uppercase text-blue-700">info</span>
+                  <span className="rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-blue-700">info</span>
                 </div>
-                <p className="mt-3 text-sm font-semibold">{flag.note}</p>
-                <p className="mt-1 text-xs opacity-80"><span className="font-bold">Impact:</span> Read this before writing feedback. The note may explain the client&apos;s performance on this set.</p>
+                <p className="mt-2 text-xs font-semibold">{flag.note}</p>
+                <p className="mt-1 text-[11px] opacity-80"><span className="font-bold">Impact:</span> Read this before writing feedback. The note may explain the client&apos;s performance on this set.</p>
               </div>
             ))}
           </div>
