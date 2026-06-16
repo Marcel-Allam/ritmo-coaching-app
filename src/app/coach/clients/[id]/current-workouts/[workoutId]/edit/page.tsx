@@ -179,6 +179,29 @@ export default function EditAssignedWorkoutPage() {
     }));
   };
 
+  const addSet = (exerciseIndex: number) => {
+    setExercises((current) => current.map((exercise, i) => {
+      if (i !== exerciseIndex) return exercise;
+
+      const previousSet = exercise.sets[exercise.sets.length - 1] || blankSet();
+      return {
+        ...exercise,
+        sets: [...exercise.sets, { ...previousSet }],
+      };
+    }));
+  };
+
+  const removeSet = (exerciseIndex: number, setIndex: number) => {
+    setExercises((current) => current.map((exercise, i) => {
+      if (i !== exerciseIndex) return exercise;
+
+      return {
+        ...exercise,
+        sets: exercise.sets.filter((_, j) => j !== setIndex),
+      };
+    }));
+  };
+
   const saveWorkout = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!workout || !isSupabaseConfigured) return;
@@ -351,22 +374,42 @@ export default function EditAssignedWorkoutPage() {
                 <Textarea label="Exercise notes" value={exercise.notes} onChange={(e) => updateExercise(exerciseIndex, { notes: e.target.value })} disabled={isLocked} />
 
                 <div className="overflow-x-auto rounded-lg bg-gray-50 p-3">
-                  <div className="grid min-w-[640px] grid-cols-[80px_1fr_1fr_2fr] gap-3 px-1 pb-2 text-xs font-bold uppercase text-gray-600">
+                  <div className="grid min-w-[720px] grid-cols-[80px_1fr_1fr_2fr_48px] gap-3 px-1 pb-2 text-xs font-bold uppercase text-gray-600">
                     <div />
                     <p>Kg</p>
                     <p>Reps</p>
                     <p>Notes</p>
+                    <div />
                   </div>
                   <div className="space-y-3">
                     {exercise.sets.map((set, setIndex) => (
-                      <div key={setIndex} className="grid min-w-[640px] grid-cols-[80px_1fr_1fr_2fr] items-center gap-3">
+                      <div key={setIndex} className="grid min-w-[720px] grid-cols-[80px_1fr_1fr_2fr_48px] items-center gap-3">
                         <p className="text-sm font-bold uppercase text-[#000000]">Set {setIndex + 1}</p>
-                        <Input type="number" step="0.5" value={set.targetWeightKg} onChange={(e) => updateSet(exerciseIndex, setIndex, { targetWeightKg: e.target.value })} disabled={isLocked} />
+                        <Input type="number" step="2.5" value={set.targetWeightKg} onChange={(e) => updateSet(exerciseIndex, setIndex, { targetWeightKg: e.target.value })} disabled={isLocked} />
                         <Input value={set.targetReps} onChange={(e) => updateSet(exerciseIndex, setIndex, { targetReps: e.target.value })} placeholder="6-8" disabled={isLocked} />
                         <Input value={set.notes} onChange={(e) => updateSet(exerciseIndex, setIndex, { notes: e.target.value })} disabled={isLocked} />
+                        {!isLocked && exercise.sets.length > 1 && (
+                          <button
+                            type="button"
+                            aria-label={`Delete set ${setIndex + 1}`}
+                            onClick={() => removeSet(exerciseIndex, setIndex)}
+                            className="flex h-10 w-10 items-center justify-center rounded-lg border border-red-200 bg-white text-sm font-black text-[#FA0201] hover:bg-red-50"
+                          >
+                            🗑
+                          </button>
+                        )}
                       </div>
                     ))}
                   </div>
+                  {!isLocked && (
+                    <button
+                      type="button"
+                      onClick={() => addSet(exerciseIndex)}
+                      className="mt-3 rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-bold uppercase text-[#000000] hover:bg-gray-50"
+                    >
+                      Add set
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
