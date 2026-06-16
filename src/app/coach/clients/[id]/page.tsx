@@ -1,13 +1,13 @@
 'use client';
 
+import Link from 'next/link';
+import { useEffect, useState } from 'react';
+import { useParams } from 'next/navigation';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { SectionHeader } from '@/components/ui/section-header';
 import { TaskCard } from '@/components/ui/task-card';
 import { Input } from '@/components/ui/input';
-import Link from 'next/link';
-import { useParams } from 'next/navigation';
-import { useEffect, useState } from 'react';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
 
 interface ClientRecord {
@@ -266,7 +266,7 @@ export default function ClientProfilePage() {
 
   const getSubmissionHref = (submission: SubmissionRecord) => {
     if (submission.submission_type === 'workout_session' && submission.answer_text) {
-      return `/coach/clients/${clientId}/workout-history?session=${submission.answer_text}`;
+      return `/coach/clients/${clientId}/workout-review/${submission.answer_text}`;
     }
     return `/coach/actions/submissions/${submission.id}`;
   };
@@ -278,13 +278,7 @@ export default function ClientProfilePage() {
     return 'Monitor delivery';
   };
 
-  if (isLoading) {
-    return (
-      <div className="flex min-h-[400px] items-center justify-center">
-        <p className="font-semibold text-gray-700">Loading client profile...</p>
-      </div>
-    );
-  }
+  if (isLoading) return <div className="flex min-h-[400px] items-center justify-center"><p className="font-semibold text-gray-700">Loading client profile...</p></div>;
 
   if (error || !client) {
     return (
@@ -422,7 +416,6 @@ export default function ClientProfilePage() {
               <button type="button" onClick={() => setIsTaskFormOpen(true)} className="rounded-lg bg-[#FA0201] px-4 py-2 text-sm font-bold uppercase text-white hover:bg-red-700">Assign Task</button>
               <Link href={`/coach/clients/${clientId}/program`} className="rounded-lg bg-black px-4 py-2 text-sm font-bold uppercase text-white hover:bg-gray-900">Open Programme</Link>
               <Link href={`/coach/clients/${clientId}/current-workouts`} className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-bold uppercase text-[#000000] hover:bg-gray-100">Current Workouts</Link>
-              <Link href={`/coach/clients/${clientId}/workout-history`} className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-bold uppercase text-[#000000] hover:bg-gray-100">Workout History</Link>
             </div>
           </div>
 
