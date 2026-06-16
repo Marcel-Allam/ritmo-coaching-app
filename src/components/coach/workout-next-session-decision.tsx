@@ -30,7 +30,11 @@ type WorkoutSessionRecord = {
 
 type ProgramWorkoutRecord = {
   id: string;
+  program_id: string;
   title: string;
+  scheduled_date: string | null;
+  workout_order: number | null;
+  instructions: string | null;
 };
 
 type WorkoutNextSessionDecisionProps = {
@@ -51,17 +55,36 @@ const decisionOptions: DecisionOption[] = [
 
 const todayDate = () => new Date().toISOString().slice(0, 10);
 
+const formatDate = (value: string | null) => {
+  if (!value) return 'No date set';
+
+  return new Intl.DateTimeFormat('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  }).format(new Date(value));
+};
+
+const findNextWorkout = (currentWorkout: ProgramWorkoutRecord, workouts: ProgramWorkoutRecord[]) => {
+  const currentIndex = workouts.findIndex((workout) => workout.id === currentWorkout.id);
+  if (currentIndex >= 0) return workouts[currentIndex + 1] || null;
+
+  return workouts.find((workout) => workout.id !== currentWorkout.id) || null;
+};
+
 export function WorkoutNextSessionDecision({ clientId, sessionId }: WorkoutNextSessionDecisionProps) {
   const [decision, setDecision] = useState<DecisionValue>('keep_as_planned');
   const [adjustmentNote, setAdjustmentNote] = useState('');
   const [workoutTitle, setWorkoutTitle] = useState('Completed workout');
+  const [nextWorkout, setNextWorkout] = useState<ProgramWorkoutRecord | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isApplying, setIsApplying] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const loadWorkoutTitle = async () => {
+    const loadWorkoutContext = async () => {
       if (!isSupabaseConfigured) {
         setError('Supabase environment variables are not configured.');
         setIsLoading(false);
@@ -83,26 +106,65 @@ export function WorkoutNextSessionDecision({ clientId, sessionId }: WorkoutNextS
       }
 
       const session = sessionData as WorkoutSessionRecord;
-      const { data: workoutData, error: workoutError } = await supabase
+      const { data: currentWorkoutData, error: workoutError } = await supabase
         .from('program_workouts')
-        .select('id, title')
+        .select('id, program_id, title, scheduled_date, workout_order, instructions')
         .eq('id', session.program_workout_id)
         .single();
 
-      if (workoutError) {
-        setError(workoutError.message);
+      if (workoutError || !currentWorkoutData) {
+        setError(workoutError?.message || 'Workout not found.');
         setIsLoading(false);
         return;
       }
 
-      setWorkoutTitle((workoutData as ProgramWorkoutRecord).title || 'Completed workout');
+      const currentWorkout = currentWorkoutData as ProgramWorkoutRecord;
+      setWorkoutTitle(currentWorkout.title || 'Completed workout');
+
+      const { data: workoutListData, error: workoutListError } = await supabase
+        .from('program_workouts')
+        .select('id, program_id, title, scheduled_date, workout_order, instructions')
+        .eq('client_id', clientId)
+        .eq('program_id', currentWorkout.program_id)
+        .eq('status', 'active')
+        .order('scheduled_date', { ascending: true, nullsFirst: false })
+        .order('workout_order', { ascending: true });
+
+      if (workoutListError) {
+        setError(workoutListError.message);
+        setIsLoading(false);
+        return;
+      }
+
+      setNextWorkout(findNextWorkout(currentWorkout, (workoutListData ?? []) as ProgramWorkoutRecord[]));
       setIsLoading(false);
     };
 
-    loadWorkoutTitle();
+    loadWorkoutContext();
   }, [clientId, sessionId]);
 
   const selectedDecision = decisionOptions.find((option) => option.value === decision) || decisionOptions[0];
+
+  const buildDecisionDescription = () => [
+    `Next session decision: ${selectedDecision.label}`,
+    adjustmentNote.trim() ? `Adjustment note: ${adjustmentNote.trim()}` : null,
+  ]
+    .filter(Boolean)
+    .join('\n\n');
+
+  const createCoachAction = async () => {
+    const supabase = createClient();
+
+    return supabase.from('coach_actions').insert({
+      client_id: clientId,
+      action_type: 'next_session_decision',
+      description: buildDecisionDescription(),
+      priority: selectedDecision.priority,
+      due_date: todayDate(),
+      status: 'new',
+      notes: `Created from workout review. Workout: ${workoutTitle}. Session ID: ${sessionId}.`,
+    });
+  };
 
   const saveDecision = async () => {
     if (!isSupabaseConfigured) return;
@@ -111,23 +173,7 @@ export function WorkoutNextSessionDecision({ clientId, sessionId }: WorkoutNextS
     setMessage(null);
     setError(null);
 
-    const supabase = createClient();
-    const description = [
-      `Next session decision: ${selectedDecision.label}`,
-      adjustmentNote.trim() ? `Adjustment note: ${adjustmentNote.trim()}` : null,
-    ]
-      .filter(Boolean)
-      .join('\n\n');
-
-    const { error: actionError } = await supabase.from('coach_actions').insert({
-      client_id: clientId,
-      action_type: 'next_session_decision',
-      description,
-      priority: selectedDecision.priority,
-      due_date: todayDate(),
-      status: 'new',
-      notes: `Created from workout review. Workout: ${workoutTitle}. Session ID: ${sessionId}.`,
-    });
+    const { error: actionError } = await createCoachAction();
 
     if (actionError) {
       setError(actionError.message);
@@ -140,6 +186,53 @@ export function WorkoutNextSessionDecision({ clientId, sessionId }: WorkoutNextS
     setIsSaving(false);
   };
 
+  const applyDecisionToNextWorkout = async () => {
+    if (!isSupabaseConfigured || !nextWorkout) return;
+
+    setIsApplying(true);
+    setMessage(null);
+    setError(null);
+
+    const supabase = createClient();
+    const decisionBlock = [
+      '[RITMO_NEXT_SESSION_DECISION]',
+      `Reviewed workout: ${workoutTitle}`,
+      `Decision: ${selectedDecision.label}`,
+      adjustmentNote.trim() ? `Adjustment note: ${adjustmentNote.trim()}` : null,
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    const updatedInstructions = [nextWorkout.instructions?.trim(), decisionBlock]
+      .filter(Boolean)
+      .join('\n\n');
+
+    const { error: workoutUpdateError } = await supabase
+      .from('program_workouts')
+      .update({ instructions: updatedInstructions })
+      .eq('id', nextWorkout.id)
+      .eq('client_id', clientId);
+
+    if (workoutUpdateError) {
+      setError(workoutUpdateError.message);
+      setIsApplying(false);
+      return;
+    }
+
+    const { error: actionError } = await createCoachAction();
+
+    if (actionError) {
+      setError(actionError.message);
+      setIsApplying(false);
+      return;
+    }
+
+    setNextWorkout({ ...nextWorkout, instructions: updatedInstructions });
+    setMessage(`Decision applied to ${nextWorkout.title} and saved as a coach action.`);
+    setAdjustmentNote('');
+    setIsApplying(false);
+  };
+
   if (isLoading) return null;
 
   return (
@@ -147,6 +240,13 @@ export function WorkoutNextSessionDecision({ clientId, sessionId }: WorkoutNextS
       <section>
         <SectionHeader title="NEXT SESSION DECISION" accent />
         <Card className="space-y-4 p-4">
+          <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-700">
+            <p className="font-bold uppercase text-gray-500">Target next workout</p>
+            <p className="mt-1 font-semibold text-[#000000]">
+              {nextWorkout ? `${nextWorkout.title} • ${formatDate(nextWorkout.scheduled_date)}` : 'No next active workout found in this programme.'}
+            </p>
+          </div>
+
           <div className="grid grid-cols-1 gap-3 md:grid-cols-[240px_1fr]">
             <div>
               <label htmlFor="next-session-decision" className="text-xs font-bold uppercase text-gray-500">
@@ -175,14 +275,24 @@ export function WorkoutNextSessionDecision({ clientId, sessionId }: WorkoutNextS
           {error && <p className="text-xs font-semibold text-red-700">{error}</p>}
           {message && <p className="text-xs font-semibold text-green-700">{message}</p>}
 
-          <button
-            type="button"
-            disabled={isSaving}
-            onClick={saveDecision}
-            className="rounded-lg bg-[#000000] px-4 py-2 text-xs font-bold uppercase text-white hover:bg-gray-900 disabled:opacity-60"
-          >
-            {isSaving ? 'Saving...' : 'Save decision'}
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={isSaving || isApplying}
+              onClick={saveDecision}
+              className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-xs font-bold uppercase text-[#000000] hover:bg-gray-50 disabled:opacity-60"
+            >
+              {isSaving ? 'Saving...' : 'Save action only'}
+            </button>
+            <button
+              type="button"
+              disabled={isSaving || isApplying || !nextWorkout}
+              onClick={applyDecisionToNextWorkout}
+              className="rounded-lg bg-[#000000] px-4 py-2 text-xs font-bold uppercase text-white hover:bg-gray-900 disabled:opacity-60"
+            >
+              {isApplying ? 'Applying...' : 'Apply to next workout'}
+            </button>
+          </div>
         </Card>
       </section>
     </div>
