@@ -28,6 +28,12 @@ type ClientSettingsRecord = {
   workout_rpe_enabled: boolean;
   client_feedback_enabled: boolean;
   training_availability_enabled: boolean;
+  show_key_lift_card: boolean;
+  show_bodyweight_card: boolean;
+  show_calorie_guideline_card: boolean;
+  show_today_actions_card: boolean;
+  show_upcoming_actions_card: boolean;
+  show_latest_feedback_card: boolean;
 };
 
 const defaultSettings = (clientId: string): ClientSettingsRecord => ({
@@ -42,6 +48,12 @@ const defaultSettings = (clientId: string): ClientSettingsRecord => ({
   workout_rpe_enabled: true,
   client_feedback_enabled: true,
   training_availability_enabled: true,
+  show_key_lift_card: true,
+  show_bodyweight_card: true,
+  show_calorie_guideline_card: false,
+  show_today_actions_card: true,
+  show_upcoming_actions_card: true,
+  show_latest_feedback_card: true,
 });
 
 const ToggleRow = ({
@@ -101,7 +113,7 @@ export default function ClientSettingsPage() {
           .single(),
         supabase
           .from('client_settings')
-          .select('client_id, nutrition_enabled, nutrition_tracking_mode, show_calorie_target, show_protein_target, show_macro_targets, bodyweight_enabled, progress_photos_enabled, workout_rpe_enabled, client_feedback_enabled, training_availability_enabled')
+          .select('client_id, nutrition_enabled, nutrition_tracking_mode, show_calorie_target, show_protein_target, show_macro_targets, bodyweight_enabled, progress_photos_enabled, workout_rpe_enabled, client_feedback_enabled, training_availability_enabled, show_key_lift_card, show_bodyweight_card, show_calorie_guideline_card, show_today_actions_card, show_upcoming_actions_card, show_latest_feedback_card')
           .eq('client_id', clientId)
           .maybeSingle(),
       ]);
@@ -120,7 +132,10 @@ export default function ClientSettingsPage() {
 
       const fallbackSettings = defaultSettings(clientId);
       setClient(clientResult.data as ClientRecord);
-      setSettings((settingsResult.data as ClientSettingsRecord | null) ?? fallbackSettings);
+      setSettings({
+        ...fallbackSettings,
+        ...((settingsResult.data as Partial<ClientSettingsRecord> | null) ?? {}),
+      });
       setLoading(false);
     };
 
@@ -153,6 +168,12 @@ export default function ClientSettingsPage() {
         workout_rpe_enabled: settings.workout_rpe_enabled,
         client_feedback_enabled: settings.client_feedback_enabled,
         training_availability_enabled: settings.training_availability_enabled,
+        show_key_lift_card: settings.show_key_lift_card,
+        show_bodyweight_card: settings.show_bodyweight_card,
+        show_calorie_guideline_card: settings.show_calorie_guideline_card,
+        show_today_actions_card: settings.show_today_actions_card,
+        show_upcoming_actions_card: settings.show_upcoming_actions_card,
+        show_latest_feedback_card: settings.show_latest_feedback_card,
       },
       { onConflict: 'client_id' }
     );
@@ -190,7 +211,7 @@ export default function ClientSettingsPage() {
         <div>
           <h1 className="text-3xl font-bold uppercase tracking-tight text-[#000000]">Client Settings</h1>
           <p className="mt-1 text-sm text-gray-700">{client.full_name}{client.email ? ` • ${client.email}` : ''}</p>
-          <p className="mt-1 text-xs font-semibold uppercase text-gray-500">Control what this client sees and tracks.</p>
+          <p className="mt-1 text-xs font-semibold uppercase text-gray-500">Control what this client tracks and what appears on their Hub.</p>
         </div>
         <Link href={`/coach/clients/${clientId}`} className="text-sm font-bold uppercase text-[#FA0201] hover:underline">
           Back to client
@@ -243,6 +264,56 @@ export default function ClientSettingsPage() {
                 onChange={(checked) => updateSetting('show_macro_targets', checked)}
               />
             </div>
+          </div>
+        </Card>
+      </section>
+
+      <section>
+        <SectionHeader title="CLIENT HUB CARDS" accent />
+        <Card>
+          <div className="mb-5 rounded-xl border border-gray-200 bg-gray-50 p-4">
+            <p className="text-sm font-bold uppercase text-[#000000]">Dashboard visibility</p>
+            <p className="mt-1 text-sm text-gray-600">
+              These toggles control motivation and guidance cards on the client Hub. They do not force the client to submit extra data.
+            </p>
+          </div>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <ToggleRow
+              title="Key lift progress card"
+              description="Shows 1-week and 4-week strength trend when key lift data exists. Useful for strength-focused clients."
+              checked={settings.show_key_lift_card}
+              onChange={(checked) => updateSetting('show_key_lift_card', checked)}
+            />
+            <ToggleRow
+              title="Bodyweight progress card"
+              description="Shows 1-week and 4-week bodyweight trend when weigh-ins exist. Useful for fat loss, gaining, or maintenance goals."
+              checked={settings.show_bodyweight_card}
+              onChange={(checked) => updateSetting('show_bodyweight_card', checked)}
+            />
+            <ToggleRow
+              title="Calorie guideline card"
+              description="Shows a simple calorie-direction prompt based on bodyweight trend. Keep this off for clients who should not focus on calories."
+              checked={settings.show_calorie_guideline_card}
+              onChange={(checked) => updateSetting('show_calorie_guideline_card', checked)}
+            />
+            <ToggleRow
+              title="Today actions card"
+              description="Shows what the client should do today, such as scheduled workouts or active tasks."
+              checked={settings.show_today_actions_card}
+              onChange={(checked) => updateSetting('show_today_actions_card', checked)}
+            />
+            <ToggleRow
+              title="Upcoming actions card"
+              description="Shows tomorrow and upcoming tasks so the client knows what is coming next."
+              checked={settings.show_upcoming_actions_card}
+              onChange={(checked) => updateSetting('show_upcoming_actions_card', checked)}
+            />
+            <ToggleRow
+              title="Latest feedback card"
+              description="Shows the latest visible coach feedback on the client Hub."
+              checked={settings.show_latest_feedback_card}
+              onChange={(checked) => updateSetting('show_latest_feedback_card', checked)}
+            />
           </div>
         </Card>
       </section>
