@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { WorkoutFlagsLoader } from '@/components/coach/workout-flags-loader';
+import { WorkoutNoteFlagsLoader } from '@/components/coach/workout-note-flags-loader';
 
 type WorkoutReviewLayoutProps = {
   children: ReactNode;
@@ -15,6 +16,7 @@ export default async function WorkoutReviewLayout(props: WorkoutReviewLayoutProp
   return (
     <>
       <WorkoutFlagsLoader clientId={routeParams.id} sessionId={routeParams.sessionId} />
+      <WorkoutNoteFlagsLoader sessionId={routeParams.sessionId} />
       {props.children}
     </>
   );
