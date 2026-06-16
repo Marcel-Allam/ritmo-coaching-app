@@ -91,13 +91,13 @@ const findFutureWorkouts = (currentWorkout: ProgramWorkoutRecord, workouts: Prog
 export function WorkoutNextSessionDecision({ clientId, sessionId }: WorkoutNextSessionDecisionProps) {
   const [decision, setDecision] = useState<DecisionValue>('keep_as_planned');
   const [adjustmentNote, setAdjustmentNote] = useState('');
+  const [programId, setProgramId] = useState<string | null>(null);
   const [workoutTitle, setWorkoutTitle] = useState('Completed workout');
-  const [nextWorkout, setNextWorkout] = useState<ProgramWorkoutRecord | null>(null);
   const [futureWorkouts, setFutureWorkouts] = useState<ProgramWorkoutRecord[]>([]);
   const [futureExercises, setFutureExercises] = useState<FutureProgramExerciseRecord[]>([]);
   const [catalogueExercises, setCatalogueExercises] = useState<CatalogueExerciseRecord[]>([]);
   const [showApplyModal, setShowApplyModal] = useState(false);
-  const [swapScope, setSwapScope] = useState<'next_workout' | 'all_future_program'>('all_future_program');
+  const [swapScope, setSwapScope] = useState<'programme_rule' | 'all_future_program'>('programme_rule');
   const [exerciseToReplace, setExerciseToReplace] = useState('');
   const [replacementExercise, setReplacementExercise] = useState('');
   const [replacementSetCount, setReplacementSetCount] = useState('3');
@@ -146,6 +146,7 @@ export function WorkoutNextSessionDecision({ clientId, sessionId }: WorkoutNextS
       }
 
       const currentWorkout = currentWorkoutData as ProgramWorkoutRecord;
+      setProgramId(currentWorkout.program_id);
       setWorkoutTitle(currentWorkout.title || 'Completed workout');
 
       const { data: workoutListData, error: workoutListError } = await supabase
@@ -166,7 +167,6 @@ export function WorkoutNextSessionDecision({ clientId, sessionId }: WorkoutNextS
       const orderedWorkouts = (workoutListData ?? []) as ProgramWorkoutRecord[];
       const upcomingWorkouts = findFutureWorkouts(currentWorkout, orderedWorkouts);
       setFutureWorkouts(upcomingWorkouts);
-      setNextWorkout(upcomingWorkouts[0] || null);
 
       const futureWorkoutIds = upcomingWorkouts.map((workout) => workout.id);
       const [exerciseResult, catalogueResult] = await Promise.all([
@@ -198,7 +198,7 @@ export function WorkoutNextSessionDecision({ clientId, sessionId }: WorkoutNextS
   }, [clientId, sessionId]);
 
   const selectedDecision = decisionOptions.find((option) => option.value === decision) || decisionOptions[0];
-  const scopedWorkoutIds = swapScope === 'next_workout' && nextWorkout ? [nextWorkout.id] : futureWorkouts.map((workout) => workout.id);
+  const scopedWorkoutIds = swapScope === 'all_future_program' ? futureWorkouts.map((workout) => workout.id) : [];
 
   const exerciseOptions = useMemo(() => {
     return Array.from(new Set(
@@ -212,24 +212,24 @@ export function WorkoutNextSessionDecision({ clientId, sessionId }: WorkoutNextS
   const previewWorkouts = futureWorkouts.filter((workout) => scopedWorkoutIds.includes(workout.id));
 
   const buildDecisionDescription = (extraLines: string[] = []) => [
-    `Next session decision: ${selectedDecision.label}`,
+    `Programme adjustment decision: ${selectedDecision.label}`,
     adjustmentNote.trim() ? `Adjustment note: ${adjustmentNote.trim()}` : null,
     ...extraLines,
   ]
     .filter(Boolean)
     .join('\n\n');
 
-  const createCoachAction = async (extraLines: string[] = []) => {
+  const createProgrammeAction = async (extraLines: string[] = []) => {
     const supabase = createClient();
 
     return supabase.from('coach_actions').insert({
       client_id: clientId,
-      action_type: 'next_session_decision',
+      action_type: 'programme_adjustment',
       description: buildDecisionDescription(extraLines),
       priority: selectedDecision.priority,
       due_date: todayDate(),
       status: 'new',
-      notes: `Created from workout review. Workout: ${workoutTitle}. Session ID: ${sessionId}.`,
+      notes: `Created from workout review. Programme ID: ${programId || 'unknown'}. Reviewed workout: ${workoutTitle}. Session ID: ${sessionId}.`,
     });
   };
 
@@ -240,7 +240,7 @@ export function WorkoutNextSessionDecision({ clientId, sessionId }: WorkoutNextS
     setMessage(null);
     setError(null);
 
-    const { error: actionError } = await createCoachAction();
+    const { error: actionError } = await createProgrammeAction(['Saved for next programme planning.']);
 
     if (actionError) {
       setError(actionError.message);
@@ -248,50 +248,16 @@ export function WorkoutNextSessionDecision({ clientId, sessionId }: WorkoutNextS
       return;
     }
 
-    setMessage('Next session decision saved as a coach action.');
+    setMessage('Programme adjustment saved as a coach action.');
     setAdjustmentNote('');
     setIsSaving(false);
-  };
-
-  const appendSimpleDecisionToNextWorkout = async () => {
-    if (!isSupabaseConfigured || !nextWorkout) {
-      throw new Error('No next active workout was found. Create or schedule the next workout first.');
-    }
-
-    const supabase = createClient();
-    const decisionBlock = [
-      '[RITMO_NEXT_SESSION_DECISION]',
-      `Reviewed workout: ${workoutTitle}`,
-      `Decision: ${selectedDecision.label}`,
-      adjustmentNote.trim() ? `Adjustment note: ${adjustmentNote.trim()}` : null,
-    ]
-      .filter(Boolean)
-      .join('\n');
-
-    const updatedInstructions = [nextWorkout.instructions?.trim(), decisionBlock]
-      .filter(Boolean)
-      .join('\n\n');
-
-    const { error: workoutUpdateError } = await supabase
-      .from('program_workouts')
-      .update({ instructions: updatedInstructions })
-      .eq('id', nextWorkout.id)
-      .eq('client_id', clientId);
-
-    if (workoutUpdateError) throw workoutUpdateError;
-
-    setNextWorkout({ ...nextWorkout, instructions: updatedInstructions });
   };
 
   const applySwapExercise = async () => {
     if (!isSupabaseConfigured) return;
 
-    if (futureWorkouts.length === 0) {
-      throw new Error('No future workouts were found in this programme. Create or schedule the next workout first.');
-    }
-
-    if (!exerciseToReplace || !replacementExercise) {
-      throw new Error('Choose both the exercise to replace and the replacement exercise.');
+    if (!exerciseToReplace.trim() || !replacementExercise) {
+      throw new Error('Choose or type the exercise to replace and choose the replacement exercise.');
     }
 
     const setCount = Math.max(1, Number(replacementSetCount) || 1);
@@ -300,54 +266,55 @@ export function WorkoutNextSessionDecision({ clientId, sessionId }: WorkoutNextS
     }
 
     const affectedExercises = futureExercises.filter((exercise) => (
-      scopedWorkoutIds.includes(exercise.workout_id) && exercise.exercise_name === exerciseToReplace
+      scopedWorkoutIds.includes(exercise.workout_id) && exercise.exercise_name === exerciseToReplace.trim()
     ));
 
-    if (affectedExercises.length === 0) {
-      throw new Error('No matching future exercise rows found for this selection.');
+    if (swapScope === 'all_future_program' && affectedExercises.length > 0) {
+      const affectedExerciseIds = affectedExercises.map((exercise) => exercise.id);
+      const supabase = createClient();
+
+      const { error: exerciseUpdateError } = await supabase
+        .from('program_exercises')
+        .update({ exercise_name: replacementExercise })
+        .in('id', affectedExerciseIds);
+
+      if (exerciseUpdateError) throw exerciseUpdateError;
+
+      const { error: deleteSetsError } = await supabase
+        .from('program_sets')
+        .delete()
+        .in('exercise_id', affectedExerciseIds);
+
+      if (deleteSetsError) throw deleteSetsError;
+
+      const setRows = affectedExerciseIds.flatMap((exerciseId) => (
+        Array.from({ length: setCount }, (_, index) => ({
+          exercise_id: exerciseId,
+          set_order: index + 1,
+          target_reps: replacementReps.trim(),
+          target_weight_kg: numberOrNull(replacementKg),
+          target_rpe: numberOrNull(replacementRpe),
+          target_rir: null,
+          notes: null,
+        }))
+      ));
+
+      const { error: insertSetsError } = await supabase.from('program_sets').insert(setRows);
+      if (insertSetsError) throw insertSetsError;
+
+      setFutureExercises((current) => current.map((exercise) => (
+        affectedExerciseIds.includes(exercise.id) ? { ...exercise, exercise_name: replacementExercise } : exercise
+      )));
     }
 
-    const affectedExerciseIds = affectedExercises.map((exercise) => exercise.id);
-    const supabase = createClient();
-
-    const { error: exerciseUpdateError } = await supabase
-      .from('program_exercises')
-      .update({ exercise_name: replacementExercise })
-      .in('id', affectedExerciseIds);
-
-    if (exerciseUpdateError) throw exerciseUpdateError;
-
-    const { error: deleteSetsError } = await supabase
-      .from('program_sets')
-      .delete()
-      .in('exercise_id', affectedExerciseIds);
-
-    if (deleteSetsError) throw deleteSetsError;
-
-    const setRows = affectedExerciseIds.flatMap((exerciseId) => (
-      Array.from({ length: setCount }, (_, index) => ({
-        exercise_id: exerciseId,
-        set_order: index + 1,
-        target_reps: replacementReps.trim(),
-        target_weight_kg: numberOrNull(replacementKg),
-        target_rpe: numberOrNull(replacementRpe),
-        target_rir: null,
-        notes: null,
-      }))
-    ));
-
-    const { error: insertSetsError } = await supabase.from('program_sets').insert(setRows);
-    if (insertSetsError) throw insertSetsError;
-
-    await createCoachAction([
-      `Swap applied: ${exerciseToReplace} → ${replacementExercise}`,
-      `Scope: ${swapScope === 'next_workout' ? 'Next workout only' : 'All future appearances in this programme'}`,
+    const { error: actionError } = await createProgrammeAction([
+      `Swap rule: ${exerciseToReplace.trim()} → ${replacementExercise}`,
+      `Scope: ${swapScope === 'all_future_program' ? 'Updated matching future rows already planned' : 'Programme planning rule for next week'}`,
       `Prescription: ${setCount} sets x ${replacementReps}${replacementKg.trim() ? ` @ ${replacementKg}kg` : ''}${replacementRpe.trim() ? `, target RPE ${replacementRpe}` : ''}`,
+      swapScope === 'all_future_program' && affectedExercises.length === 0 ? 'No existing future rows matched yet, so this has been saved as a programme planning action.' : '',
     ]);
 
-    setFutureExercises((current) => current.map((exercise) => (
-      affectedExerciseIds.includes(exercise.id) ? { ...exercise, exercise_name: replacementExercise } : exercise
-    )));
+    if (actionError) throw actionError;
   };
 
   const confirmApply = async () => {
@@ -360,12 +327,11 @@ export function WorkoutNextSessionDecision({ clientId, sessionId }: WorkoutNextS
     try {
       if (decision === 'swap_exercise') {
         await applySwapExercise();
-        setMessage('Exercise swap applied and saved as a coach action.');
+        setMessage('Exercise swap saved to the programme workflow.');
       } else {
-        await appendSimpleDecisionToNextWorkout();
-        const { error: actionError } = await createCoachAction();
+        const { error: actionError } = await createProgrammeAction(['Saved for next programme planning.']);
         if (actionError) throw actionError;
-        setMessage(`Decision applied to ${nextWorkout?.title} and saved as a coach action.`);
+        setMessage('Programme adjustment saved for next week planning.');
       }
 
       setAdjustmentNote('');
@@ -388,22 +354,22 @@ export function WorkoutNextSessionDecision({ clientId, sessionId }: WorkoutNextS
   return (
     <div className="px-6 pt-4 md:px-8 md:pt-5">
       <section>
-        <SectionHeader title="NEXT SESSION DECISION" accent />
+        <SectionHeader title="PROGRAMME ADJUSTMENT DECISION" accent />
         <Card className="space-y-4 p-4">
           <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-700">
-            <p className="font-bold uppercase text-gray-500">Target next workout</p>
+            <p className="font-bold uppercase text-gray-500">Programme workflow</p>
             <p className="mt-1 font-semibold text-[#000000]">
-              {nextWorkout ? `${nextWorkout.title} • ${formatDate(nextWorkout.scheduled_date)}` : 'No next active workout found in this programme.'}
+              This decision is saved for week-to-week programme planning, not attached to one scheduled workout.
             </p>
           </div>
 
           <div className="grid grid-cols-1 gap-3 md:grid-cols-[240px_1fr]">
             <div>
-              <label htmlFor="next-session-decision" className="text-xs font-bold uppercase text-gray-500">
+              <label htmlFor="programme-adjustment-decision" className="text-xs font-bold uppercase text-gray-500">
                 Coach decision
               </label>
               <select
-                id="next-session-decision"
+                id="programme-adjustment-decision"
                 value={decision}
                 onChange={(event) => setDecision(event.target.value as DecisionValue)}
                 className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-[#000000] outline-none focus:border-[#FA0201]"
@@ -418,7 +384,7 @@ export function WorkoutNextSessionDecision({ clientId, sessionId }: WorkoutNextS
               label="Adjustment note"
               value={adjustmentNote}
               onChange={(event) => setAdjustmentNote(event.target.value)}
-              placeholder="Example: Bench Press — repeat 95kg x 6 next week. Keep target RPE 8 and cue tighter pause."
+              placeholder="Example: Bench Press — reduce next week loading and cue tighter pause."
             />
           </div>
 
@@ -440,7 +406,7 @@ export function WorkoutNextSessionDecision({ clientId, sessionId }: WorkoutNextS
               onClick={openApplyModal}
               className="rounded-lg bg-[#000000] px-4 py-2 text-xs font-bold uppercase text-white hover:bg-gray-900 disabled:opacity-60"
             >
-              Apply to next workout
+              Apply to programme
             </button>
           </div>
         </Card>
@@ -451,31 +417,43 @@ export function WorkoutNextSessionDecision({ clientId, sessionId }: WorkoutNextS
           <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-xs font-bold uppercase text-[#FA0201]">Apply decision</p>
+                <p className="text-xs font-bold uppercase text-[#FA0201]">Apply programme decision</p>
                 <h2 className="text-2xl font-black uppercase text-[#000000]">{selectedDecision.label}</h2>
-                <p className="mt-1 text-sm text-gray-600">No redirect. Confirm the change here and it will update the selected future workout prescription.</p>
+                <p className="mt-1 text-sm text-gray-600">No redirect. Save this against the programme workflow for next week planning.</p>
               </div>
               <button type="button" onClick={() => setShowApplyModal(false)} className="text-xl font-black text-gray-400 hover:text-[#000000]">×</button>
             </div>
 
             <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-700">
-              <p className="font-bold uppercase text-gray-500">Affected workout preview</p>
-              <ul className="mt-2 space-y-1 font-semibold text-[#000000]">
-                {previewWorkouts.length > 0 ? previewWorkouts.map((workout) => (
-                  <li key={workout.id}>{workout.title} • {formatDate(workout.scheduled_date)}</li>
-                )) : <li>No future workouts found. Create or schedule the next workout first.</li>}
-              </ul>
+              <p className="font-bold uppercase text-gray-500">Programme impact preview</p>
+              {swapScope === 'all_future_program' ? (
+                <ul className="mt-2 space-y-1 font-semibold text-[#000000]">
+                  {previewWorkouts.length > 0 ? previewWorkouts.map((workout) => (
+                    <li key={workout.id}>{workout.title} • {formatDate(workout.scheduled_date)}</li>
+                  )) : <li>No future workout rows exist yet. The decision will be saved as a programme planning action.</li>}
+                </ul>
+              ) : (
+                <p className="mt-2 font-semibold text-[#000000]">Saved as a programme planning rule for the next week you build.</p>
+              )}
             </div>
 
             {decision === 'swap_exercise' ? (
               <div className="mt-4 space-y-4">
+                <div>
+                  <label className="text-xs font-bold uppercase text-gray-500">Apply behaviour</label>
+                  <select value={swapScope} onChange={(event) => setSwapScope(event.target.value as 'programme_rule' | 'all_future_program')} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-[#000000] outline-none focus:border-[#FA0201]">
+                    <option value="programme_rule">Programme planning rule for next week</option>
+                    <option value="all_future_program">Update matching future rows already planned</option>
+                  </select>
+                </div>
+
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                   <div>
                     <label className="text-xs font-bold uppercase text-gray-500">Exercise to swap out</label>
-                    <select value={exerciseToReplace} onChange={(event) => setExerciseToReplace(event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-[#000000] outline-none focus:border-[#FA0201]">
-                      <option value="">Choose exercise</option>
-                      {exerciseOptions.map((exercise) => <option key={exercise} value={exercise}>{exercise}</option>)}
-                    </select>
+                    <input list="programme-exercises" value={exerciseToReplace} onChange={(event) => setExerciseToReplace(event.target.value)} placeholder="Type or choose exercise" className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-[#000000] outline-none focus:border-[#FA0201]" />
+                    <datalist id="programme-exercises">
+                      {exerciseOptions.map((exercise) => <option key={exercise} value={exercise} />)}
+                    </datalist>
                   </div>
                   <div>
                     <label className="text-xs font-bold uppercase text-gray-500">Replace with</label>
@@ -484,14 +462,6 @@ export function WorkoutNextSessionDecision({ clientId, sessionId }: WorkoutNextS
                       {catalogueExercises.map((exercise) => <option key={exercise.id} value={exercise.name}>{exercise.name}</option>)}
                     </select>
                   </div>
-                </div>
-
-                <div>
-                  <label className="text-xs font-bold uppercase text-gray-500">Apply to</label>
-                  <select value={swapScope} onChange={(event) => setSwapScope(event.target.value as 'next_workout' | 'all_future_program')} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-[#000000] outline-none focus:border-[#FA0201]">
-                    <option value="next_workout">Next workout only</option>
-                    <option value="all_future_program">All future appearances in this programme</option>
-                  </select>
                 </div>
 
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
@@ -515,8 +485,8 @@ export function WorkoutNextSessionDecision({ clientId, sessionId }: WorkoutNextS
               </div>
             ) : (
               <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
-                <p className="font-bold uppercase">Simple apply mode</p>
-                <p className="mt-1">This decision will be appended to the next workout instructions. Structured controls for load, volume, cue, and repeat-session changes can reuse this modal pattern next.</p>
+                <p className="font-bold uppercase">Programme planning action</p>
+                <p className="mt-1">This will save the decision as a programme adjustment for the next week you build. It will not attach a note to one scheduled workout.</p>
               </div>
             )}
 
