@@ -254,7 +254,9 @@ export function WorkoutNextSessionDecision({ clientId, sessionId }: WorkoutNextS
   };
 
   const appendSimpleDecisionToNextWorkout = async () => {
-    if (!isSupabaseConfigured || !nextWorkout) return;
+    if (!isSupabaseConfigured || !nextWorkout) {
+      throw new Error('No next active workout was found. Create or schedule the next workout first.');
+    }
 
     const supabase = createClient();
     const decisionBlock = [
@@ -284,15 +286,17 @@ export function WorkoutNextSessionDecision({ clientId, sessionId }: WorkoutNextS
   const applySwapExercise = async () => {
     if (!isSupabaseConfigured) return;
 
+    if (futureWorkouts.length === 0) {
+      throw new Error('No future workouts were found in this programme. Create or schedule the next workout first.');
+    }
+
     if (!exerciseToReplace || !replacementExercise) {
-      setError('Choose both the exercise to replace and the replacement exercise.');
-      return;
+      throw new Error('Choose both the exercise to replace and the replacement exercise.');
     }
 
     const setCount = Math.max(1, Number(replacementSetCount) || 1);
     if (!replacementReps.trim()) {
-      setError('Add the target reps for the replacement exercise.');
-      return;
+      throw new Error('Add the target reps for the replacement exercise.');
     }
 
     const affectedExercises = futureExercises.filter((exercise) => (
@@ -300,8 +304,7 @@ export function WorkoutNextSessionDecision({ clientId, sessionId }: WorkoutNextS
     ));
 
     if (affectedExercises.length === 0) {
-      setError('No matching future exercise rows found for this selection.');
-      return;
+      throw new Error('No matching future exercise rows found for this selection.');
     }
 
     const affectedExerciseIds = affectedExercises.map((exercise) => exercise.id);
@@ -374,6 +377,12 @@ export function WorkoutNextSessionDecision({ clientId, sessionId }: WorkoutNextS
     }
   };
 
+  const openApplyModal = () => {
+    setError(null);
+    setMessage(null);
+    setShowApplyModal(true);
+  };
+
   if (isLoading) return null;
 
   return (
@@ -427,8 +436,8 @@ export function WorkoutNextSessionDecision({ clientId, sessionId }: WorkoutNextS
             </button>
             <button
               type="button"
-              disabled={isSaving || isApplying || !nextWorkout}
-              onClick={() => setShowApplyModal(true)}
+              disabled={isSaving || isApplying}
+              onClick={openApplyModal}
               className="rounded-lg bg-[#000000] px-4 py-2 text-xs font-bold uppercase text-white hover:bg-gray-900 disabled:opacity-60"
             >
               Apply to next workout
@@ -454,7 +463,7 @@ export function WorkoutNextSessionDecision({ clientId, sessionId }: WorkoutNextS
               <ul className="mt-2 space-y-1 font-semibold text-[#000000]">
                 {previewWorkouts.length > 0 ? previewWorkouts.map((workout) => (
                   <li key={workout.id}>{workout.title} • {formatDate(workout.scheduled_date)}</li>
-                )) : <li>No future workouts found.</li>}
+                )) : <li>No future workouts found. Create or schedule the next workout first.</li>}
               </ul>
             </div>
 
@@ -510,6 +519,8 @@ export function WorkoutNextSessionDecision({ clientId, sessionId }: WorkoutNextS
                 <p className="mt-1">This decision will be appended to the next workout instructions. Structured controls for load, volume, cue, and repeat-session changes can reuse this modal pattern next.</p>
               </div>
             )}
+
+            {error && <p className="mt-4 text-xs font-semibold text-red-700">{error}</p>}
 
             <div className="mt-5 flex flex-wrap justify-end gap-2">
               <button type="button" onClick={() => setShowApplyModal(false)} className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-xs font-bold uppercase text-[#000000] hover:bg-gray-50">Cancel</button>
