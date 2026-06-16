@@ -8,7 +8,6 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { SectionHeader } from '@/components/ui/section-header';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
-import { completeCurrentAndCreateNextWeeklyTask } from '@/lib/recurring-tasks';
 import { useAuth } from '@/lib/auth-context';
 
 type ClientRecord = { id: string; full_name: string };
@@ -125,6 +124,8 @@ export default function TrainingAvailabilityPage() {
       `Limits / notes: ${notes.trim() || 'None provided'}`,
     ].join('\n');
 
+    // The database trigger closes the current active weekly task and creates
+    // the next one exactly seven days after this submission date.
     const { error: submissionError } = await supabase.from('task_submissions').insert({
       client_id: client.id,
       assigned_task_id: assignedTask?.id ?? null,
@@ -141,21 +142,7 @@ export default function TrainingAvailabilityPage() {
       return;
     }
 
-    const { error: recurringTaskError, nextTaskDate } = await completeCurrentAndCreateNextWeeklyTask({
-      supabase,
-      clientId: client.id,
-      taskType: 'training_availability',
-      taskName: 'Submit training availability',
-      instructions: promptCopy,
-    });
-
-    if (recurringTaskError) {
-      setMessage(recurringTaskError.message);
-      setSaving(false);
-      return;
-    }
-
-    setMessage(`Training availability submitted. Next availability check-in is set for ${nextTaskDate}.`);
+    setMessage('Training availability submitted. Your next weekly availability check-in will appear after this one is completed.');
     setSaving(false);
     setTimeout(() => router.push('/client'), 1200);
   };
