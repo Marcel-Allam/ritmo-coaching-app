@@ -46,22 +46,13 @@ type PerformedSetRecord = {
 };
 
 type FeedbackForm = {
-  includeWin: boolean;
-  includeImprove: boolean;
-  includeAdjustment: boolean;
   win: string;
   improve: string;
   adjustment: string;
 };
 
-const emptyFeedback: FeedbackForm = {
-  includeWin: true,
-  includeImprove: true,
-  includeAdjustment: true,
-  win: '',
-  improve: '',
-  adjustment: '',
-};
+const emptyFeedback: FeedbackForm = { win: '', improve: '', adjustment: '' };
+const EXERCISE_NOTES_MARKER = '[RITMO_EXERCISE_NOTES]';
 
 const formatDateTime = (value: string | null) => {
   if (!value) return 'Not recorded';
@@ -112,9 +103,7 @@ const analyseSet = (target: ProgramSetRecord, actual?: PerformedSetRecord) => {
   let hasCaution = false;
   let hasNegative = false;
 
-  if (!actual) {
-    return { outcome: 'below' as Outcome, reasons: ['No actual set log found.'] };
-  }
+  if (!actual) return { outcome: 'below' as Outcome, reasons: ['No actual set log found.'] };
 
   if (!actual.completed) {
     hasNegative = true;
@@ -185,6 +174,7 @@ export default function CoachWorkoutReviewPage() {
   const [performedSets, setPerformedSets] = useState<PerformedSetRecord[]>([]);
   const [coachNote, setCoachNote] = useState('');
   const [feedback, setFeedback] = useState<FeedbackForm>(emptyFeedback);
+  const [exerciseNotes, setExerciseNotes] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -284,6 +274,10 @@ export default function CoachWorkoutReviewPage() {
     }, {});
   }, [performedSets]);
 
+  const updateExerciseNote = (exerciseId: string, note: string) => {
+    setExerciseNotes((current) => ({ ...current, [exerciseId]: note }));
+  };
+
   const saveReviewStatus = async (nextStatus: ReviewStatus) => {
     if (!isSupabaseConfigured || !session) return;
     setSaving(true);
@@ -314,12 +308,19 @@ export default function CoachWorkoutReviewPage() {
 
   const sendClientFeedback = async () => {
     if (!isSupabaseConfigured || !client) return;
-    const mainWin = feedback.includeWin ? feedback.win.trim() : '';
-    const mainFocus = feedback.includeImprove ? feedback.improve.trim() : '';
-    const adjustment = feedback.includeAdjustment ? feedback.adjustment.trim() : '';
 
-    if (!mainWin && !mainFocus && !adjustment) {
-      setError('Add at least one client-facing feedback box before sending.');
+    const win = feedback.win.trim();
+    const improve = feedback.improve.trim();
+    const adjustment = feedback.adjustment.trim();
+    const visibleExerciseNotes = exercises
+      .map((exercise) => ({ exerciseName: exercise.exercise_name, note: (exerciseNotes[exercise.id] || '').trim() }))
+      .filter((item) => item.note.length > 0);
+    const exerciseNotesBlock = visibleExerciseNotes.length
+      ? `${EXERCISE_NOTES_MARKER}\n${visibleExerciseNotes.map((item) => `- ${item.exerciseName}: ${item.note}`).join('\n')}`
+      : '';
+
+    if (!win && !improve && !adjustment && !exerciseNotesBlock) {
+      setError('Add feedback or at least one exercise note before sending.');
       return;
     }
 
@@ -331,10 +332,10 @@ export default function CoachWorkoutReviewPage() {
     const { error: feedbackError } = await supabase.from('feedback_notes').insert({
       client_id: client.id,
       feedback_date: new Date().toISOString().slice(0, 10),
-      main_win: mainWin || null,
-      main_focus: mainFocus || null,
+      main_win: win || null,
+      main_focus: improve || null,
       agreed_action: adjustment || null,
-      plan_change: adjustment || null,
+      plan_change: exerciseNotesBlock || null,
       client_visible: true,
     });
 
@@ -346,6 +347,7 @@ export default function CoachWorkoutReviewPage() {
 
     await saveReviewStatus('reviewed');
     setFeedback(emptyFeedback);
+    setExerciseNotes({});
     setMessage('Client feedback sent and workout marked reviewed.');
     setSaving(false);
   };
@@ -364,7 +366,6 @@ export default function CoachWorkoutReviewPage() {
         <div className="flex flex-col items-start gap-2 md:items-end">
           {session && <Badge variant={getStatusVariant(session.review_status) as any}>{session.review_status.replaceAll('_', ' ')}</Badge>}
           <Link href={`/coach/clients/${clientId}`} className="text-sm font-bold uppercase text-[#FA0201] hover:underline">Back to client</Link>
-          <Link href={`/coach/clients/${clientId}/workout-history`} className="text-sm font-bold uppercase text-[#FA0201] hover:underline">Workout history</Link>
         </div>
       </div>
 
@@ -407,6 +408,14 @@ export default function CoachWorkoutReviewPage() {
                   );
                 })}
               </div>
+              <div className="mt-4 rounded-lg border border-gray-200 bg-white p-4">
+                <Textarea
+                  label="Exercise note to client"
+                  value={exerciseNotes[exercise.id] || ''}
+                  onChange={(event) => updateExerciseNote(exercise.id, event.target.value)}
+                  placeholder={`Optional note for ${exercise.exercise_name}. If left blank, the client will not see a note section for this exercise.`}
+                />
+              </div>
             </div>
           ))}
         </Card>
@@ -429,32 +438,13 @@ export default function CoachWorkoutReviewPage() {
       <section>
         <SectionHeader title="CLIENT-FACING FEEDBACK" accent />
         <Card className="space-y-5">
-          <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-            <label className="mb-3 flex items-center gap-2 text-xs font-bold uppercase text-gray-600">
-              <input type="checkbox" checked={feedback.includeWin} onChange={(event) => setFeedback((current) => ({ ...current, includeWin: event.target.checked }))} />
-              Include Win
-            </label>
-            <Textarea label="Win" value={feedback.win} onChange={(event) => setFeedback((current) => ({ ...current, win: event.target.value }))} placeholder="What went well in this workout?" />
-          </div>
-
-          <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-            <label className="mb-3 flex items-center gap-2 text-xs font-bold uppercase text-gray-600">
-              <input type="checkbox" checked={feedback.includeImprove} onChange={(event) => setFeedback((current) => ({ ...current, includeImprove: event.target.checked }))} />
-              Include What to improve
-            </label>
-            <Textarea label="What to improve" value={feedback.improve} onChange={(event) => setFeedback((current) => ({ ...current, improve: event.target.value }))} placeholder="What should the client tighten up next time?" />
-          </div>
-
-          <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-            <label className="mb-3 flex items-center gap-2 text-xs font-bold uppercase text-gray-600">
-              <input type="checkbox" checked={feedback.includeAdjustment} onChange={(event) => setFeedback((current) => ({ ...current, includeAdjustment: event.target.checked }))} />
-              Include Adjustment
-            </label>
-            <Textarea label="Adjustment" value={feedback.adjustment} onChange={(event) => setFeedback((current) => ({ ...current, adjustment: event.target.value }))} placeholder="What changes now? Keep load, increase, reduce, adjust technique, or change focus." />
-          </div>
+          <p className="text-sm text-gray-600">Only fields with text will be sent to the client. Empty fields are ignored.</p>
+          <Textarea label="Win" value={feedback.win} onChange={(event) => setFeedback((current) => ({ ...current, win: event.target.value }))} placeholder="What went well in this workout?" />
+          <Textarea label="What to improve" value={feedback.improve} onChange={(event) => setFeedback((current) => ({ ...current, improve: event.target.value }))} placeholder="What should the client tighten up next time?" />
+          <Textarea label="Adjustment" value={feedback.adjustment} onChange={(event) => setFeedback((current) => ({ ...current, adjustment: event.target.value }))} placeholder="What changes now? Keep load, increase, reduce, adjust technique, or change focus." />
 
           <button type="button" disabled={saving} onClick={sendClientFeedback} className="w-full rounded-lg bg-[#FA0201] px-5 py-3 text-sm font-bold uppercase text-white hover:bg-red-700 disabled:opacity-60">
-            {saving ? 'Saving...' : 'Send selected feedback to client'}
+            {saving ? 'Saving...' : 'Send feedback to client'}
           </button>
         </Card>
       </section>
