@@ -2,6 +2,8 @@
 -- This lets the app check an invite token before creating a Supabase auth user,
 -- preventing random visitors from creating accounts with arbitrary emails.
 
+create extension if not exists pgcrypto;
+
 create or replace function public.validate_client_invite(p_token text)
 returns table (
   valid boolean,
