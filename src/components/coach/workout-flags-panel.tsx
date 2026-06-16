@@ -60,6 +60,28 @@ const hasNoteAlertLanguage = (value: string | null | undefined) => {
   return noteAlertWords.some((keyword) => text.includes(keyword));
 };
 
+const groupWorkoutFlags = (flags: WorkoutFlag[]) => {
+  const grouped = new Map<string, WorkoutFlag & { details: string[] }>();
+
+  flags.forEach((flag) => {
+    const key = [flag.tone, flag.label, flag.exerciseName || 'workout-level', flag.impact].join('|');
+    const existing = grouped.get(key);
+
+    if (existing) {
+      existing.details.push(flag.detail);
+      existing.id = `${existing.id}-${flag.id}`;
+      return;
+    }
+
+    grouped.set(key, { ...flag, details: [flag.detail] });
+  });
+
+  return Array.from(grouped.values()).map((flag) => ({
+    ...flag,
+    detail: flag.details.length === 1 ? flag.details[0] : `${flag.details.length} related flags: ${flag.details.join(' • ')}`,
+  }));
+};
+
 const buildWorkoutFlags = ({ exercises, setsByExercise, performedByProgramSetId, performedSets, workoutNote }: WorkoutFlagsPanelProps) => {
   const flags: WorkoutFlag[] = [];
 
@@ -174,7 +196,7 @@ const buildWorkoutFlags = ({ exercises, setsByExercise, performedByProgramSetId,
     }
   });
 
-  return flags;
+  return groupWorkoutFlags(flags);
 };
 
 export function WorkoutFlagsPanel(props: WorkoutFlagsPanelProps) {
