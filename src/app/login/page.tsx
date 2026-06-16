@@ -9,24 +9,22 @@ export default function LoginPage() {
   const { signIn, signUp, user, profile, loading } = useAuth();
 
   const [isSignUp, setIsSignUp] = useState(false);
+  const [inviteToken, setInviteToken] = useState<string | null>(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
-  const [role, setRole] = useState<'coach' | 'client'>('client');
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isCapsLockOn, setIsCapsLockOn] = useState(false);
 
   useEffect(() => {
     const searchParams = new URLSearchParams(window.location.search);
-    const inviteToken = searchParams.get('invite');
+    const token = searchParams.get('invite');
     const mode = searchParams.get('mode');
 
-    if (inviteToken) {
-      setRole('client');
-    }
+    setInviteToken(token);
 
-    if (inviteToken && mode === 'signup') {
+    if (token && mode === 'signup') {
       setIsSignUp(true);
     }
   }, []);
@@ -78,28 +76,31 @@ export default function LoginPage() {
     setIsSubmitting(true);
 
     try {
+      if (!inviteToken) {
+        setError('Account creation is invite-only. Ask your coach for a RITMO invite link.');
+        setIsSubmitting(false);
+        return;
+      }
+
       if (!fullName.trim()) {
         setError('Please enter your full name');
         setIsSubmitting(false);
         return;
       }
 
-      const searchParams = new URLSearchParams(window.location.search);
-      const inviteToken = searchParams.get('invite');
-      
       const { error: signUpError } = await signUp(
         email,
         password,
         fullName,
-        role,
+        'client',
         inviteToken
       );
       if (signUpError) {
         setError(getReadableAuthError(signUpError.message));
       } else {
         setError(null);
-        // Signup successful, user should be logged in now
-        // The auth context will handle the redirect
+        // Signup successful, user should be logged in now.
+        // The auth context handles the redirect.
       }
     } catch (err) {
       setError('An error occurred. Please try again.');
@@ -129,8 +130,14 @@ export default function LoginPage() {
         {/* Form Container */}
         <div className="bg-black border border-gray-700 rounded-lg p-8">
           <h2 className="text-2xl font-bold text-white mb-6 text-center">
-            {isSignUp ? 'Create Account' : 'Sign In'}
+            {isSignUp ? 'Create Invited Client Account' : 'Sign In'}
           </h2>
+
+          {isSignUp && !inviteToken && (
+            <div className="mb-4 p-3 bg-red-600 bg-opacity-10 border border-red-600 rounded text-white text-sm font-semibold">
+              Account creation is invite-only. Open the invite link your coach sent you.
+            </div>
+          )}
 
           {error && (
             <div className="mb-4 p-3 bg-red-600 bg-opacity-10 border border-red-600 rounded text-white text-sm font-semibold">
@@ -151,7 +158,7 @@ export default function LoginPage() {
                   placeholder="Enter your full name"
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || !inviteToken}
                   className="w-full px-4 py-2 bg-white text-black rounded border border-gray-300 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-red-600 disabled:opacity-50"
                 />
               </div>
@@ -168,7 +175,7 @@ export default function LoginPage() {
                 placeholder="Enter your email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                disabled={isSubmitting}
+                disabled={isSubmitting || (isSignUp && !inviteToken)}
                 required
                 className="w-full px-4 py-2 bg-white text-black rounded border border-gray-300 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-red-600 disabled:opacity-50"
               />
@@ -188,7 +195,7 @@ export default function LoginPage() {
                 onKeyDown={updateCapsLockState}
                 onKeyUp={updateCapsLockState}
                 onBlur={() => setIsCapsLockOn(false)}
-                disabled={isSubmitting}
+                disabled={isSubmitting || (isSignUp && !inviteToken)}
                 required
                 className="w-full px-4 py-2 bg-white text-black rounded border border-gray-300 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-red-600 disabled:opacity-50"
               />
@@ -199,34 +206,13 @@ export default function LoginPage() {
               )}
             </div>
 
-            {/* Role Selector (Sign Up Only) */}
-            {isSignUp && (
-              <div>
-                <label htmlFor="role" className="block text-white text-sm font-medium mb-2">
-                  I am a
-                </label>
-                <select
-                  id="role"
-                  value={role}
-                  onChange={(e) => setRole(e.target.value as 'coach' | 'client')}
-                  disabled={isSubmitting}
-                  className="w-full px-4 py-2 bg-white text-black rounded border border-gray-300 focus:outline-none focus:ring-2 focus:ring-red-600 disabled:opacity-50"
-                >
-                  <option value="client">Client</option>
-                  {!(typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('invite')) && (
-                    <option value="coach">Coach</option>
-                  )}
-                </select>
-              </div>
-            )}
-
             {/* Submit Button */}
             <button
               type="submit"
-              disabled={isSubmitting}
+              disabled={isSubmitting || (isSignUp && !inviteToken)}
               className="w-full py-3 px-4 bg-red-600 hover:bg-red-700 disabled:bg-red-700 disabled:opacity-50 text-white font-bold rounded transition-colors mt-6"
             >
-              {isSubmitting ? 'Loading...' : isSignUp ? 'SIGN UP' : 'SIGN IN'}
+              {isSubmitting ? 'Loading...' : isSignUp ? 'CREATE ACCOUNT' : 'SIGN IN'}
             </button>
           </form>
 
@@ -240,16 +226,15 @@ export default function LoginPage() {
                     setIsSignUp(false);
                     setError(null);
                     setFullName('');
-                    setRole('client');
                   }}
                   className="text-red-600 hover:text-red-500 font-medium"
                 >
                   Sign in
                 </button>
               </>
-            ) : (
+            ) : inviteToken ? (
               <>
-                Don't have an account?{' '}
+                Using an invite?{' '}
                 <button
                   onClick={() => {
                     setIsSignUp(true);
@@ -257,9 +242,11 @@ export default function LoginPage() {
                   }}
                   className="text-red-600 hover:text-red-500 font-medium"
                 >
-                  Create one
+                  Create invited account
                 </button>
               </>
+            ) : (
+              <span>Need an account? Ask your coach for an invite link.</span>
             )}
           </div>
         </div>
