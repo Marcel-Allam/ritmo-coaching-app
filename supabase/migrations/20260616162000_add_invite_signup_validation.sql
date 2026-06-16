@@ -1,8 +1,11 @@
 -- Adds a read-only validation helper for invite-gated client signup.
 -- This lets the app check an invite token before creating a Supabase auth user,
 -- preventing random visitors from creating accounts with arbitrary emails.
+--
+-- This version avoids hard-coding a single invite-used column name because the live
+-- client_invites table may use claimed_at, used_at, or accepted_at depending on schema state.
 
-create extension if not exists pgcrypto;
+create extension if not exists pgcrypto with schema extensions;
 
 create or replace function public.validate_client_invite(p_token text)
 returns table (
@@ -13,7 +16,7 @@ returns table (
 )
 language plpgsql
 security definer
-set search_path = public
+set search_path = public, extensions
 as $$
 declare
   v_token_hash text;
@@ -26,7 +29,10 @@ begin
 
   -- Existing invite generation stores a hashed one-time token.
   -- Keep this aligned with generate_client_invite / claim_client_invite.
-  v_token_hash := encode(digest(p_token, 'sha256'), 'hex');
+  v_token_hash := encode(
+    extensions.digest(convert_to(trim(p_token), 'UTF8'), 'sha256'),
+    'hex'
+  );
 
   return query
   select
@@ -37,8 +43,17 @@ begin
   from public.client_invites ci
   join public.clients c on c.id = ci.client_id
   where ci.token_hash = v_token_hash
-    and ci.claimed_at is null
-    and ci.expires_at > now()
+    and (
+      coalesce(
+        to_jsonb(ci) ->> 'claimed_at',
+        to_jsonb(ci) ->> 'used_at',
+        to_jsonb(ci) ->> 'accepted_at'
+      ) is null
+    )
+    and (
+      (to_jsonb(ci) ->> 'expires_at') is null
+      or (to_jsonb(ci) ->> 'expires_at')::timestamptz > now()
+    )
   limit 1;
 
   if not found then
