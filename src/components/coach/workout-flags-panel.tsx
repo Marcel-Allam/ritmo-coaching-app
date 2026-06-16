@@ -183,25 +183,25 @@ export function WorkoutFlagsPanel(props: WorkoutFlagsPanelProps) {
   return (
     <section>
       <SectionHeader title="WORKOUT FLAGS" accent />
-      <Card>
+      <Card className="p-4">
         {flags.length === 0 ? (
-          <div className="rounded-xl border border-green-200 bg-green-50 p-4 text-green-900">
-            <p className="text-sm font-bold uppercase">No flags detected</p>
-            <p className="mt-1 text-sm">Nothing major needs immediate attention from the logged workout data.</p>
+          <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-green-900">
+            <p className="text-xs font-bold uppercase">No flags detected</p>
+            <p className="mt-1 text-xs">Nothing major needs immediate attention from the logged workout data.</p>
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-2">
             {flags.map((flag) => (
-              <div key={flag.id} className={`rounded-xl border p-4 ${flagClasses[flag.tone]}`}>
-                <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+              <div key={flag.id} className={`rounded-lg border p-3 ${flagClasses[flag.tone]}`}>
+                <div className="flex flex-col gap-1 md:flex-row md:items-start md:justify-between">
                   <div>
-                    <p className="text-sm font-black uppercase">{flag.label}</p>
-                    {flag.exerciseName && <p className="mt-1 text-xs font-bold uppercase opacity-70">{flag.exerciseName}</p>}
+                    <p className="text-xs font-black uppercase">{flag.label}</p>
+                    {flag.exerciseName && <p className="mt-0.5 text-[11px] font-bold uppercase opacity-70">{flag.exerciseName}</p>}
                   </div>
-                  <span className={`rounded px-2 py-1 text-xs font-bold uppercase ${flagLabelClasses[flag.tone]}`}>{flag.tone}</span>
+                  <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${flagLabelClasses[flag.tone]}`}>{flag.tone}</span>
                 </div>
-                <p className="mt-3 text-sm font-semibold">{flag.detail}</p>
-                <p className="mt-1 text-xs opacity-80"><span className="font-bold">Impact:</span> {flag.impact}</p>
+                <p className="mt-2 text-xs font-semibold">{flag.detail}</p>
+                <p className="mt-1 text-[11px] opacity-80"><span className="font-bold">Impact:</span> {flag.impact}</p>
               </div>
             ))}
           </div>
