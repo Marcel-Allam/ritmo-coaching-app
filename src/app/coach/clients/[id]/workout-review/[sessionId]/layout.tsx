@@ -1,7 +1,8 @@
+import type { ReactNode } from 'react';
 import { WorkoutFlagsLoader } from '@/components/coach/workout-flags-loader';
 
 type WorkoutReviewLayoutProps = {
-  children: React.ReactNode;
+  children: ReactNode;
   params: {
     id: string;
     sessionId: string;
