@@ -37,7 +37,7 @@ type ProgramWorkoutRecord = {
   instructions: string | null;
 };
 
-type FutureProgramExerciseRecord = {
+type ProgramExerciseRecord = {
   id: string;
   workout_id: string;
   exercise_name: string;
@@ -93,8 +93,9 @@ export function WorkoutNextSessionDecision({ clientId, sessionId }: WorkoutNextS
   const [adjustmentNote, setAdjustmentNote] = useState('');
   const [programId, setProgramId] = useState<string | null>(null);
   const [workoutTitle, setWorkoutTitle] = useState('Completed workout');
+  const [reviewedWorkoutExercises, setReviewedWorkoutExercises] = useState<ProgramExerciseRecord[]>([]);
   const [futureWorkouts, setFutureWorkouts] = useState<ProgramWorkoutRecord[]>([]);
-  const [futureExercises, setFutureExercises] = useState<FutureProgramExerciseRecord[]>([]);
+  const [futureExercises, setFutureExercises] = useState<ProgramExerciseRecord[]>([]);
   const [catalogueExercises, setCatalogueExercises] = useState<CatalogueExerciseRecord[]>([]);
   const [showApplyModal, setShowApplyModal] = useState(false);
   const [swapScope, setSwapScope] = useState<'programme_rule' | 'all_future_program'>('programme_rule');
@@ -169,7 +170,12 @@ export function WorkoutNextSessionDecision({ clientId, sessionId }: WorkoutNextS
       setFutureWorkouts(upcomingWorkouts);
 
       const futureWorkoutIds = upcomingWorkouts.map((workout) => workout.id);
-      const [exerciseResult, catalogueResult] = await Promise.all([
+      const [reviewedExerciseResult, futureExerciseResult, catalogueResult] = await Promise.all([
+        supabase
+          .from('program_exercises')
+          .select('id, workout_id, exercise_name')
+          .eq('workout_id', currentWorkout.id)
+          .order('exercise_order', { ascending: true }),
         futureWorkoutIds.length > 0
           ? supabase
               .from('program_exercises')
@@ -183,13 +189,14 @@ export function WorkoutNextSessionDecision({ clientId, sessionId }: WorkoutNextS
           .order('name', { ascending: true }),
       ]);
 
-      if (exerciseResult.error || catalogueResult.error) {
-        setError(exerciseResult.error?.message || catalogueResult.error?.message || 'Could not load swap exercise data.');
+      if (reviewedExerciseResult.error || futureExerciseResult.error || catalogueResult.error) {
+        setError(reviewedExerciseResult.error?.message || futureExerciseResult.error?.message || catalogueResult.error?.message || 'Could not load swap exercise data.');
         setIsLoading(false);
         return;
       }
 
-      setFutureExercises((exerciseResult.data ?? []) as FutureProgramExerciseRecord[]);
+      setReviewedWorkoutExercises((reviewedExerciseResult.data ?? []) as ProgramExerciseRecord[]);
+      setFutureExercises((futureExerciseResult.data ?? []) as ProgramExerciseRecord[]);
       setCatalogueExercises((catalogueResult.data ?? []) as CatalogueExerciseRecord[]);
       setIsLoading(false);
     };
@@ -201,13 +208,8 @@ export function WorkoutNextSessionDecision({ clientId, sessionId }: WorkoutNextS
   const scopedWorkoutIds = swapScope === 'all_future_program' ? futureWorkouts.map((workout) => workout.id) : [];
 
   const exerciseOptions = useMemo(() => {
-    return Array.from(new Set(
-      futureExercises
-        .filter((exercise) => scopedWorkoutIds.includes(exercise.workout_id))
-        .map((exercise) => exercise.exercise_name)
-        .filter(Boolean)
-    )).sort();
-  }, [futureExercises, scopedWorkoutIds]);
+    return Array.from(new Set(reviewedWorkoutExercises.map((exercise) => exercise.exercise_name).filter(Boolean))).sort();
+  }, [reviewedWorkoutExercises]);
 
   const previewWorkouts = futureWorkouts.filter((workout) => scopedWorkoutIds.includes(workout.id));
 
@@ -257,7 +259,7 @@ export function WorkoutNextSessionDecision({ clientId, sessionId }: WorkoutNextS
     if (!isSupabaseConfigured) return;
 
     if (!exerciseToReplace.trim() || !replacementExercise) {
-      throw new Error('Choose or type the exercise to replace and choose the replacement exercise.');
+      throw new Error('Choose the exercise from the reviewed workout and choose the replacement exercise.');
     }
 
     const setCount = Math.max(1, Number(replacementSetCount) || 1);
@@ -309,6 +311,7 @@ export function WorkoutNextSessionDecision({ clientId, sessionId }: WorkoutNextS
 
     const { error: actionError } = await createProgrammeAction([
       `Swap rule: ${exerciseToReplace.trim()} → ${replacementExercise}`,
+      `Source: exercise selected from reviewed workout (${workoutTitle})`,
       `Scope: ${swapScope === 'all_future_program' ? 'Updated matching future rows already planned' : 'Programme planning rule for next week'}`,
       `Prescription: ${setCount} sets x ${replacementReps}${replacementKg.trim() ? ` @ ${replacementKg}kg` : ''}${replacementRpe.trim() ? `, target RPE ${replacementRpe}` : ''}`,
       swapScope === 'all_future_program' && affectedExercises.length === 0 ? 'No existing future rows matched yet, so this has been saved as a programme planning action.' : '',
@@ -449,11 +452,11 @@ export function WorkoutNextSessionDecision({ clientId, sessionId }: WorkoutNextS
 
                 <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                   <div>
-                    <label className="text-xs font-bold uppercase text-gray-500">Exercise to swap out</label>
-                    <input list="programme-exercises" value={exerciseToReplace} onChange={(event) => setExerciseToReplace(event.target.value)} placeholder="Type or choose exercise" className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-[#000000] outline-none focus:border-[#FA0201]" />
-                    <datalist id="programme-exercises">
-                      {exerciseOptions.map((exercise) => <option key={exercise} value={exercise} />)}
-                    </datalist>
+                    <label className="text-xs font-bold uppercase text-gray-500">Exercise to swap out from reviewed workout</label>
+                    <select value={exerciseToReplace} onChange={(event) => setExerciseToReplace(event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-[#000000] outline-none focus:border-[#FA0201]">
+                      <option value="">Choose exercise from this workout</option>
+                      {exerciseOptions.map((exercise) => <option key={exercise} value={exercise}>{exercise}</option>)}
+                    </select>
                   </div>
                   <div>
                     <label className="text-xs font-bold uppercase text-gray-500">Replace with</label>
