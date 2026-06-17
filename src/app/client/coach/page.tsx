@@ -19,17 +19,25 @@ type AssignedTaskRecord = {
   instructions: string | null;
 };
 
+type CallRequestRecord = {
+  id: string;
+  submitted_at: string;
+  answer_text: string | null;
+  review_status: string;
+};
+
 type MeetingStatus = 'none' | 'requested' | 'confirmed';
 
 type MeetingDraft = {
   status: MeetingStatus;
   dateLabel: string;
   notes: string;
+  submittedAt?: string;
 };
 
 const defaultMeetingDraft: MeetingDraft = {
   status: 'none',
-  dateLabel: 'Tomorrow, 16:00',
+  dateLabel: 'Awaiting booking',
   notes: '',
 };
 
@@ -40,6 +48,20 @@ const coachRequestRoutes: Record<string, string> = {
 
 const formatTaskType = (taskType: string) => taskType.replaceAll('_', ' ');
 
+const formatDateTime = (value: string) => new Intl.DateTimeFormat('en-GB', {
+  day: 'numeric',
+  month: 'short',
+  year: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+}).format(new Date(value));
+
+const extractNotes = (text: string | null) => {
+  if (!text) return '';
+  const notesLine = text.split('\n').find((line) => line.startsWith('Notes:'));
+  return notesLine?.replace('Notes:', '').trim() || '';
+};
+
 export default function ClientCoachPage() {
   const { user } = useAuth();
   const [client, setClient] = useState<ClientRecord | null>(null);
@@ -47,6 +69,7 @@ export default function ClientCoachPage() {
   const [meeting, setMeeting] = useState<MeetingDraft>(defaultMeetingDraft);
   const [quickNote, setQuickNote] = useState('');
   const [loading, setLoading] = useState(true);
+  const [savingRequest, setSavingRequest] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
@@ -73,21 +96,47 @@ export default function ClientCoachPage() {
       const linkedClient = clientData as ClientRecord;
       setClient(linkedClient);
 
-      const { data: taskData, error: taskError } = await supabase
-        .from('assigned_tasks')
-        .select('id, task_type, task_name, instructions')
-        .eq('client_id', linkedClient.id)
-        .eq('active', true)
-        .in('task_type', ['key_lift', 'workout_checkin'])
-        .order('created_at', { ascending: false });
+      const [taskResult, callRequestResult] = await Promise.all([
+        supabase
+          .from('assigned_tasks')
+          .select('id, task_type, task_name, instructions')
+          .eq('client_id', linkedClient.id)
+          .eq('active', true)
+          .in('task_type', ['key_lift', 'workout_checkin'])
+          .order('created_at', { ascending: false }),
+        supabase
+          .from('task_submissions')
+          .select('id, submitted_at, answer_text, review_status')
+          .eq('client_id', linkedClient.id)
+          .eq('submission_type', 'coach_call_request')
+          .neq('review_status', 'resolved')
+          .order('submitted_at', { ascending: false })
+          .limit(1),
+      ]);
 
-      if (taskError) {
-        setMessage(taskError.message);
+      if (taskResult.error) {
+        setMessage(taskResult.error.message);
         setLoading(false);
         return;
       }
 
-      setTasks((taskData ?? []) as AssignedTaskRecord[]);
+      if (callRequestResult.error) {
+        setMessage(callRequestResult.error.message);
+        setLoading(false);
+        return;
+      }
+
+      const latestCallRequest = (callRequestResult.data?.[0] ?? null) as CallRequestRecord | null;
+      if (latestCallRequest) {
+        setMeeting({
+          status: latestCallRequest.review_status === 'reviewed' ? 'confirmed' : 'requested',
+          dateLabel: 'Awaiting coach confirmation',
+          notes: extractNotes(latestCallRequest.answer_text),
+          submittedAt: latestCallRequest.submitted_at,
+        });
+      }
+
+      setTasks((taskResult.data ?? []) as AssignedTaskRecord[]);
       setLoading(false);
     };
 
@@ -96,13 +145,47 @@ export default function ClientCoachPage() {
 
   const coachRequestedTasks = useMemo(() => tasks, [tasks]);
 
-  const requestWeeklyCall = () => {
+  const requestWeeklyCall = async () => {
+    if (!client || !isSupabaseConfigured) {
+      setMessage('Client profile is not ready.');
+      return;
+    }
+
+    setSavingRequest(true);
+    setMessage(null);
+
+    const supabase = createClient();
+    const notes = quickNote.trim();
+    const answerText = ['Request type: Weekly coach call', notes ? `Notes: ${notes}` : 'Notes: None provided'].join('\n');
+
+    const { data, error } = await supabase
+      .from('task_submissions')
+      .insert({
+        client_id: client.id,
+        assigned_task_id: null,
+        submission_type: 'coach_call_request',
+        answer_text: answerText,
+        review_status: 'needs_action',
+        followup_required: true,
+      })
+      .select('id, submitted_at, answer_text, review_status')
+      .single();
+
+    if (error || !data) {
+      setMessage(error?.message || 'Could not request coach call.');
+      setSavingRequest(false);
+      return;
+    }
+
+    const request = data as CallRequestRecord;
     setMeeting({
       status: 'requested',
-      dateLabel: 'Tomorrow, 16:00',
-      notes: quickNote.trim(),
+      dateLabel: 'Awaiting coach confirmation',
+      notes: extractNotes(request.answer_text),
+      submittedAt: request.submitted_at,
     });
-    setMessage('Weekly coach meeting requested. Booking storage will be wired in the next build.');
+    setMessage('Coach call requested. Your coach will see it in their action queue.');
+    setSavingRequest(false);
   };
 
   if (loading) {
@@ -136,15 +219,10 @@ export default function ClientCoachPage() {
 
   return (
     <div className="flex h-screen flex-col overflow-hidden">
-      <PageHeader title="COACH" subtitle={client ? `Your coaching support hub, ${client.full_name}` : 'Your coaching support hub'} />
-
+      <PageHeader title="COACH" subtitle={client ? `Your coaching hub, ${client.full_name}` : 'Your coaching hub'} />
       <main className="flex-1 overflow-y-auto pb-20 md:pb-0">
         <div className="mx-auto max-w-5xl space-y-8 px-4 py-6 md:px-8">
-          {message && (
-            <Card>
-              <p className="text-sm font-semibold text-gray-800">{message}</p>
-            </Card>
-          )}
+          {message && <Card><p className="text-sm font-semibold text-gray-800">{message}</p></Card>}
 
           <section>
             <SectionHeader title="COACH MEETING" accent />
@@ -153,26 +231,16 @@ export default function ClientCoachPage() {
                 <div className="space-y-6">
                   <div>
                     <p className="text-xs font-bold uppercase text-[#FA0201]">No meeting booked</p>
-                    <h1 className="mt-2 text-4xl font-black uppercase tracking-tight text-white md:text-6xl">
-                      Book your next coach call
-                    </h1>
-                    <p className="mt-4 max-w-2xl text-sm leading-relaxed text-white/70">
-                      Use this area for your weekly call or for extra support before the next review. Once requested, this card will show the meeting date, status, and notes.
-                    </p>
+                    <h1 className="mt-2 text-4xl font-black uppercase tracking-tight text-white md:text-6xl">Book your next coach call</h1>
+                    <p className="mt-4 max-w-2xl text-sm leading-relaxed text-white/70">Request your weekly coach call and add any notes you want to discuss.</p>
                   </div>
-
                   <Textarea
                     label="Notes for your coach"
                     value={quickNote}
                     onChange={(event) => setQuickNote(event.target.value)}
-                    placeholder="Example: Talk through next week, adjust a session, or review an exercise that felt off."
+                    placeholder="Example: Talk through next week, adjust a session, or review an exercise."
                   />
-
-                  <div className="flex flex-wrap gap-3">
-                    <Button type="button" onClick={requestWeeklyCall} className="bg-[#FA0201] hover:bg-red-700">
-                      Book weekly call
-                    </Button>
-                  </div>
+                  <Button type="button" onClick={requestWeeklyCall} isLoading={savingRequest} className="w-fit bg-[#FA0201] hover:bg-red-700">Book weekly call</Button>
                 </div>
               ) : (
                 <div>
@@ -181,31 +249,22 @@ export default function ClientCoachPage() {
                     <div className="rounded-xl border-2 border-white p-5 text-white">
                       <p className="text-2xl font-bold">Date:</p>
                       <p className="mt-2 text-3xl">{meeting.dateLabel}</p>
+                      {meeting.submittedAt && <p className="mt-3 text-sm text-white/60">Requested {formatDateTime(meeting.submittedAt)}</p>}
                       <div className="mt-12 border-t border-white/40 pt-5">
                         <p className="text-2xl font-bold">Status:</p>
-                        <p className="mt-2 text-3xl font-bold text-green-400">
-                          {meeting.status === 'confirmed' ? 'Confirmed' : 'Requested'}
-                        </p>
+                        <p className="mt-2 text-3xl font-bold text-green-400">{meeting.status === 'confirmed' ? 'Confirmed' : 'Requested'}</p>
                       </div>
                     </div>
                     <div className="rounded-xl border-2 border-white p-5 text-white">
                       <p className="text-2xl font-bold">Notes</p>
                       {meeting.notes ? (
                         <ul className="mt-3 list-disc space-y-3 pl-5 text-2xl leading-snug">
-                          {meeting.notes.split('\n').filter(Boolean).map((note) => (
-                            <li key={note}>{note}</li>
-                          ))}
+                          {meeting.notes.split('\n').filter(Boolean).map((note) => <li key={note}>{note}</li>)}
                         </ul>
                       ) : (
                         <p className="mt-3 text-lg text-white/70">No notes added yet.</p>
                       )}
                     </div>
-                  </div>
-                  <div className="mt-6 flex flex-wrap gap-3">
-                    <Button type="button" variant="outline" onClick={() => setMeeting(defaultMeetingDraft)}>Cancel request</Button>
-                    <Button type="button" onClick={() => setMeeting((current) => ({ ...current, status: 'confirmed' }))} className="bg-[#FA0201] hover:bg-red-700">
-                      Mock confirm
-                    </Button>
                   </div>
                 </div>
               )}
@@ -220,12 +279,8 @@ export default function ClientCoachPage() {
                   <Link key={task.id} href={coachRequestRoutes[task.task_type] ?? '/client/coach'}>
                     <Card className="h-full cursor-pointer p-6 hover:shadow-lg">
                       <p className="text-xs font-bold uppercase text-[#FA0201]">Coach requested</p>
-                      <h2 className="mt-2 text-xl font-black uppercase text-[#000000]">
-                        {task.task_name || formatTaskType(task.task_type)}
-                      </h2>
-                      <p className="mt-3 text-sm leading-relaxed text-gray-700">
-                        {task.instructions || `Complete this ${formatTaskType(task.task_type)} update for your coach.`}
-                      </p>
+                      <h2 className="mt-2 text-xl font-black uppercase text-[#000000]">{task.task_name || formatTaskType(task.task_type)}</h2>
+                      <p className="mt-3 text-sm leading-relaxed text-gray-700">{task.instructions || `Complete this ${formatTaskType(task.task_type)} update for your coach.`}</p>
                     </Card>
                   </Link>
                 ))}
@@ -238,12 +293,8 @@ export default function ClientCoachPage() {
             <Card className="p-8">
               <p className="text-xs font-bold uppercase text-gray-500">Always available</p>
               <h2 className="mt-1 text-3xl font-black uppercase text-[#000000]">Message your coach</h2>
-              <p className="mt-3 max-w-2xl text-sm leading-relaxed text-gray-700">
-                This will become the live chat area. For now, it marks where quick coach communication will live, separate from weekly reviews and call bookings.
-              </p>
-              <div className="mt-6">
-                <Button type="button" variant="outline">Open live chat</Button>
-              </div>
+              <p className="mt-3 max-w-2xl text-sm leading-relaxed text-gray-700">This will become the live chat area. For now, it marks where quick coach communication will live.</p>
+              <div className="mt-6"><Button type="button" variant="outline">Open live chat</Button></div>
             </Card>
           </section>
         </div>
