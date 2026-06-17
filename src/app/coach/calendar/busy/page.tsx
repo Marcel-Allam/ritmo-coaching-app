@@ -37,16 +37,30 @@ const getTimeRange = (localStart: string, durationMinutes: number) => {
   };
 };
 
+const getDurationMinutes = (slot: BusySlot) => {
+  const startsAt = new Date(slot.starts_at).getTime();
+  const endsAt = new Date(slot.ends_at).getTime();
+  return Math.max(30, Math.round((endsAt - startsAt) / 60_000));
+};
+
 export default function CoachBusyTimePage() {
   const [slots, setSlots] = useState<BusySlot[]>([]);
   const [title, setTitle] = useState('Busy time');
   const [startsAt, setStartsAt] = useState(() => toDateTimeLocal(new Date()));
   const [durationMinutes, setDurationMinutes] = useState(60);
+  const [editingSlotId, setEditingSlotId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [deletingSlotId, setDeletingSlotId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const resetForm = () => {
+    setTitle('Busy time');
+    setStartsAt(toDateTimeLocal(new Date()));
+    setDurationMinutes(60);
+    setEditingSlotId(null);
+  };
 
   const loadSlots = async () => {
     if (!isSupabaseConfigured) {
@@ -76,7 +90,7 @@ export default function CoachBusyTimePage() {
     loadSlots();
   }, []);
 
-  const addSlot = async () => {
+  const saveSlot = async () => {
     if (!isSupabaseConfigured) return;
 
     setIsSaving(true);
@@ -84,6 +98,32 @@ export default function CoachBusyTimePage() {
     setError(null);
 
     const supabase = createClient();
+    const range = getTimeRange(startsAt, durationMinutes);
+    const payload = {
+      title: title.trim() || 'Busy time',
+      starts_at: range.starts_at,
+      ends_at: range.ends_at,
+    };
+
+    if (editingSlotId) {
+      const { error: updateError } = await supabase
+        .from('coach_calendar_blocks')
+        .update(payload)
+        .eq('id', editingSlotId);
+
+      if (updateError) {
+        setError(updateError.message);
+        setIsSaving(false);
+        return;
+      }
+
+      setMessage('Busy time updated.');
+      setIsSaving(false);
+      resetForm();
+      await loadSlots();
+      return;
+    }
+
     const { data: userResult, error: userError } = await supabase.auth.getUser();
 
     if (userError || !userResult.user) {
@@ -92,15 +132,12 @@ export default function CoachBusyTimePage() {
       return;
     }
 
-    const range = getTimeRange(startsAt, durationMinutes);
     const { error: insertError } = await supabase
       .from('coach_calendar_blocks')
       .insert({
         coach_id: userResult.user.id,
         block_type: 'blocked',
-        title: title.trim() || 'Busy time',
-        starts_at: range.starts_at,
-        ends_at: range.ends_at,
+        ...payload,
       });
 
     if (insertError) {
@@ -111,7 +148,17 @@ export default function CoachBusyTimePage() {
 
     setMessage('Busy time added.');
     setIsSaving(false);
+    resetForm();
     await loadSlots();
+  };
+
+  const editSlot = (slot: BusySlot) => {
+    setEditingSlotId(slot.id);
+    setTitle(slot.title || 'Busy time');
+    setStartsAt(toDateTimeLocal(new Date(slot.starts_at)));
+    setDurationMinutes(getDurationMinutes(slot));
+    setMessage(null);
+    setError(null);
   };
 
   const deleteSlot = async (slotId: string) => {
@@ -136,6 +183,7 @@ export default function CoachBusyTimePage() {
     setSlots((currentSlots) => currentSlots.filter((slot) => slot.id !== slotId));
     setMessage('Busy time deleted.');
     setDeletingSlotId(null);
+    if (editingSlotId === slotId) resetForm();
   };
 
   return (
@@ -148,6 +196,10 @@ export default function CoachBusyTimePage() {
         {error && <Card><p className="text-sm font-semibold text-red-700">{error}</p></Card>}
 
         <Card>
+          <div className="mb-4 flex items-center justify-between gap-4">
+            <p className="font-bold uppercase text-[#000000]">{editingSlotId ? 'Edit busy time' : 'Add busy time'}</p>
+            {editingSlotId && <button type="button" onClick={resetForm} className="text-xs font-bold uppercase text-gray-500 hover:text-black">Cancel edit</button>}
+          </div>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-[1.3fr_1fr_0.7fr_auto] md:items-end">
             <div>
               <label className="mb-2 block text-sm font-semibold uppercase">Title</label>
@@ -166,7 +218,7 @@ export default function CoachBusyTimePage() {
                 <option value={120}>120 min</option>
               </select>
             </div>
-            <Button type="button" disabled={isSaving} onClick={addSlot}>{isSaving ? 'Adding...' : 'Add'}</Button>
+            <Button type="button" disabled={isSaving} onClick={saveSlot}>{isSaving ? 'Saving...' : editingSlotId ? 'Save' : 'Add'}</Button>
           </div>
         </Card>
 
@@ -181,9 +233,12 @@ export default function CoachBusyTimePage() {
                 <p className="font-bold uppercase text-[#000000]">{slot.title || 'Busy time'}</p>
                 <p className="mt-1 text-xs text-gray-500">{formatDateTime(slot.starts_at)} – {formatDateTime(slot.ends_at)}</p>
               </div>
-              <Button type="button" variant="outline" disabled={deletingSlotId === slot.id} onClick={() => deleteSlot(slot.id)}>
-                {deletingSlotId === slot.id ? 'Deleting...' : 'Delete'}
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" variant="secondary" disabled={deletingSlotId === slot.id} onClick={() => editSlot(slot)}>Edit</Button>
+                <Button type="button" variant="outline" disabled={deletingSlotId === slot.id} onClick={() => deleteSlot(slot.id)}>
+                  {deletingSlotId === slot.id ? 'Deleting...' : 'Delete'}
+                </Button>
+              </div>
             </Card>
           ))}
         </div>
