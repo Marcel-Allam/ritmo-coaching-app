@@ -59,7 +59,6 @@ interface ClientSnapshot {
 }
 
 const emptyTaskForm = {
-  taskName: '',
   taskType: 'weekly_checkin',
   frequency: 'weekly',
   endDate: '',
@@ -74,6 +73,21 @@ const emptySnapshot: ClientSnapshot = {
   workoutsRemainingThisWeek: 0,
   reviewsNeedingAction: 0,
   latestFeedback: null,
+};
+
+const taskOptions = [
+  { value: 'weekly_checkin', label: 'Weekly check-in' },
+  { value: 'training_availability', label: 'Training availability' },
+  { value: 'workout_checkin', label: 'Workout check-in' },
+  { value: 'key_lift', label: 'Key lift / top set' },
+  { value: 'nutrition', label: 'Nutrition submission' },
+  { value: 'bodyweight', label: 'Bodyweight' },
+  { value: 'progress_photo', label: 'Progress photo' },
+  { value: 'habit_check', label: 'Habit check' },
+];
+
+const getTaskLabel = (taskType: string) => {
+  return taskOptions.find((task) => task.value === taskType)?.label ?? taskType.replaceAll('_', ' ');
 };
 
 const formatDate = (value: string | null) => {
@@ -228,18 +242,15 @@ export default function ClientProfilePage() {
   const handleCreateTask = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!isSupabaseConfigured) return;
-    if (!taskForm.taskName.trim()) {
-      setError('Task name is required.');
-      return;
-    }
 
     setIsSavingTask(true);
     setError(null);
 
+    const taskLabel = getTaskLabel(taskForm.taskType);
     const supabase = createClient();
     const { error: insertError } = await supabase.from('assigned_tasks').insert({
       client_id: clientId,
-      task_name: taskForm.taskName.trim(),
+      task_name: taskLabel,
       task_type: taskForm.taskType,
       frequency: taskForm.frequency,
       required: true,
@@ -423,20 +434,11 @@ export default function ClientProfilePage() {
             <Card className="mb-4 border-2 border-[#FA0201]">
               <form onSubmit={handleCreateTask} className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div>
-                  <label className="mb-2 block text-xs font-bold uppercase text-gray-600">Task Name</label>
-                  <Input value={taskForm.taskName} onChange={(event) => setTaskForm((current) => ({ ...current, taskName: event.target.value }))} placeholder="e.g. Weekly check-in" required />
-                </div>
-                <div>
-                  <label className="mb-2 block text-xs font-bold uppercase text-gray-600">Task Type</label>
+                  <label className="mb-2 block text-xs font-bold uppercase text-gray-600">Task</label>
                   <select value={taskForm.taskType} onChange={(event) => setTaskForm((current) => ({ ...current, taskType: event.target.value }))} className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm text-[#000000]">
-                    <option value="weekly_checkin">Weekly check-in</option>
-                    <option value="training_availability">Training availability</option>
-                    <option value="workout_checkin">Workout check-in</option>
-                    <option value="key_lift">Key lift / top set</option>
-                    <option value="nutrition">Nutrition submission</option>
-                    <option value="bodyweight">Bodyweight</option>
-                    <option value="progress_photo">Progress photo</option>
-                    <option value="habit_check">Habit check</option>
+                    {taskOptions.map((task) => (
+                      <option key={task.value} value={task.value}>{task.label}</option>
+                    ))}
                   </select>
                 </div>
                 <div>
