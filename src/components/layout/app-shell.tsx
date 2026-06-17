@@ -70,7 +70,7 @@ const coachNavItems = [
 const clientNavItems = [
   { label: 'Hub', href: '/client', icon: HomeIcon },
   { label: 'Workout', href: '/client/training', icon: DumbbellIcon },
-  { label: 'Check in', href: '/client/check-in', icon: PlusIcon },
+  { label: 'Coach', href: '/client/coach', icon: PlusIcon },
   { label: 'Diet', href: '/client/diet', icon: ClipboardIcon },
   { label: 'Configure', href: '/client/configure', icon: SettingsIcon },
   { label: 'Feedback', href: '/client/feedback', icon: MessageIcon },
