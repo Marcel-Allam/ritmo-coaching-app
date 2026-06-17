@@ -5,28 +5,31 @@ import { useEffect } from 'react';
 const HALF_HOUR_STEP_SECONDS = '1800';
 const FIXED_CALL_DURATION_MINUTES = '30';
 
+const isCoachDurationSelect = (select: HTMLSelectElement) => {
+  const optionValues = Array.from(select.options).map((option) => option.value);
+  return ['15', '30', '45', '60'].every((value) => optionValues.includes(value));
+};
+
 export function CoachCallRequestUiFixes() {
   useEffect(() => {
     const applyFixes = () => {
-      const durationLabels = Array.from(document.querySelectorAll('label')).filter((label) => {
-        return label.textContent?.trim().toLowerCase() === 'duration';
-      });
-
-      for (const label of durationLabels) {
-        const durationContainer = label.closest('div');
-        const durationSelect = durationContainer?.querySelector('select');
-
-        if (durationSelect instanceof HTMLSelectElement) {
-          durationSelect.value = FIXED_CALL_DURATION_MINUTES;
-          durationSelect.dispatchEvent(new Event('change', { bubbles: true }));
-          durationContainer?.classList.add('hidden');
-        }
-      }
-
       const dateTimeInputs = document.querySelectorAll('input[type="datetime-local"]');
       dateTimeInputs.forEach((input) => {
         input.setAttribute('step', HALF_HOUR_STEP_SECONDS);
       });
+
+      const durationSelects = Array.from(document.querySelectorAll('select')).filter((select) => {
+        return select instanceof HTMLSelectElement && isCoachDurationSelect(select);
+      }) as HTMLSelectElement[];
+
+      for (const durationSelect of durationSelects) {
+        durationSelect.value = FIXED_CALL_DURATION_MINUTES;
+        durationSelect.dispatchEvent(new Event('change', { bubbles: true }));
+
+        const durationContainer = durationSelect.closest('div');
+        durationContainer?.setAttribute('hidden', 'true');
+        durationContainer?.classList.add('hidden');
+      }
 
       const statusLabels = Array.from(document.querySelectorAll('p')).filter((element) => {
         return element.textContent?.trim().toLowerCase() === 'requested';
