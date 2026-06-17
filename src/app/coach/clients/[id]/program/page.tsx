@@ -58,13 +58,13 @@ const workoutTemplates: WorkoutTemplate[] = [
     category: 'Strength',
     defaultWorkoutTitle: 'Squat Focus',
     dayLabel: 'Squat Focus',
-    goal: 'Lower-body strength session built around squat progression.',
-    instructions: 'Prioritise squat quality, controlled warm-ups, and strong bracing. Keep accessories clean rather than maximal.',
+    goal: 'Primary squat strength day with a top set, controlled back-off volume, posterior-chain work and quad accessories.',
+    instructions: 'Build to the prescribed top set with controlled warm-ups. Keep bracing consistent. Back-off work should look cleaner than the top set, not like extra max attempts.',
     exercises: [
-      { name: 'Back Squat', sets: [{ reps: '5', rpe: 7 }, { reps: '5', rpe: 7.5 }, { reps: '5', rpe: 8 }] },
-      { name: 'Paused Squat', sets: [{ reps: '3', rpe: 7 }, { reps: '3', rpe: 7 }, { reps: '3', rpe: 7 }] },
-      { name: 'Romanian Deadlift', sets: [{ reps: '8', rpe: 7 }, { reps: '8', rpe: 7 }, { reps: '8', rpe: 7 }] },
-      { name: 'Leg Press', sets: [{ reps: '10-12' }, { reps: '10-12' }, { reps: '10-12' }] },
+      { name: 'Back Squat', notes: 'Main lift. Last rep should move with intent and no technical collapse.', sets: [{ reps: '3-5', rpe: 8, notes: 'Top set' }, { reps: '5', rpe: 7, notes: 'Back-off set 1' }, { reps: '5', rpe: 7, notes: 'Back-off set 2' }] },
+      { name: 'Paused Squat', notes: '2-count pause. Stay tight in the hole.', sets: [{ reps: '3', rpe: 7 }, { reps: '3', rpe: 7 }, { reps: '3', rpe: 7 }] },
+      { name: 'Romanian Deadlift', notes: 'Controlled eccentric. Keep lats tight.', sets: [{ reps: '8', rpe: 7 }, { reps: '8', rpe: 7 }, { reps: '8', rpe: 7 }] },
+      { name: 'Leg Press', notes: 'Full ROM and controlled reps.', sets: [{ reps: '10-12', rpe: 8 }, { reps: '10-12', rpe: 8 }, { reps: '10-12', rpe: 8 }] },
     ],
   },
   {
@@ -73,14 +73,14 @@ const workoutTemplates: WorkoutTemplate[] = [
     category: 'Strength',
     defaultWorkoutTitle: 'Bench Focus',
     dayLabel: 'Bench Focus',
-    goal: 'Upper-body strength session built around bench press progression.',
-    instructions: 'Bench comes first. Keep technique consistent and use accessories to build pressing volume without grinding.',
+    goal: 'Primary bench strength day with top-set exposure, paused pressing, rows and upper-body hypertrophy support.',
+    instructions: 'Bench comes first. Keep pause, bar path and setup consistent. Accessories should support pressing strength without turning into junk volume.',
     exercises: [
-      { name: 'Bench Press', sets: [{ reps: '5', rpe: 7 }, { reps: '5', rpe: 7.5 }, { reps: '5', rpe: 8 }] },
-      { name: 'Paused Bench Press', sets: [{ reps: '3', rpe: 7 }, { reps: '3', rpe: 7 }, { reps: '3', rpe: 7 }] },
-      { name: 'Chest-Supported Row', sets: [{ reps: '8-10' }, { reps: '8-10' }, { reps: '8-10' }] },
-      { name: 'Incline Dumbbell Press', sets: [{ reps: '8-10' }, { reps: '8-10' }, { reps: '8-10' }] },
-      { name: 'Lat Pulldown', sets: [{ reps: '10-12' }, { reps: '10-12' }, { reps: '10-12' }] },
+      { name: 'Bench Press', notes: 'Main lift. Competition-style setup and consistent touch point.', sets: [{ reps: '3-5', rpe: 8, notes: 'Top set' }, { reps: '5', rpe: 7, notes: 'Back-off set 1' }, { reps: '5', rpe: 7, notes: 'Back-off set 2' }] },
+      { name: 'Paused Bench Press', notes: 'Clear pause on chest. No sinking after pause.', sets: [{ reps: '3', rpe: 7 }, { reps: '3', rpe: 7 }, { reps: '3', rpe: 7 }] },
+      { name: 'Chest-Supported Row', notes: 'Strict reps. Drive elbows back.', sets: [{ reps: '8-10', rpe: 8 }, { reps: '8-10', rpe: 8 }, { reps: '8-10', rpe: 8 }] },
+      { name: 'Incline Dumbbell Press', notes: 'Controlled press. Avoid shoulder irritation.', sets: [{ reps: '8-10', rpe: 8 }, { reps: '8-10', rpe: 8 }, { reps: '8-10', rpe: 8 }] },
+      { name: 'Lat Pulldown', notes: 'Full stretch and controlled pull.', sets: [{ reps: '10-12', rpe: 8 }, { reps: '10-12', rpe: 8 }, { reps: '10-12', rpe: 8 }] },
     ],
   },
   {
@@ -89,13 +89,13 @@ const workoutTemplates: WorkoutTemplate[] = [
     category: 'Strength',
     defaultWorkoutTitle: 'Deadlift Focus',
     dayLabel: 'Deadlift Focus',
-    goal: 'Posterior-chain strength session built around deadlift progression.',
-    instructions: 'Deadlift quality is the priority. Stop sets before form breaks and keep accessories controlled.',
+    goal: 'Primary deadlift strength day with top-set pulling, a deadlift variation, secondary squat pattern and hamstring work.',
+    instructions: 'Deadlift quality is the priority. Stop sets before form breaks. Use accessories to strengthen positions rather than chase fatigue.',
     exercises: [
-      { name: 'Deadlift', sets: [{ reps: '3', rpe: 7 }, { reps: '3', rpe: 7.5 }, { reps: '3', rpe: 8 }] },
-      { name: 'Block Pull or Deficit Deadlift', sets: [{ reps: '4', rpe: 7 }, { reps: '4', rpe: 7 }, { reps: '4', rpe: 7 }] },
-      { name: 'Front Squat', sets: [{ reps: '5', rpe: 7 }, { reps: '5', rpe: 7 }, { reps: '5', rpe: 7 }] },
-      { name: 'Hamstring Curl', sets: [{ reps: '10-12' }, { reps: '10-12' }, { reps: '10-12' }] },
+      { name: 'Deadlift', notes: 'Main lift. Brace hard before pulling. No soft lockouts.', sets: [{ reps: '2-4', rpe: 8, notes: 'Top set' }, { reps: '4', rpe: 7, notes: 'Back-off set 1' }, { reps: '4', rpe: 7, notes: 'Back-off set 2' }] },
+      { name: 'Block Pull or Deficit Deadlift', notes: 'Choose variation based on weak point.', sets: [{ reps: '4', rpe: 7 }, { reps: '4', rpe: 7 }, { reps: '4', rpe: 7 }] },
+      { name: 'Front Squat', notes: 'Upright torso. Controlled depth.', sets: [{ reps: '5', rpe: 7 }, { reps: '5', rpe: 7 }, { reps: '5', rpe: 7 }] },
+      { name: 'Hamstring Curl', notes: 'Squeeze hard at the top.', sets: [{ reps: '10-12', rpe: 8 }, { reps: '10-12', rpe: 8 }, { reps: '10-12', rpe: 8 }] },
     ],
   },
   {
@@ -104,13 +104,13 @@ const workoutTemplates: WorkoutTemplate[] = [
     category: 'Upper / Lower',
     defaultWorkoutTitle: 'Upper A',
     dayLabel: 'Upper A',
-    goal: 'Upper-body session with horizontal push and pull emphasis.',
-    instructions: 'Balanced upper-body session. Keep main press strong and accessories controlled.',
+    goal: 'Upper-body day with horizontal press and row emphasis.',
+    instructions: 'Pressing strength first, then balanced pulling and accessory volume. Keep reps clean and repeatable.',
     exercises: [
-      { name: 'Bench Press', sets: [{ reps: '5' }, { reps: '5' }, { reps: '5' }] },
-      { name: 'Row', sets: [{ reps: '6-8' }, { reps: '6-8' }, { reps: '6-8' }] },
-      { name: 'Incline Dumbbell Press', sets: [{ reps: '8-10' }, { reps: '8-10' }, { reps: '8-10' }] },
-      { name: 'Lat Pulldown', sets: [{ reps: '10-12' }, { reps: '10-12' }, { reps: '10-12' }] },
+      { name: 'Bench Press', notes: 'Primary press.', sets: [{ reps: '5', rpe: 7 }, { reps: '5', rpe: 7.5 }, { reps: '5', rpe: 8 }] },
+      { name: 'Barbell or Chest-Supported Row', notes: 'Primary row.', sets: [{ reps: '6-8', rpe: 8 }, { reps: '6-8', rpe: 8 }, { reps: '6-8', rpe: 8 }] },
+      { name: 'Incline Dumbbell Press', notes: 'Upper chest/accessory press.', sets: [{ reps: '8-10', rpe: 8 }, { reps: '8-10', rpe: 8 }, { reps: '8-10', rpe: 8 }] },
+      { name: 'Lat Pulldown', notes: 'Vertical pull.', sets: [{ reps: '10-12', rpe: 8 }, { reps: '10-12', rpe: 8 }, { reps: '10-12', rpe: 8 }] },
     ],
   },
   {
@@ -119,28 +119,88 @@ const workoutTemplates: WorkoutTemplate[] = [
     category: 'Upper / Lower',
     defaultWorkoutTitle: 'Lower A',
     dayLabel: 'Lower A',
-    goal: 'Lower-body session with squat emphasis and posterior-chain accessories.',
-    instructions: 'Squat pattern first, then posterior-chain and leg volume. Do not turn accessories into max-effort work.',
+    goal: 'Lower-body day with squat emphasis and posterior-chain accessories.',
+    instructions: 'Squat pattern first, then posterior-chain and quad volume. Do not turn accessories into max-effort work.',
     exercises: [
-      { name: 'Squat', sets: [{ reps: '5' }, { reps: '5' }, { reps: '5' }] },
-      { name: 'Romanian Deadlift', sets: [{ reps: '8' }, { reps: '8' }, { reps: '8' }] },
-      { name: 'Leg Press', sets: [{ reps: '10-12' }, { reps: '10-12' }, { reps: '10-12' }] },
-      { name: 'Calf Raise', sets: [{ reps: '12-15' }, { reps: '12-15' }, { reps: '12-15' }] },
+      { name: 'Squat', notes: 'Primary squat.', sets: [{ reps: '5', rpe: 7 }, { reps: '5', rpe: 7.5 }, { reps: '5', rpe: 8 }] },
+      { name: 'Romanian Deadlift', notes: 'Hip hinge accessory.', sets: [{ reps: '8', rpe: 8 }, { reps: '8', rpe: 8 }, { reps: '8', rpe: 8 }] },
+      { name: 'Leg Press', notes: 'Quad volume.', sets: [{ reps: '10-12', rpe: 8 }, { reps: '10-12', rpe: 8 }, { reps: '10-12', rpe: 8 }] },
+      { name: 'Calf Raise', notes: 'Controlled stretch.', sets: [{ reps: '12-15', rpe: 8 }, { reps: '12-15', rpe: 8 }, { reps: '12-15', rpe: 8 }] },
     ],
   },
   {
-    id: 'full-body',
-    name: 'Full Body',
-    category: 'Full Body',
-    defaultWorkoutTitle: 'Full Body',
-    dayLabel: 'Full Body',
-    goal: 'Balanced session for clients training two to three times per week.',
-    instructions: 'Use this as a simple full-body session. Loads are coach-set for now.',
+    id: 'upper-b',
+    name: 'Upper B',
+    category: 'Upper / Lower',
+    defaultWorkoutTitle: 'Upper B',
+    dayLabel: 'Upper B',
+    goal: 'Upper-body day with overhead/secondary press and vertical pull emphasis.',
+    instructions: 'Use this as the second upper day. Keep the main press strong but leave room for recovery from Upper A.',
     exercises: [
-      { name: 'Squat', sets: [{ reps: '5' }, { reps: '5' }, { reps: '5' }] },
-      { name: 'Bench Press', sets: [{ reps: '5' }, { reps: '5' }, { reps: '5' }] },
-      { name: 'Romanian Deadlift', sets: [{ reps: '8' }, { reps: '8' }, { reps: '8' }] },
-      { name: 'Seated Row', sets: [{ reps: '10-12' }, { reps: '10-12' }, { reps: '10-12' }] },
+      { name: 'Overhead Press or Close-Grip Bench', notes: 'Secondary press pattern.', sets: [{ reps: '5-6', rpe: 7 }, { reps: '5-6', rpe: 7.5 }, { reps: '5-6', rpe: 8 }] },
+      { name: 'Pull-Up or Lat Pulldown', notes: 'Primary vertical pull.', sets: [{ reps: '6-10', rpe: 8 }, { reps: '6-10', rpe: 8 }, { reps: '6-10', rpe: 8 }] },
+      { name: 'Dumbbell Row', notes: 'Single-arm row.', sets: [{ reps: '8-10', rpe: 8 }, { reps: '8-10', rpe: 8 }, { reps: '8-10', rpe: 8 }] },
+      { name: 'Lateral Raise', notes: 'Shoulder accessory.', sets: [{ reps: '12-15', rpe: 8 }, { reps: '12-15', rpe: 8 }, { reps: '12-15', rpe: 8 }] },
+    ],
+  },
+  {
+    id: 'lower-b',
+    name: 'Lower B',
+    category: 'Upper / Lower',
+    defaultWorkoutTitle: 'Lower B',
+    dayLabel: 'Lower B',
+    goal: 'Lower-body day with deadlift/hinge emphasis and secondary squat volume.',
+    instructions: 'Use this as the second lower day. Pulling is the priority, then lighter squat volume and hamstring work.',
+    exercises: [
+      { name: 'Deadlift', notes: 'Primary pull.', sets: [{ reps: '3-5', rpe: 7 }, { reps: '3-5', rpe: 7.5 }, { reps: '3-5', rpe: 8 }] },
+      { name: 'Front Squat or Paused Squat', notes: 'Secondary squat pattern.', sets: [{ reps: '5', rpe: 7 }, { reps: '5', rpe: 7 }, { reps: '5', rpe: 7 }] },
+      { name: 'Hip Thrust or Back Extension', notes: 'Glute/posterior-chain accessory.', sets: [{ reps: '8-10', rpe: 8 }, { reps: '8-10', rpe: 8 }, { reps: '8-10', rpe: 8 }] },
+      { name: 'Hamstring Curl', notes: 'Hamstring isolation.', sets: [{ reps: '10-12', rpe: 8 }, { reps: '10-12', rpe: 8 }, { reps: '10-12', rpe: 8 }] },
+    ],
+  },
+  {
+    id: 'full-body-a',
+    name: 'Full Body A',
+    category: 'Full Body',
+    defaultWorkoutTitle: 'Full Body A',
+    dayLabel: 'Full Body A',
+    goal: 'Full-body session with squat and bench emphasis.',
+    instructions: 'Balanced full-body day. Keep compounds strong and finish accessories without excessive fatigue.',
+    exercises: [
+      { name: 'Squat', notes: 'Primary lower lift.', sets: [{ reps: '5', rpe: 7 }, { reps: '5', rpe: 7.5 }, { reps: '5', rpe: 8 }] },
+      { name: 'Bench Press', notes: 'Primary press.', sets: [{ reps: '5', rpe: 7 }, { reps: '5', rpe: 7.5 }, { reps: '5', rpe: 8 }] },
+      { name: 'Romanian Deadlift', notes: 'Hinge accessory.', sets: [{ reps: '8', rpe: 8 }, { reps: '8', rpe: 8 }, { reps: '8', rpe: 8 }] },
+      { name: 'Seated Row', notes: 'Upper-back volume.', sets: [{ reps: '10-12', rpe: 8 }, { reps: '10-12', rpe: 8 }, { reps: '10-12', rpe: 8 }] },
+    ],
+  },
+  {
+    id: 'full-body-b',
+    name: 'Full Body B',
+    category: 'Full Body',
+    defaultWorkoutTitle: 'Full Body B',
+    dayLabel: 'Full Body B',
+    goal: 'Full-body session with deadlift and overhead/secondary press emphasis.',
+    instructions: 'Pull first, then secondary press and squat accessory. Keep overall fatigue controlled.',
+    exercises: [
+      { name: 'Deadlift', notes: 'Primary pull.', sets: [{ reps: '3-5', rpe: 7 }, { reps: '3-5', rpe: 7.5 }, { reps: '3-5', rpe: 8 }] },
+      { name: 'Overhead Press or Incline Press', notes: 'Secondary press.', sets: [{ reps: '6-8', rpe: 8 }, { reps: '6-8', rpe: 8 }, { reps: '6-8', rpe: 8 }] },
+      { name: 'Split Squat or Leg Press', notes: 'Lower accessory.', sets: [{ reps: '8-10', rpe: 8 }, { reps: '8-10', rpe: 8 }, { reps: '8-10', rpe: 8 }] },
+      { name: 'Lat Pulldown', notes: 'Vertical pull.', sets: [{ reps: '10-12', rpe: 8 }, { reps: '10-12', rpe: 8 }, { reps: '10-12', rpe: 8 }] },
+    ],
+  },
+  {
+    id: 'full-body-c',
+    name: 'Full Body C',
+    category: 'Full Body',
+    defaultWorkoutTitle: 'Full Body C',
+    dayLabel: 'Full Body C',
+    goal: 'Full-body session with lighter squat pattern, bench variation and hypertrophy support.',
+    instructions: 'Use this as the lighter/volume full-body day. Aim for quality reps and recovery-friendly volume.',
+    exercises: [
+      { name: 'Paused Squat or Front Squat', notes: 'Technique squat pattern.', sets: [{ reps: '4-6', rpe: 7 }, { reps: '4-6', rpe: 7 }, { reps: '4-6', rpe: 7 }] },
+      { name: 'Paused Bench or Dumbbell Press', notes: 'Technique/volume press.', sets: [{ reps: '6-8', rpe: 7 }, { reps: '6-8', rpe: 7.5 }, { reps: '6-8', rpe: 8 }] },
+      { name: 'Hip Hinge Accessory', notes: 'Choose RDL, back extension or hip thrust.', sets: [{ reps: '8-10', rpe: 8 }, { reps: '8-10', rpe: 8 }, { reps: '8-10', rpe: 8 }] },
+      { name: 'Row Variation', notes: 'Upper-back support.', sets: [{ reps: '10-12', rpe: 8 }, { reps: '10-12', rpe: 8 }, { reps: '10-12', rpe: 8 }] },
     ],
   },
 ];
@@ -157,21 +217,21 @@ const programmeTemplates: ProgrammeTemplate[] = [
   },
   {
     id: 'upper-lower-base',
-    name: 'Upper / Lower Base',
+    name: 'Upper / Lower 4-Day Split',
     category: 'Strength & Physique',
     defaultProgramTitle: 'RITMO Upper / Lower Programme',
-    goal: 'Simple upper/lower structure for clients training two to four days per week.',
-    description: 'Creates Upper A and Lower A as a base. Duplicate/edit workouts later for Upper B and Lower B if needed.',
-    workoutTemplateIds: ['upper-a', 'lower-a'],
+    goal: 'Four-session upper/lower structure for clients training three to four days per week.',
+    description: 'Creates Upper A, Lower A, Upper B and Lower B. Best for lifters who want a repeatable strength-and-physique split.',
+    workoutTemplateIds: ['upper-a', 'lower-a', 'upper-b', 'lower-b'],
   },
   {
     id: 'full-body-3x',
-    name: 'Full Body 3x Base',
+    name: 'Full Body 3x Split',
     category: 'General Strength',
     defaultProgramTitle: 'RITMO Full Body Programme',
-    goal: 'Repeatable full-body base for busy lifters training two to three days per week.',
-    description: 'Creates three Full Body sessions. Edit each copy after assigning if you want different exercise emphasis.',
-    workoutTemplateIds: ['full-body', 'full-body', 'full-body'],
+    goal: 'Three full-body sessions with different emphasis across the week.',
+    description: 'Creates Full Body A, B and C. Useful for busy lifters training two to three days per week while keeping all key patterns covered.',
+    workoutTemplateIds: ['full-body-a', 'full-body-b', 'full-body-c'],
   },
 ];
 
@@ -242,6 +302,24 @@ export default function CoachClientProgramPage() {
   const selectedWorkoutTemplate = useMemo(() => workoutTemplates.find((template) => template.id === workoutTemplateId) || workoutTemplates[0], [workoutTemplateId]);
   const selectedProgrammeWorkouts = useMemo(() => selectedProgrammeTemplate.workoutTemplateIds.map((id) => workoutTemplateById[id]).filter(Boolean), [selectedProgrammeTemplate]);
   const programById = useMemo(() => programs.reduce<Record<string, ProgramRecord>>((acc, program) => ({ ...acc, [program.id]: program }), {}), [programs]);
+  const programmeGroups = useMemo(() => {
+    const groupMap = workouts.reduce<Record<string, WorkoutRecord[]>>((acc, workout) => {
+      acc[workout.program_id] = [...(acc[workout.program_id] || []), workout];
+      return acc;
+    }, {});
+
+    return Object.entries(groupMap)
+      .map(([programId, programmeWorkouts]) => ({
+        programId,
+        program: programById[programId] || null,
+        workouts: [...programmeWorkouts].sort((a, b) => (a.workout_order || 999) - (b.workout_order || 999)),
+      }))
+      .sort((a, b) => {
+        const aIndex = programs.findIndex((program) => program.id === a.programId);
+        const bIndex = programs.findIndex((program) => program.id === b.programId);
+        return (aIndex === -1 ? 999 : aIndex) - (bIndex === -1 ? 999 : bIndex);
+      });
+  }, [workouts, programById, programs]);
 
   const loadPage = async () => {
     if (!isSupabaseConfigured) {
@@ -654,49 +732,60 @@ export default function CoachClientProgramPage() {
           {workouts.length === 0 ? (
             <div className="space-y-3">
               <p className="text-sm text-gray-600">No active workouts assigned yet.</p>
-              <button
-                type="button"
-                onClick={() => setTemplateBuilderOpen(true)}
-                className="text-sm font-bold uppercase text-[#FA0201] hover:underline"
-              >
-                Open template builder
-              </button>
+              <button type="button" onClick={() => setTemplateBuilderOpen(true)} className="text-sm font-bold uppercase text-[#FA0201] hover:underline">Open template builder</button>
             </div>
           ) : (
-            <div className="space-y-4">
-              {workouts.map((workout) => {
-                const status = statusForWorkout(workout, completedIds);
-                const locked = status === 'completed';
-                const program = programById[workout.program_id];
-                return (
-                  <div key={workout.id} className="rounded-xl border border-gray-200 bg-white p-4">
-                    <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-                      <div>
-                        <p className="text-xs font-bold uppercase text-gray-500">{program?.title || 'Programme'}</p>
-                        <p className="mt-1 text-lg font-bold uppercase text-[#000000]">{workout.title}</p>
-                        <p className="mt-1 text-sm text-gray-600">Scheduled: {formatDate(workout.scheduled_date)} • Exercises: {exerciseCounts[workout.id] || 0}</p>
-                        {locked && <p className="mt-2 text-xs font-semibold uppercase text-gray-500">Completed workouts are locked as history.</p>}
-                      </div>
-                      <div className="flex flex-col gap-2 md:items-end">
-                        <Badge variant={statusVariant(status) as any}>{status}</Badge>
-                        <div className="flex flex-wrap gap-2 md:justify-end">
-                          <Link href={`/coach/clients/${clientId}/current-workouts/${workout.id}/edit`} className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-bold uppercase text-[#000000] hover:bg-gray-50">Edit</Link>
-                          {!locked && (
-                            <button
-                              type="button"
-                              onClick={() => deleteWorkout(workout)}
-                              disabled={deletingWorkoutId === workout.id}
-                              className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-xs font-bold uppercase text-[#FA0201] hover:bg-red-100 disabled:opacity-60"
-                            >
-                              {deletingWorkoutId === workout.id ? 'Deleting...' : 'Delete'}
-                            </button>
-                          )}
-                        </div>
-                      </div>
+            <div className="space-y-6">
+              {programmeGroups.map((group) => (
+                <div key={group.programId} className="rounded-2xl border-2 border-gray-200 bg-gray-50 p-4">
+                  <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                    <div>
+                      <p className="text-xs font-bold uppercase text-[#FA0201]">Programme</p>
+                      <h2 className="text-xl font-black uppercase text-[#000000]">{group.program?.title || 'Untitled programme'}</h2>
+                      {group.program?.goal && <p className="mt-1 text-sm text-gray-600">{group.program.goal}</p>}
+                    </div>
+                    <div className="flex flex-wrap gap-2 md:justify-end">
+                      <Badge variant="default">{group.workouts.length} workout{group.workouts.length === 1 ? '' : 's'}</Badge>
+                      <Link href={`/coach/clients/${clientId}/schedule-workouts`} className="rounded-lg bg-[#000000] px-3 py-2 text-xs font-bold uppercase text-white hover:bg-gray-900">Schedule programme</Link>
                     </div>
                   </div>
-                );
-              })}
+
+                  <div className="space-y-3">
+                    {group.workouts.map((workout, index) => {
+                      const status = statusForWorkout(workout, completedIds);
+                      const locked = status === 'completed';
+                      const dayNumber = workout.workout_order || index + 1;
+                      return (
+                        <div key={workout.id} className="rounded-xl border border-gray-200 bg-white p-4">
+                          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                            <div>
+                              <div className="mb-2 flex flex-wrap items-center gap-2">
+                                <Badge variant="default">Day {dayNumber}</Badge>
+                                <Badge variant={statusVariant(status) as any}>{status}</Badge>
+                                {locked && <Badge variant="success">locked</Badge>}
+                              </div>
+                              <p className="text-lg font-bold uppercase text-[#000000]">{workout.title}</p>
+                              <p className="mt-1 text-sm text-gray-600">Scheduled: {formatDate(workout.scheduled_date)} • Exercises: {exerciseCounts[workout.id] || 0}</p>
+                              {locked && <p className="mt-2 text-xs font-semibold uppercase text-gray-500">Completed workouts are locked as history.</p>}
+                            </div>
+                            <div className="flex flex-wrap gap-2 md:justify-end">
+                              {!workout.scheduled_date && !locked && (
+                                <Link href={`/coach/clients/${clientId}/schedule-workouts`} className="rounded-lg bg-[#FA0201] px-3 py-2 text-xs font-bold uppercase text-white hover:bg-red-700">Schedule</Link>
+                              )}
+                              <Link href={`/coach/clients/${clientId}/current-workouts/${workout.id}/edit`} className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-bold uppercase text-[#000000] hover:bg-gray-50">Edit</Link>
+                              {!locked && (
+                                <button type="button" onClick={() => deleteWorkout(workout)} disabled={deletingWorkoutId === workout.id} className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-xs font-bold uppercase text-[#FA0201] hover:bg-red-100 disabled:opacity-60">
+                                  {deletingWorkoutId === workout.id ? 'Deleting...' : 'Delete'}
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </Card>
@@ -705,11 +794,7 @@ export default function CoachClientProgramPage() {
       <section>
         <div className="mb-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <SectionHeader title="ASSIGN FROM TEMPLATE" accent />
-          <button
-            type="button"
-            onClick={() => setTemplateBuilderOpen((current) => !current)}
-            className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-xs font-bold uppercase text-[#000000] hover:bg-gray-50"
-          >
+          <button type="button" onClick={() => setTemplateBuilderOpen((current) => !current)} className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-xs font-bold uppercase text-[#000000] hover:bg-gray-50">
             {templateBuilderOpen ? 'Hide template builder' : 'Open template builder'}
           </button>
         </div>
@@ -752,7 +837,7 @@ export default function CoachClientProgramPage() {
                   {selectedProgrammeWorkouts.map((template, index) => (
                     <div key={`${template.id}-${index}`} className="rounded-xl border border-gray-200 bg-white p-4">
                       <div className="flex flex-wrap items-center gap-2">
-                        <Badge variant="default">Workout {index + 1}</Badge>
+                        <Badge variant="default">Day {index + 1}</Badge>
                         <Badge variant="warning">{template.category}</Badge>
                       </div>
                       <p className="mt-3 text-lg font-black uppercase text-[#000000]">{template.defaultWorkoutTitle}</p>
