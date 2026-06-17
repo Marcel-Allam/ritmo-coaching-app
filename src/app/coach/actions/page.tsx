@@ -398,34 +398,48 @@ export default function CoachActionsPage() {
             </section>
 
             <section>
-              <SectionHeader title="HIGH ATTENTION" accent />
-              <Card>{highAttentionSubmissions.length === 0 ? <p className="text-sm text-gray-600">No high-attention submissions right now.</p> : <div className="space-y-3">{highAttentionSubmissions.map(renderSubmission)}</div>}</Card>
-            </section>
-
-            <section>
-              <SectionHeader title="NEEDS REVIEW" accent />
-              <Card>{normalReviewSubmissions.length === 0 ? <p className="text-sm text-gray-600">No standard submissions need review.</p> : <div className="space-y-3">{normalReviewSubmissions.map(renderSubmission)}</div>}</Card>
-            </section>
-
-            <section>
-              <SectionHeader title="NEEDS SCHEDULING" accent />
+              <SectionHeader title="REVIEW & SCHEDULING" accent />
               <Card>
-                {trainingAvailabilityToSchedule.length === 0 && unscheduledWorkouts.length === 0 ? <p className="text-sm text-gray-600">No scheduling actions needed.</p> : (
-                  <div className="space-y-4">
-                    {trainingAvailabilityToSchedule.map((submission) => (
-                      <Link key={submission.id} href={`/coach/clients/${submission.client_id}/schedule-workouts`} className="block rounded-lg border border-gray-200 p-4 hover:bg-gray-50">
-                        <p className="font-bold uppercase text-[#000000]">Schedule workouts from availability</p>
-                        <p className="mt-1 text-xs text-gray-500">{clients[submission.client_id] || 'Client'} • Availability submitted {formatDateTime(submission.submitted_at)}</p>
-                      </Link>
-                    ))}
-                    {unscheduledWorkouts.map((workout) => (
-                      <Link key={workout.id} href={`/coach/clients/${workout.client_id}/schedule-workouts`} className="block rounded-lg border border-gray-200 p-4 hover:bg-gray-50">
-                        <p className="font-bold uppercase text-[#000000]">Unscheduled workout: {workout.title}</p>
-                        <p className="mt-1 text-xs text-gray-500">{clients[workout.client_id] || 'Client'} • Needs a training date</p>
-                      </Link>
-                    ))}
+                <div className="space-y-6">
+                  <div>
+                    <div className="mb-3 flex items-center justify-between gap-4">
+                      <h3 className="text-sm font-black uppercase text-[#000000]">High Attention</h3>
+                      <Badge variant={highAttentionSubmissions.length > 0 ? 'danger' : 'default'}>{highAttentionSubmissions.length}</Badge>
+                    </div>
+                    {highAttentionSubmissions.length === 0 ? <p className="text-sm text-gray-600">No high-attention submissions right now.</p> : <div className="space-y-3">{highAttentionSubmissions.map(renderSubmission)}</div>}
                   </div>
-                )}
+
+                  <div className="border-t border-gray-200 pt-6">
+                    <div className="mb-3 flex items-center justify-between gap-4">
+                      <h3 className="text-sm font-black uppercase text-[#000000]">Needs Review</h3>
+                      <Badge>{normalReviewSubmissions.length}</Badge>
+                    </div>
+                    {normalReviewSubmissions.length === 0 ? <p className="text-sm text-gray-600">No standard submissions need review.</p> : <div className="space-y-3">{normalReviewSubmissions.map(renderSubmission)}</div>}
+                  </div>
+
+                  <div className="border-t border-gray-200 pt-6">
+                    <div className="mb-3 flex items-center justify-between gap-4">
+                      <h3 className="text-sm font-black uppercase text-[#000000]">Needs Scheduling</h3>
+                      <Badge>{trainingAvailabilityToSchedule.length + unscheduledWorkouts.length}</Badge>
+                    </div>
+                    {trainingAvailabilityToSchedule.length === 0 && unscheduledWorkouts.length === 0 ? <p className="text-sm text-gray-600">No scheduling actions needed.</p> : (
+                      <div className="space-y-4">
+                        {trainingAvailabilityToSchedule.map((submission) => (
+                          <Link key={submission.id} href={`/coach/clients/${submission.client_id}/schedule-workouts`} className="block rounded-lg border border-gray-200 p-4 hover:bg-gray-50">
+                            <p className="font-bold uppercase text-[#000000]">Schedule workouts from availability</p>
+                            <p className="mt-1 text-xs text-gray-500">{clients[submission.client_id] || 'Client'} • Availability submitted {formatDateTime(submission.submitted_at)}</p>
+                          </Link>
+                        ))}
+                        {unscheduledWorkouts.map((workout) => (
+                          <Link key={workout.id} href={`/coach/clients/${workout.client_id}/schedule-workouts`} className="block rounded-lg border border-gray-200 p-4 hover:bg-gray-50">
+                            <p className="font-bold uppercase text-[#000000]">Unscheduled workout: {workout.title}</p>
+                            <p className="mt-1 text-xs text-gray-500">{clients[workout.client_id] || 'Client'} • Needs a training date</p>
+                          </Link>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
               </Card>
             </section>
 
