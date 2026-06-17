@@ -36,6 +36,8 @@ type CoachCallBookingRecord = {
   created_at: string;
 };
 
+const bookingSelect = 'id, booking_type, requested_starts_at, requested_ends_at, starts_at, ends_at, status, client_notes, coach_note, suggested_starts_at, suggested_ends_at, created_at';
+
 const coachRequestRoutes: Record<string, string> = {
   key_lift: '/client/submit/key-lift',
   workout_checkin: '/client/submit/workout-checkin',
@@ -164,7 +166,7 @@ export default function ClientCoachPage() {
           .order('created_at', { ascending: false }),
         supabase
           .from('coach_call_bookings')
-          .select('id, booking_type, requested_starts_at, requested_ends_at, starts_at, ends_at, status, client_notes, coach_note, suggested_starts_at, suggested_ends_at, created_at')
+          .select(bookingSelect)
           .eq('client_id', linkedClient.id)
           .order('created_at', { ascending: false })
           .limit(1),
@@ -192,6 +194,7 @@ export default function ClientCoachPage() {
 
   const coachRequestedTasks = useMemo(() => tasks, [tasks]);
   const canRequestCall = !booking || isClosedBooking(booking.status);
+  const canCancelMeeting = Boolean(booking && !isClosedBooking(booking.status));
 
   const requestWeeklyCall = async () => {
     if (!client || !isSupabaseConfigured) {
@@ -253,6 +256,35 @@ export default function ClientCoachPage() {
     const updatedBooking = getBookingFromRpc(data);
     setBooking(updatedBooking);
     setMessage(accepted ? 'Proposed coach call time accepted.' : 'Proposed time declined. You can request a new call when ready.');
+    setUpdatingMeeting(false);
+  };
+
+  const cancelMeeting = async () => {
+    if (!booking || !isSupabaseConfigured) return;
+
+    setUpdatingMeeting(true);
+    setMessage(null);
+
+    const supabase = createClient();
+    const { data, error } = await supabase
+      .from('coach_call_bookings')
+      .update({
+        status: 'cancelled',
+        suggested_starts_at: null,
+        suggested_ends_at: null,
+      })
+      .eq('id', booking.id)
+      .select(bookingSelect)
+      .single();
+
+    if (error || !data) {
+      setMessage(error?.message || 'Could not cancel coach call.');
+      setUpdatingMeeting(false);
+      return;
+    }
+
+    setBooking(data as CoachCallBookingRecord);
+    setMessage('Coach call cancelled. You can request a new call when ready.');
     setUpdatingMeeting(false);
   };
 
@@ -361,12 +393,15 @@ export default function ClientCoachPage() {
                     </div>
                   </div>
 
-                  {booking.status === 'reschedule_pending' && (
-                    <div className="mt-6 flex flex-wrap gap-3">
-                      <Button type="button" disabled={updatingMeeting} onClick={() => respondToReschedule(true)} className="bg-[#FA0201] hover:bg-red-700">Accept proposed time</Button>
-                      <Button type="button" disabled={updatingMeeting} onClick={() => respondToReschedule(false)} variant="outline">Decline proposed time</Button>
-                    </div>
-                  )}
+                  <div className="mt-6 flex flex-wrap gap-3">
+                    {booking.status === 'reschedule_pending' && (
+                      <>
+                        <Button type="button" disabled={updatingMeeting} onClick={() => respondToReschedule(true)} className="bg-[#FA0201] hover:bg-red-700">Accept proposed time</Button>
+                        <Button type="button" disabled={updatingMeeting} onClick={() => respondToReschedule(false)} variant="outline">Decline proposed time</Button>
+                      </>
+                    )}
+                    {canCancelMeeting && <Button type="button" disabled={updatingMeeting} onClick={cancelMeeting} variant="outline">Cancel meeting</Button>}
+                  </div>
                 </div>
               ) : null}
             </Card>
