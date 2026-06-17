@@ -19,27 +19,19 @@ type AssignedTaskRecord = {
   instructions: string | null;
 };
 
-type CallRequestRecord = {
+type CoachCallBookingStatus = 'requested' | 'accepted' | 'declined' | 'reschedule_pending' | 'cancelled' | 'completed';
+
+type CoachCallBookingRecord = {
   id: string;
-  submitted_at: string;
-  answer_text: string | null;
-  review_status: string;
-};
-
-type MeetingStatus = 'none' | 'requested' | 'confirmed' | 'reschedule_pending';
-
-type MeetingDraft = {
-  id?: string;
-  status: MeetingStatus;
-  dateLabel: string;
-  notes: string;
-  submittedAt?: string;
-};
-
-const defaultMeetingDraft: MeetingDraft = {
-  status: 'none',
-  dateLabel: 'Awaiting booking',
-  notes: '',
+  booking_type: 'weekly_call' | 'extra_support';
+  starts_at: string | null;
+  ends_at: string | null;
+  status: CoachCallBookingStatus;
+  client_notes: string | null;
+  coach_note: string | null;
+  suggested_starts_at: string | null;
+  suggested_ends_at: string | null;
+  created_at: string;
 };
 
 const coachRequestRoutes: Record<string, string> = {
@@ -57,41 +49,44 @@ const formatDateTime = (value: string) => new Intl.DateTimeFormat('en-GB', {
   minute: '2-digit',
 }).format(new Date(value));
 
-const extractNotes = (text: string | null) => {
-  if (!text) return '';
-  const notesLine = text.split('\n').find((line) => line.startsWith('Notes:'));
-  return notesLine?.replace('Notes:', '').trim() || '';
+const getBookingFromRpc = (data: unknown) => {
+  if (Array.isArray(data)) return (data[0] ?? null) as CoachCallBookingRecord | null;
+  return (data ?? null) as CoachCallBookingRecord | null;
 };
 
-const getSuggestedTimeIso = (text: string | null) => {
-  if (!text) return null;
-  const suggestedLine = text.split('\n').find((line) => line.startsWith('Suggested time:'));
-  return suggestedLine?.replace('Suggested time:', '').trim() || null;
+const isClosedBooking = (status: CoachCallBookingStatus) => {
+  return ['declined', 'cancelled', 'completed'].includes(status);
 };
 
-const getMeetingStatus = (reviewStatus: string): MeetingStatus => {
-  if (reviewStatus === 'reviewed') return 'confirmed';
-  if (reviewStatus === 'needs_feedback') return 'reschedule_pending';
-  return 'requested';
+const getMeetingDateLabel = (booking: CoachCallBookingRecord) => {
+  if (booking.status === 'reschedule_pending' && booking.suggested_starts_at) {
+    return `Proposed ${formatDateTime(booking.suggested_starts_at)}`;
+  }
+
+  if ((booking.status === 'accepted' || booking.status === 'completed') && booking.starts_at) {
+    return formatDateTime(booking.starts_at);
+  }
+
+  if (booking.status === 'requested') return 'Awaiting coach confirmation';
+  if (booking.status === 'declined') return 'Declined by coach';
+  if (booking.status === 'cancelled') return 'Cancelled';
+  return 'Awaiting booking';
 };
 
-const getMeetingDateLabel = (request: CallRequestRecord) => {
-  const suggestedTime = getSuggestedTimeIso(request.answer_text);
-  if (suggestedTime) return formatDateTime(suggestedTime);
-  if (request.review_status === 'reviewed') return 'Confirmed by coach';
-  return 'Awaiting coach confirmation';
-};
-
-const getStatusLabel = (status: MeetingStatus) => {
-  if (status === 'confirmed') return 'Confirmed';
+const getStatusLabel = (status: CoachCallBookingStatus | 'none') => {
+  if (status === 'accepted') return 'Confirmed';
   if (status === 'reschedule_pending') return 'Reschedule pending';
   if (status === 'requested') return 'Requested';
+  if (status === 'declined') return 'Declined';
+  if (status === 'cancelled') return 'Cancelled';
+  if (status === 'completed') return 'Completed';
   return 'No meeting booked';
 };
 
-const getStatusColour = (status: MeetingStatus) => {
-  if (status === 'confirmed') return 'text-green-400';
+const getStatusColour = (status: CoachCallBookingStatus | 'none') => {
+  if (status === 'accepted' || status === 'completed') return 'text-green-400';
   if (status === 'reschedule_pending') return 'text-yellow-300';
+  if (status === 'declined' || status === 'cancelled') return 'text-red-300';
   return 'text-green-400';
 };
 
@@ -99,7 +94,7 @@ export default function ClientCoachPage() {
   const { user } = useAuth();
   const [client, setClient] = useState<ClientRecord | null>(null);
   const [tasks, setTasks] = useState<AssignedTaskRecord[]>([]);
-  const [meeting, setMeeting] = useState<MeetingDraft>(defaultMeetingDraft);
+  const [booking, setBooking] = useState<CoachCallBookingRecord | null>(null);
   const [quickNote, setQuickNote] = useState('');
   const [loading, setLoading] = useState(true);
   const [savingRequest, setSavingRequest] = useState(false);
@@ -130,7 +125,7 @@ export default function ClientCoachPage() {
       const linkedClient = clientData as ClientRecord;
       setClient(linkedClient);
 
-      const [taskResult, callRequestResult] = await Promise.all([
+      const [taskResult, bookingResult] = await Promise.all([
         supabase
           .from('assigned_tasks')
           .select('id, task_type, task_name, instructions')
@@ -139,12 +134,10 @@ export default function ClientCoachPage() {
           .in('task_type', ['key_lift', 'workout_checkin'])
           .order('created_at', { ascending: false }),
         supabase
-          .from('task_submissions')
-          .select('id, submitted_at, answer_text, review_status')
+          .from('coach_call_bookings')
+          .select('id, booking_type, starts_at, ends_at, status, client_notes, coach_note, suggested_starts_at, suggested_ends_at, created_at')
           .eq('client_id', linkedClient.id)
-          .eq('submission_type', 'coach_call_request')
-          .neq('review_status', 'resolved')
-          .order('submitted_at', { ascending: false })
+          .order('created_at', { ascending: false })
           .limit(1),
       ]);
 
@@ -154,24 +147,14 @@ export default function ClientCoachPage() {
         return;
       }
 
-      if (callRequestResult.error) {
-        setMessage(callRequestResult.error.message);
+      if (bookingResult.error) {
+        setMessage(bookingResult.error.message);
         setLoading(false);
         return;
       }
 
-      const latestCallRequest = (callRequestResult.data?.[0] ?? null) as CallRequestRecord | null;
-      if (latestCallRequest) {
-        setMeeting({
-          id: latestCallRequest.id,
-          status: getMeetingStatus(latestCallRequest.review_status),
-          dateLabel: getMeetingDateLabel(latestCallRequest),
-          notes: extractNotes(latestCallRequest.answer_text),
-          submittedAt: latestCallRequest.submitted_at,
-        });
-      }
-
       setTasks((taskResult.data ?? []) as AssignedTaskRecord[]);
+      setBooking((bookingResult.data?.[0] ?? null) as CoachCallBookingRecord | null);
       setLoading(false);
     };
 
@@ -179,6 +162,7 @@ export default function ClientCoachPage() {
   }, [user]);
 
   const coachRequestedTasks = useMemo(() => tasks, [tasks]);
+  const canRequestCall = !booking || isClosedBooking(booking.status);
 
   const requestWeeklyCall = async () => {
     if (!client || !isSupabaseConfigured) {
@@ -191,20 +175,11 @@ export default function ClientCoachPage() {
 
     const supabase = createClient();
     const notes = quickNote.trim();
-    const answerText = ['Request type: Weekly coach call', notes ? `Notes: ${notes}` : 'Notes: None provided'].join('\n');
 
-    const { data, error } = await supabase
-      .from('task_submissions')
-      .insert({
-        client_id: client.id,
-        assigned_task_id: null,
-        submission_type: 'coach_call_request',
-        answer_text: answerText,
-        review_status: 'needs_action',
-        followup_required: true,
-      })
-      .select('id, submitted_at, answer_text, review_status')
-      .single();
+    const { data, error } = await supabase.rpc('request_coach_call_booking', {
+      p_client_id: client.id,
+      p_client_notes: notes || null,
+    });
 
     if (error || !data) {
       setMessage(error?.message || 'Could not request coach call.');
@@ -212,43 +187,33 @@ export default function ClientCoachPage() {
       return;
     }
 
-    const request = data as CallRequestRecord;
-    setMeeting({
-      id: request.id,
-      status: 'requested',
-      dateLabel: getMeetingDateLabel(request),
-      notes: extractNotes(request.answer_text),
-      submittedAt: request.submitted_at,
-    });
-    setMessage('Coach call requested. Your coach will see it in their action queue.');
+    const newBooking = getBookingFromRpc(data);
+    setBooking(newBooking);
+    setQuickNote('');
+    setMessage('Coach call requested. Your coach will see it in their booking queue.');
     setSavingRequest(false);
   };
 
   const respondToReschedule = async (accepted: boolean) => {
-    if (!meeting.id || !isSupabaseConfigured) return;
+    if (!booking || !isSupabaseConfigured) return;
     setUpdatingMeeting(true);
     setMessage(null);
 
     const supabase = createClient();
-    const nextStatus = accepted ? 'reviewed' : 'resolved';
-    const { error } = await supabase
-      .from('task_submissions')
-      .update({ review_status: nextStatus })
-      .eq('id', meeting.id);
+    const { data, error } = await supabase.rpc('respond_to_coach_call_reschedule', {
+      p_booking_id: booking.id,
+      p_accept: accepted,
+    });
 
-    if (error) {
-      setMessage(error.message);
+    if (error || !data) {
+      setMessage(error?.message || 'Could not update coach call.');
       setUpdatingMeeting(false);
       return;
     }
 
-    if (accepted) {
-      setMeeting((current) => ({ ...current, status: 'confirmed' }));
-      setMessage('Rescheduled coach call accepted.');
-    } else {
-      setMeeting(defaultMeetingDraft);
-      setMessage('Rescheduled coach call declined.');
-    }
+    const updatedBooking = getBookingFromRpc(data);
+    setBooking(updatedBooking);
+    setMessage(accepted ? 'Rescheduled coach call accepted.' : 'Proposed time declined. Your request is back with your coach.');
     setUpdatingMeeting(false);
   };
 
@@ -258,7 +223,7 @@ export default function ClientCoachPage() {
         <PageHeader title="COACH" />
         <main className="flex-1 overflow-y-auto pb-20 md:pb-0">
           <div className="mx-auto max-w-5xl px-4 py-6 md:px-8">
-            <Card><p className="font-semibold text-gray-700">Loading coach hub...</p></Card>
+            <Card><p className="text-sm font-semibold text-gray-700">Loading coach hub...</p></Card>
           </div>
         </main>
       </div>
@@ -291,10 +256,10 @@ export default function ClientCoachPage() {
           <section>
             <SectionHeader title="COACH MEETING" accent />
             <Card variant="dark" className="p-8">
-              {meeting.status === 'none' ? (
+              {canRequestCall ? (
                 <div className="space-y-6">
                   <div>
-                    <p className="text-xs font-bold uppercase text-[#FA0201]">No meeting booked</p>
+                    <p className="text-xs font-bold uppercase text-[#FA0201]">{booking ? `Last request ${getStatusLabel(booking.status)}` : 'No meeting booked'}</p>
                     <h1 className="mt-2 text-4xl font-black uppercase tracking-tight text-white md:text-6xl">Book your next coach call</h1>
                     <p className="mt-4 max-w-2xl text-sm leading-relaxed text-white/70">Request your weekly coach call and add any notes you want to discuss.</p>
                   </div>
@@ -306,39 +271,40 @@ export default function ClientCoachPage() {
                   />
                   <Button type="button" onClick={requestWeeklyCall} disabled={savingRequest} className="w-fit bg-[#FA0201] hover:bg-red-700">{savingRequest ? 'Requesting...' : 'Book weekly call'}</Button>
                 </div>
-              ) : (
+              ) : booking ? (
                 <div>
                   <h1 className="text-5xl font-black uppercase tracking-tight text-white md:text-7xl">Coach Meeting</h1>
                   <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-[1fr_1fr]">
                     <div className="rounded-xl border-2 border-white p-5 text-white">
                       <p className="text-2xl font-bold">Date:</p>
-                      <p className="mt-2 text-3xl">{meeting.dateLabel}</p>
-                      {meeting.submittedAt && <p className="mt-3 text-sm text-white/60">Requested {formatDateTime(meeting.submittedAt)}</p>}
+                      <p className="mt-2 text-3xl">{getMeetingDateLabel(booking)}</p>
+                      <p className="mt-3 text-sm text-white/60">Requested {formatDateTime(booking.created_at)}</p>
                       <div className="mt-12 border-t border-white/40 pt-5">
                         <p className="text-2xl font-bold">Status:</p>
-                        <p className={`mt-2 text-3xl font-bold ${getStatusColour(meeting.status)}`}>{getStatusLabel(meeting.status)}</p>
+                        <p className={`mt-2 text-3xl font-bold ${getStatusColour(booking.status)}`}>{getStatusLabel(booking.status)}</p>
                       </div>
                     </div>
                     <div className="rounded-xl border-2 border-white p-5 text-white">
                       <p className="text-2xl font-bold">Notes</p>
-                      {meeting.notes ? (
+                      {booking.client_notes ? (
                         <ul className="mt-3 list-disc space-y-3 pl-5 text-2xl leading-snug">
-                          {meeting.notes.split('\n').filter(Boolean).map((note) => <li key={note}>{note}</li>)}
+                          {booking.client_notes.split('\n').filter(Boolean).map((note) => <li key={note}>{note}</li>)}
                         </ul>
                       ) : (
                         <p className="mt-3 text-lg text-white/70">No notes added yet.</p>
                       )}
+                      {booking.coach_note && <p className="mt-6 border-t border-white/40 pt-4 text-sm text-white/70">Coach note: {booking.coach_note}</p>}
                     </div>
                   </div>
 
-                  {meeting.status === 'reschedule_pending' && (
+                  {booking.status === 'reschedule_pending' && (
                     <div className="mt-6 flex flex-wrap gap-3">
                       <Button type="button" disabled={updatingMeeting} onClick={() => respondToReschedule(true)} className="bg-[#FA0201] hover:bg-red-700">Accept proposed time</Button>
                       <Button type="button" disabled={updatingMeeting} onClick={() => respondToReschedule(false)} variant="outline">Decline proposed time</Button>
                     </div>
                   )}
                 </div>
-              )}
+              ) : null}
             </Card>
           </section>
 
