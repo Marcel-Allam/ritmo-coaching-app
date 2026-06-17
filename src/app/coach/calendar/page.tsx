@@ -192,6 +192,16 @@ export default function CoachCalendarPage() {
             </section>
 
             <section>
+              <Card className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <p className="text-xs font-bold uppercase text-gray-500">Coach availability</p>
+                  <p className="mt-1 font-bold uppercase text-[#000000]">Add busy time when calls should not be booked.</p>
+                </div>
+                <Link href="/coach/calendar/busy" className="rounded-lg bg-black px-4 py-2 text-sm font-bold uppercase text-white hover:bg-gray-900">Manage busy time</Link>
+              </Card>
+            </section>
+
+            <section>
               <SectionHeader title="WEEKLY CALL CALENDAR" accent />
               <Card>
                 <div className="max-h-[760px] overflow-auto">
