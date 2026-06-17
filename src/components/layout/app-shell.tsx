@@ -63,6 +63,7 @@ const coachNavItems = [
   { label: 'Dashboard', href: '/coach', icon: HomeIcon },
   { label: 'Clients', href: '/coach/clients', icon: UsersIcon },
   { label: 'Actions', href: '/coach/actions', icon: ClipboardIcon },
+  { label: 'Calendar', href: '/coach/calendar', icon: SettingsIcon },
   { label: 'Programs', href: '/coach/programs', icon: DumbbellIcon },
   { label: 'Feedback', href: '/coach/feedback', icon: MessageIcon },
 ];
@@ -108,27 +109,13 @@ export const AppShell: React.FC<AppShellProps> = ({ role, children }) => {
         <div className="px-4 py-3 flex items-center justify-between">
           <div className="text-2xl font-bold text-[#FA0201] tracking-tight">RITMO</div>
           <div className="relative">
-            <button
-              onClick={() => setUserMenuOpen(!userMenuOpen)}
-              className="w-9 h-9 rounded-full bg-[#FA0201] text-white flex items-center justify-center text-sm font-bold"
-            >
-              {initials}
-            </button>
+            <button onClick={() => setUserMenuOpen(!userMenuOpen)} className="w-9 h-9 rounded-full bg-[#FA0201] text-white flex items-center justify-center text-sm font-bold">{initials}</button>
             {userMenuOpen && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setUserMenuOpen(false)} />
                 <div className="absolute right-0 mt-2 w-48 bg-black border border-gray-700 rounded-lg shadow-xl z-50">
-                  <div className="px-4 py-3 border-b border-gray-700">
-                    <p className="text-sm font-semibold text-white">{profile?.full_name}</p>
-                    <p className="text-xs text-gray-400">{profile?.email}</p>
-                  </div>
-                  <button
-                    onClick={handleSignOut}
-                    className="w-full text-left px-4 py-3 text-sm text-gray-300 hover:bg-gray-900 flex items-center gap-2 rounded-b-lg"
-                  >
-                    <LogOutIcon />
-                    Sign Out
-                  </button>
+                  <div className="px-4 py-3 border-b border-gray-700"><p className="text-sm font-semibold text-white">{profile?.full_name}</p><p className="text-xs text-gray-400">{profile?.email}</p></div>
+                  <button onClick={handleSignOut} className="w-full text-left px-4 py-3 text-sm text-gray-300 hover:bg-gray-900 flex items-center gap-2 rounded-b-lg"><LogOutIcon />Sign Out</button>
                 </div>
               </>
             )}
@@ -143,15 +130,7 @@ export const AppShell: React.FC<AppShellProps> = ({ role, children }) => {
               const Icon = item.icon;
               const active = isActive(item.href);
               return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={`flex items-center gap-3 px-6 py-3 text-white transition-colors ${
-                    active
-                      ? 'border-l-4 border-[#FA0201] bg-gray-900 font-semibold'
-                      : 'border-l-4 border-transparent hover:bg-gray-900'
-                  }`}
-                >
+                <Link key={item.href} href={item.href} className={`flex items-center gap-3 px-6 py-3 text-white transition-colors ${active ? 'border-l-4 border-[#FA0201] bg-gray-900 font-semibold' : 'border-l-4 border-transparent hover:bg-gray-900'}`}>
                   <Icon />
                   <span className="text-sm">{item.label}</span>
                 </Link>
@@ -160,9 +139,7 @@ export const AppShell: React.FC<AppShellProps> = ({ role, children }) => {
           </div>
         </nav>
 
-        <main className="flex-1 overflow-y-auto bg-[#D9D9D9] pb-20 md:pb-0">
-          {children}
-        </main>
+        <main className="flex-1 overflow-y-auto bg-[#D9D9D9] pb-20 md:pb-0">{children}</main>
       </div>
 
       <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-black border-t border-gray-800 z-30">
@@ -171,15 +148,7 @@ export const AppShell: React.FC<AppShellProps> = ({ role, children }) => {
             const Icon = item.icon;
             const active = isActive(item.href);
             return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`flex-1 flex flex-col items-center justify-center py-3 text-white transition-colors ${
-                  active
-                    ? 'border-b-2 border-[#FA0201] text-[#FA0201]'
-                    : 'border-b-2 border-transparent'
-                }`}
-              >
+              <Link key={item.href} href={item.href} className={`flex-1 flex flex-col items-center justify-center py-3 text-white transition-colors ${active ? 'border-b-2 border-[#FA0201] text-[#FA0201]' : 'border-b-2 border-transparent'}`}>
                 <Icon />
                 <span className="text-[10px] mt-1 font-medium">{item.label}</span>
               </Link>
