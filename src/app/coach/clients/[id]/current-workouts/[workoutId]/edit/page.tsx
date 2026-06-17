@@ -48,12 +48,15 @@ type ExerciseCatalogueRecord = {
 type SetForm = { targetReps: string; targetWeightKg: string; notes: string };
 type ExerciseForm = { exerciseName: string; exerciseCatalogueId: string | null; notes: string; sets: SetForm[] };
 type ExerciseSelectorFilter = { open: boolean; search: string; muscle: string; equipment: string };
+type NewExerciseDraft = { open: boolean; name: string; equipment: string; muscles: string; notes: string };
 
 const blankSet = (): SetForm => ({ targetReps: '', targetWeightKg: '', notes: '' });
 const blankExercise = (): ExerciseForm => ({ exerciseName: '', exerciseCatalogueId: null, notes: '', sets: [blankSet(), blankSet(), blankSet()] });
 const blankFilter = (): ExerciseSelectorFilter => ({ open: false, search: '', muscle: '', equipment: '' });
+const blankNewExerciseDraft = (): NewExerciseDraft => ({ open: false, name: '', equipment: '', muscles: '', notes: '' });
 const numberOrNull = (value: string) => (value.trim() ? Number(value) : null);
 const textOrNull = (value: string) => value.trim() || null;
+const parseMuscles = (value: string) => value.split(',').map((muscle) => muscle.trim()).filter(Boolean);
 
 export default function EditAssignedWorkoutPage() {
   const params = useParams();
@@ -67,6 +70,8 @@ export default function EditAssignedWorkoutPage() {
   const [exercises, setExercises] = useState<ExerciseForm[]>([]);
   const [exerciseCatalogue, setExerciseCatalogue] = useState<ExerciseCatalogueRecord[]>([]);
   const [selectorFilters, setSelectorFilters] = useState<Record<number, ExerciseSelectorFilter>>({});
+  const [newExerciseDrafts, setNewExerciseDrafts] = useState<Record<number, NewExerciseDraft>>({});
+  const [addingExerciseIndex, setAddingExerciseIndex] = useState<number | null>(null);
   const [originalExerciseIds, setOriginalExerciseIds] = useState<string[]>([]);
   const [isLocked, setIsLocked] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -213,6 +218,13 @@ export default function EditAssignedWorkoutPage() {
     }));
   };
 
+  const updateNewExerciseDraft = (index: number, updates: Partial<NewExerciseDraft>) => {
+    setNewExerciseDrafts((current) => ({
+      ...current,
+      [index]: { ...(current[index] || blankNewExerciseDraft()), ...updates },
+    }));
+  };
+
   const chooseExerciseFromLibrary = (exerciseIndex: number, catalogueExercise: ExerciseCatalogueRecord) => {
     updateExercise(exerciseIndex, {
       exerciseName: catalogueExercise.name,
@@ -220,6 +232,56 @@ export default function EditAssignedWorkoutPage() {
       notes: catalogueExercise.default_notes || exercises[exerciseIndex]?.notes || '',
     });
     updateSelectorFilter(exerciseIndex, { open: false, search: '' });
+  };
+
+  const addExerciseToLibrary = async (exerciseIndex: number) => {
+    if (!isSupabaseConfigured) return;
+
+    const draft = newExerciseDrafts[exerciseIndex] || blankNewExerciseDraft();
+    const exerciseName = draft.name.trim();
+    const muscles = parseMuscles(draft.muscles);
+
+    if (!exerciseName) {
+      setError('Exercise name is required.');
+      return;
+    }
+
+    if (muscles.length === 0) {
+      setError('Add at least one muscle group, separated by commas if needed.');
+      return;
+    }
+
+    setAddingExerciseIndex(exerciseIndex);
+    setError(null);
+    setMessage(null);
+
+    const supabase = createClient();
+    const { data, error: insertError } = await supabase
+      .from('exercise_catalogue')
+      .insert({
+        name: exerciseName,
+        category: 'Custom',
+        movement_pattern: null,
+        equipment: textOrNull(draft.equipment),
+        primary_muscles: muscles,
+        default_notes: textOrNull(draft.notes),
+        is_active: true,
+      })
+      .select('id, name, category, movement_pattern, equipment, primary_muscles, default_notes')
+      .single();
+
+    if (insertError || !data) {
+      setError(insertError?.message || 'Could not add exercise to library.');
+      setAddingExerciseIndex(null);
+      return;
+    }
+
+    const createdExercise = data as ExerciseCatalogueRecord;
+    setExerciseCatalogue((current) => [...current, createdExercise].sort((a, b) => a.name.localeCompare(b.name)));
+    chooseExerciseFromLibrary(exerciseIndex, createdExercise);
+    updateNewExerciseDraft(exerciseIndex, blankNewExerciseDraft());
+    setMessage(`${createdExercise.name} added to the Exercise Library and selected for this workout.`);
+    setAddingExerciseIndex(null);
   };
 
   const getFilteredCatalogue = (exerciseIndex: number) => {
@@ -429,6 +491,7 @@ export default function EditAssignedWorkoutPage() {
               const linkedExercise = exercise.exerciseCatalogueId ? catalogueById[exercise.exerciseCatalogueId] : null;
               const filter = selectorFilters[exerciseIndex] || blankFilter();
               const filteredCatalogue = getFilteredCatalogue(exerciseIndex);
+              const newExerciseDraft = newExerciseDrafts[exerciseIndex] || blankNewExerciseDraft();
 
               return (
                 <div key={exerciseIndex} className="rounded-xl border border-gray-200 p-4 space-y-4">
@@ -449,9 +512,9 @@ export default function EditAssignedWorkoutPage() {
                     <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_auto] lg:items-end">
                       <Input
                         label="Exercise"
-                        value={exercise.exerciseName}
-                        onChange={(e) => updateExercise(exerciseIndex, { exerciseName: e.target.value, exerciseCatalogueId: null })}
-                        placeholder="Search or type exercise name"
+                        value={exercise.exerciseName || 'Select from Exercise Library'}
+                        readOnly
+                        placeholder="Select from Exercise Library"
                         disabled={isLocked}
                       />
                       {!isLocked && (
@@ -506,6 +569,55 @@ export default function EditAssignedWorkoutPage() {
                           </label>
                         </div>
 
+                        <div className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                          <button
+                            type="button"
+                            onClick={() => updateNewExerciseDraft(exerciseIndex, { open: !newExerciseDraft.open })}
+                            className="text-xs font-bold uppercase text-[#FA0201] hover:underline"
+                          >
+                            {newExerciseDraft.open ? 'Close add exercise' : 'Add exercise to library'}
+                          </button>
+
+                          {newExerciseDraft.open && (
+                            <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+                              <Input
+                                label="Exercise name"
+                                value={newExerciseDraft.name}
+                                onChange={(e) => updateNewExerciseDraft(exerciseIndex, { name: e.target.value })}
+                                placeholder="e.g. Back Squat"
+                              />
+                              <Input
+                                label="Equipment"
+                                value={newExerciseDraft.equipment}
+                                onChange={(e) => updateNewExerciseDraft(exerciseIndex, { equipment: e.target.value })}
+                                placeholder="e.g. Barbell"
+                              />
+                              <Input
+                                label="Muscles affected"
+                                value={newExerciseDraft.muscles}
+                                onChange={(e) => updateNewExerciseDraft(exerciseIndex, { muscles: e.target.value })}
+                                placeholder="e.g. Quads, Glutes"
+                              />
+                              <Textarea
+                                label="Default notes"
+                                value={newExerciseDraft.notes}
+                                onChange={(e) => updateNewExerciseDraft(exerciseIndex, { notes: e.target.value })}
+                                placeholder="e.g. Feet shoulder width apart, controlled descent, ribs down."
+                              />
+                              <div className="md:col-span-2">
+                                <Button
+                                  type="button"
+                                  disabled={addingExerciseIndex === exerciseIndex}
+                                  onClick={() => addExerciseToLibrary(exerciseIndex)}
+                                  className="bg-[#000000] hover:bg-gray-900"
+                                >
+                                  {addingExerciseIndex === exerciseIndex ? 'Adding...' : 'Add and select exercise'}
+                                </Button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
                         <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
                           {filteredCatalogue.length === 0 ? (
                             <p className="rounded-lg bg-gray-50 p-3 text-sm text-gray-600">No exercises match those filters.</p>
@@ -525,6 +637,7 @@ export default function EditAssignedWorkoutPage() {
                                 <p className="mt-1 text-xs font-semibold text-gray-500">
                                   {(catalogueExercise.primary_muscles || []).join(', ') || 'No muscles set'}
                                 </p>
+                                {catalogueExercise.default_notes && <p className="mt-1 text-xs text-gray-500">{catalogueExercise.default_notes}</p>}
                               </button>
                             ))
                           )}
