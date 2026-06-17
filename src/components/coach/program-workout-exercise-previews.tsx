@@ -35,14 +35,20 @@ const buildExerciseSummary = (exercise: ProgramExerciseRow, sets: ProgramSetRow[
 export function ProgramWorkoutExercisePreviews() {
   useEffect(() => {
     let cancelled = false;
+    let isInjecting = false;
 
     const injectPreviews = async () => {
-      if (!isSupabaseConfigured) return;
+      if (!isSupabaseConfigured || cancelled || isInjecting) return;
 
       const editLinks = Array.from(document.querySelectorAll<HTMLAnchorElement>('a[href*="/current-workouts/"][href$="/edit"]'));
-      const workoutIds = Array.from(new Set(editLinks.map((link) => getWorkoutIdFromHref(link.href)).filter(Boolean))) as string[];
+      const linksWithoutPreview = editLinks.filter((link) => {
+        const workoutCard = link.closest('div.rounded-xl.border.border-gray-200.bg-white.p-4');
+        return workoutCard && !workoutCard.querySelector('[data-ritmo-exercise-preview="true"]');
+      });
+      const workoutIds = Array.from(new Set(linksWithoutPreview.map((link) => getWorkoutIdFromHref(link.href)).filter(Boolean))) as string[];
 
       if (workoutIds.length === 0) return;
+      isInjecting = true;
 
       const supabase = createClient();
       const { data: exerciseData, error: exerciseError } = await supabase
@@ -51,7 +57,10 @@ export function ProgramWorkoutExercisePreviews() {
         .in('workout_id', workoutIds)
         .order('exercise_order', { ascending: true });
 
-      if (cancelled || exerciseError) return;
+      if (cancelled || exerciseError) {
+        isInjecting = false;
+        return;
+      }
 
       const exercises = (exerciseData ?? []) as ProgramExerciseRow[];
       const exerciseIds = exercises.map((exercise) => exercise.id);
@@ -63,7 +72,10 @@ export function ProgramWorkoutExercisePreviews() {
             .order('set_order', { ascending: true })
         : { data: [], error: null };
 
-      if (cancelled || setError) return;
+      if (cancelled || setError) {
+        isInjecting = false;
+        return;
+      }
 
       const sets = (setData ?? []) as ProgramSetRow[];
       const exercisesByWorkout = exercises.reduce<Record<string, ProgramExerciseRow[]>>((acc, exercise) => {
@@ -75,7 +87,7 @@ export function ProgramWorkoutExercisePreviews() {
         return acc;
       }, {});
 
-      editLinks.forEach((link) => {
+      linksWithoutPreview.forEach((link) => {
         const workoutId = getWorkoutIdFromHref(link.href);
         if (!workoutId) return;
 
@@ -109,13 +121,21 @@ export function ProgramWorkoutExercisePreviews() {
         preview.appendChild(list);
         workoutCard.appendChild(preview);
       });
+
+      isInjecting = false;
     };
 
     const timeoutId = window.setTimeout(injectPreviews, 250);
+    const observer = new MutationObserver(() => {
+      window.setTimeout(injectPreviews, 100);
+    });
+
+    observer.observe(document.body, { childList: true, subtree: true });
 
     return () => {
       cancelled = true;
       window.clearTimeout(timeoutId);
+      observer.disconnect();
     };
   }, []);
 
