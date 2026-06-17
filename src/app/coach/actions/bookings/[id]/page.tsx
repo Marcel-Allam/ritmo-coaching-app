@@ -121,7 +121,7 @@ export default function CoachBookingReviewPage() {
     loadBooking();
   }, [bookingId]);
 
-  const updateBooking = async (nextStatus: 'accepted' | 'reschedule_pending' | 'declined') => {
+  const updateBooking = async (nextStatus: 'accepted' | 'reschedule_pending' | 'declined' | 'completed') => {
     if (!booking || !isSupabaseConfigured) return;
 
     setIsSaving(true);
@@ -154,7 +154,7 @@ export default function CoachBookingReviewPage() {
       }
     }
 
-    if (nextStatus === 'declined') {
+    if (nextStatus === 'declined' || nextStatus === 'completed') {
       updatePayload.suggested_starts_at = null;
       updatePayload.suggested_ends_at = null;
     }
@@ -178,7 +178,9 @@ export default function CoachBookingReviewPage() {
         ? 'Coach call accepted.'
         : nextStatus === 'reschedule_pending'
           ? 'Proposed time sent to client.'
-          : 'Coach call declined.'
+          : nextStatus === 'completed'
+            ? 'Coach call marked completed.'
+            : 'Coach call declined.'
     );
     setIsSaving(false);
     router.push('/coach/actions');
@@ -209,7 +211,7 @@ export default function CoachBookingReviewPage() {
 
   return (
     <div className="p-6 md:p-8">
-      <PageHeader title="BOOKING REVIEW" subtitle="Accept, reschedule, or decline a coach call request" />
+      <PageHeader title="BOOKING REVIEW" subtitle="Accept, reschedule, decline, or complete a coach call request" />
 
       <div className="mt-8 space-y-6">
         <Link href="/coach/actions" className="text-sm font-bold uppercase text-[#FA0201]">← Back to actions</Link>
@@ -284,6 +286,7 @@ export default function CoachBookingReviewPage() {
               <Button type="button" disabled={isSaving} onClick={() => updateBooking('accepted')}>Accept booking</Button>
               <Button type="button" disabled={isSaving} variant="secondary" onClick={() => updateBooking('reschedule_pending')}>Reschedule</Button>
               <Button type="button" disabled={isSaving} variant="outline" onClick={() => updateBooking('declined')}>Decline</Button>
+              {booking.status === 'accepted' && <Button type="button" disabled={isSaving} variant="outline" onClick={() => updateBooking('completed')}>Mark completed</Button>}
             </div>
           </Card>
         )}
