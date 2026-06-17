@@ -217,7 +217,7 @@ export default function EditAssignedWorkoutPage() {
     updateExercise(exerciseIndex, {
       exerciseName: catalogueExercise.name,
       exerciseCatalogueId: catalogueExercise.id,
-      notes: exercises[exerciseIndex]?.notes?.trim() ? exercises[exerciseIndex].notes : catalogueExercise.default_notes || '',
+      notes: catalogueExercise.default_notes || exercises[exerciseIndex]?.notes || '',
     });
     updateSelectorFilter(exerciseIndex, { open: false, search: '' });
   };
