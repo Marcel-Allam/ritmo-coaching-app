@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { PageHeader } from '@/components/layout/page-header';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -75,6 +75,7 @@ const getIsoRange = (localStart: string, durationMinutes: number) => {
 
 export default function CoachBookingReviewPage() {
   const params = useParams<{ id: string }>();
+  const router = useRouter();
   const bookingId = params.id;
   const [booking, setBooking] = useState<BookingRecord | null>(null);
   const [meetingDateTime, setMeetingDateTime] = useState('');
@@ -180,6 +181,8 @@ export default function CoachBookingReviewPage() {
           : 'Coach call declined.'
     );
     setIsSaving(false);
+    router.push('/coach/actions');
+    router.refresh();
   };
 
   if (isLoading) {
