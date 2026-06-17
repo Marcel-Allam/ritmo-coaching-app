@@ -24,6 +24,8 @@ type CoachCallBookingStatus = 'requested' | 'accepted' | 'declined' | 'reschedul
 type CoachCallBookingRecord = {
   id: string;
   booking_type: 'weekly_call' | 'extra_support';
+  requested_starts_at: string | null;
+  requested_ends_at: string | null;
   starts_at: string | null;
   ends_at: string | null;
   status: CoachCallBookingStatus;
@@ -49,6 +51,28 @@ const formatDateTime = (value: string) => new Intl.DateTimeFormat('en-GB', {
   minute: '2-digit',
 }).format(new Date(value));
 
+const toDateTimeLocal = (value: Date) => {
+  const date = new Date(value);
+  date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+  return date.toISOString().slice(0, 16);
+};
+
+const getDefaultRequestedDateTime = () => {
+  const date = new Date();
+  date.setDate(date.getDate() + 1);
+  date.setHours(18, 0, 0, 0);
+  return toDateTimeLocal(date);
+};
+
+const getIsoRange = (localStart: string, durationMinutes: number) => {
+  const startsAt = new Date(localStart);
+  const endsAt = new Date(startsAt.getTime() + durationMinutes * 60_000);
+  return {
+    starts_at: startsAt.toISOString(),
+    ends_at: endsAt.toISOString(),
+  };
+};
+
 const getBookingFromRpc = (data: unknown) => {
   if (Array.isArray(data)) return (data[0] ?? null) as CoachCallBookingRecord | null;
   return (data ?? null) as CoachCallBookingRecord | null;
@@ -60,27 +84,30 @@ const isClosedBooking = (status: CoachCallBookingStatus) => {
 
 const getMeetingDateLabel = (booking: CoachCallBookingRecord) => {
   if (booking.status === 'reschedule_pending' && booking.suggested_starts_at) {
-    return `Proposed ${formatDateTime(booking.suggested_starts_at)}`;
+    return `Coach proposed ${formatDateTime(booking.suggested_starts_at)}`;
   }
 
   if ((booking.status === 'accepted' || booking.status === 'completed') && booking.starts_at) {
     return formatDateTime(booking.starts_at);
   }
 
-  if (booking.status === 'requested') return 'Awaiting coach confirmation';
+  if (booking.status === 'requested' && booking.requested_starts_at) {
+    return `You requested ${formatDateTime(booking.requested_starts_at)}`;
+  }
+
   if (booking.status === 'declined') return 'Declined by coach';
-  if (booking.status === 'cancelled') return 'Cancelled';
+  if (booking.status === 'cancelled') return 'Request closed';
   return 'Awaiting booking';
 };
 
 const getStatusLabel = (status: CoachCallBookingStatus | 'none') => {
   if (status === 'accepted') return 'Confirmed';
-  if (status === 'reschedule_pending') return 'Reschedule pending';
+  if (status === 'reschedule_pending') return 'Coach proposed a different time';
   if (status === 'requested') return 'Requested';
   if (status === 'declined') return 'Declined';
-  if (status === 'cancelled') return 'Cancelled';
+  if (status === 'cancelled') return 'Closed';
   if (status === 'completed') return 'Completed';
-  return 'No meeting booked';
+  return 'No meeting requested';
 };
 
 const getStatusColour = (status: CoachCallBookingStatus | 'none') => {
@@ -96,6 +123,8 @@ export default function ClientCoachPage() {
   const [tasks, setTasks] = useState<AssignedTaskRecord[]>([]);
   const [booking, setBooking] = useState<CoachCallBookingRecord | null>(null);
   const [quickNote, setQuickNote] = useState('');
+  const [requestedDateTime, setRequestedDateTime] = useState(getDefaultRequestedDateTime);
+  const [requestedDurationMinutes, setRequestedDurationMinutes] = useState(30);
   const [loading, setLoading] = useState(true);
   const [savingRequest, setSavingRequest] = useState(false);
   const [updatingMeeting, setUpdatingMeeting] = useState(false);
@@ -135,7 +164,7 @@ export default function ClientCoachPage() {
           .order('created_at', { ascending: false }),
         supabase
           .from('coach_call_bookings')
-          .select('id, booking_type, starts_at, ends_at, status, client_notes, coach_note, suggested_starts_at, suggested_ends_at, created_at')
+          .select('id, booking_type, requested_starts_at, requested_ends_at, starts_at, ends_at, status, client_notes, coach_note, suggested_starts_at, suggested_ends_at, created_at')
           .eq('client_id', linkedClient.id)
           .order('created_at', { ascending: false })
           .limit(1),
@@ -170,14 +199,22 @@ export default function ClientCoachPage() {
       return;
     }
 
+    if (!requestedDateTime) {
+      setMessage('Choose a time you are available for the call.');
+      return;
+    }
+
     setSavingRequest(true);
     setMessage(null);
 
     const supabase = createClient();
     const notes = quickNote.trim();
+    const range = getIsoRange(requestedDateTime, requestedDurationMinutes);
 
     const { data, error } = await supabase.rpc('request_coach_call_booking', {
       p_client_id: client.id,
+      p_requested_starts_at: range.starts_at,
+      p_requested_ends_at: range.ends_at,
       p_client_notes: notes || null,
     });
 
@@ -190,7 +227,9 @@ export default function ClientCoachPage() {
     const newBooking = getBookingFromRpc(data);
     setBooking(newBooking);
     setQuickNote('');
-    setMessage('Coach call requested. Your coach will see it in their booking queue.');
+    setRequestedDateTime(getDefaultRequestedDateTime());
+    setRequestedDurationMinutes(30);
+    setMessage('Coach call availability sent. Your coach will confirm or suggest another time.');
     setSavingRequest(false);
   };
 
@@ -213,7 +252,7 @@ export default function ClientCoachPage() {
 
     const updatedBooking = getBookingFromRpc(data);
     setBooking(updatedBooking);
-    setMessage(accepted ? 'Rescheduled coach call accepted.' : 'Proposed time declined. Your request is back with your coach.');
+    setMessage(accepted ? 'Proposed coach call time accepted.' : 'Proposed time declined. You can request a new call when ready.');
     setUpdatingMeeting(false);
   };
 
@@ -259,17 +298,41 @@ export default function ClientCoachPage() {
               {canRequestCall ? (
                 <div className="space-y-6">
                   <div>
-                    <p className="text-xs font-bold uppercase text-[#FA0201]">{booking ? `Last request ${getStatusLabel(booking.status)}` : 'No meeting booked'}</p>
-                    <h1 className="mt-2 text-4xl font-black uppercase tracking-tight text-white md:text-6xl">Book your next coach call</h1>
-                    <p className="mt-4 max-w-2xl text-sm leading-relaxed text-white/70">Request your weekly coach call and add any notes you want to discuss.</p>
+                    <p className="text-xs font-bold uppercase text-[#FA0201]">{booking ? `Last request ${getStatusLabel(booking.status)}` : 'No meeting requested'}</p>
+                    <h1 className="mt-2 text-4xl font-black uppercase tracking-tight text-white md:text-6xl">Request a coach call</h1>
+                    <p className="mt-4 max-w-2xl text-sm leading-relaxed text-white/70">Choose a time you are available. Your coach will confirm it or suggest another time.</p>
+                  </div>
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-[2fr_1fr]">
+                    <div>
+                      <label className="mb-2 block text-sm font-semibold uppercase text-white">Available time</label>
+                      <input
+                        type="datetime-local"
+                        value={requestedDateTime}
+                        onChange={(event) => setRequestedDateTime(event.target.value)}
+                        className="w-full rounded-lg border-2 border-white/40 bg-white px-4 py-2 text-black focus:border-white focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-2 block text-sm font-semibold uppercase text-white">Duration</label>
+                      <select
+                        value={requestedDurationMinutes}
+                        onChange={(event) => setRequestedDurationMinutes(Number(event.target.value))}
+                        className="w-full rounded-lg border-2 border-white/40 bg-white px-4 py-2 text-black focus:border-white focus:outline-none"
+                      >
+                        <option value={15}>15 minutes</option>
+                        <option value={30}>30 minutes</option>
+                        <option value={45}>45 minutes</option>
+                        <option value={60}>60 minutes</option>
+                      </select>
+                    </div>
                   </div>
                   <Textarea
                     label="Notes for your coach"
                     value={quickNote}
                     onChange={(event) => setQuickNote(event.target.value)}
-                    placeholder="Example: Talk through next week, adjust a session, or review an exercise."
+                    placeholder="Example: I am free after work, want to review next week, or need help with a session."
                   />
-                  <Button type="button" onClick={requestWeeklyCall} disabled={savingRequest} className="w-fit bg-[#FA0201] hover:bg-red-700">{savingRequest ? 'Requesting...' : 'Book weekly call'}</Button>
+                  <Button type="button" onClick={requestWeeklyCall} disabled={savingRequest} className="w-fit bg-[#FA0201] hover:bg-red-700">{savingRequest ? 'Sending...' : 'Send availability'}</Button>
                 </div>
               ) : booking ? (
                 <div>
@@ -278,6 +341,7 @@ export default function ClientCoachPage() {
                     <div className="rounded-xl border-2 border-white p-5 text-white">
                       <p className="text-2xl font-bold">Date:</p>
                       <p className="mt-2 text-3xl">{getMeetingDateLabel(booking)}</p>
+                      {booking.requested_starts_at && <p className="mt-3 text-sm text-white/60">Your requested time: {formatDateTime(booking.requested_starts_at)}</p>}
                       <p className="mt-3 text-sm text-white/60">Requested {formatDateTime(booking.created_at)}</p>
                       <div className="mt-12 border-t border-white/40 pt-5">
                         <p className="text-2xl font-bold">Status:</p>
@@ -313,8 +377,8 @@ export default function ClientCoachPage() {
               <SectionHeader title="COACH REQUESTS" accent />
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 {coachRequestedTasks.map((task) => (
-                  <Link key={task.id} href={coachRequestRoutes[task.task_type] ?? '/client/coach'}>
-                    <Card className="h-full cursor-pointer p-6 hover:shadow-lg">
+                  <Link key={task.id} href={coachRequestRoutes[task.task_type] || '/client/coach'}>
+                    <Card className="h-full hover:bg-gray-50">
                       <p className="text-xs font-bold uppercase text-[#FA0201]">Coach requested</p>
                       <h2 className="mt-2 text-xl font-black uppercase text-[#000000]">{task.task_name || formatTaskType(task.task_type)}</h2>
                       <p className="mt-3 text-sm leading-relaxed text-gray-700">{task.instructions || `Complete this ${formatTaskType(task.task_type)} update for your coach.`}</p>
