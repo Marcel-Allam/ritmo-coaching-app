@@ -36,7 +36,6 @@ const defaultMeetingDraft: MeetingDraft = {
 const coachRequestRoutes: Record<string, string> = {
   key_lift: '/client/submit/key-lift',
   workout_checkin: '/client/submit/workout-checkin',
-  weekly_checkin: '/client/submit/weekly-checkin',
 };
 
 const formatTaskType = (taskType: string) => taskType.replaceAll('_', ' ');
@@ -47,7 +46,6 @@ export default function ClientCoachPage() {
   const [tasks, setTasks] = useState<AssignedTaskRecord[]>([]);
   const [meeting, setMeeting] = useState<MeetingDraft>(defaultMeetingDraft);
   const [quickNote, setQuickNote] = useState('');
-  const [extraSupportReason, setExtraSupportReason] = useState('');
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -80,7 +78,7 @@ export default function ClientCoachPage() {
         .select('id, task_type, task_name, instructions')
         .eq('client_id', linkedClient.id)
         .eq('active', true)
-        .in('task_type', ['weekly_checkin', 'key_lift', 'workout_checkin'])
+        .in('task_type', ['key_lift', 'workout_checkin'])
         .order('created_at', { ascending: false });
 
       if (taskError) {
@@ -96,8 +94,7 @@ export default function ClientCoachPage() {
     loadCoachPage();
   }, [user]);
 
-  const weeklyCheckInTask = useMemo(() => tasks.find((task) => task.task_type === 'weekly_checkin'), [tasks]);
-  const coachRequestedTasks = useMemo(() => tasks.filter((task) => task.task_type !== 'weekly_checkin'), [tasks]);
+  const coachRequestedTasks = useMemo(() => tasks, [tasks]);
 
   const requestWeeklyCall = () => {
     setMeeting({
@@ -106,20 +103,6 @@ export default function ClientCoachPage() {
       notes: quickNote.trim(),
     });
     setMessage('Weekly coach meeting requested. Booking storage will be wired in the next build.');
-  };
-
-  const requestExtraSupport = () => {
-    if (!extraSupportReason.trim()) {
-      setMessage('Add a reason before requesting extra support.');
-      return;
-    }
-
-    setMeeting({
-      status: 'requested',
-      dateLabel: 'Tomorrow, 16:00',
-      notes: extraSupportReason.trim(),
-    });
-    setMessage('Extra support request prepared. Booking storage will be wired in the next build.');
   };
 
   if (loading) {
@@ -189,9 +172,6 @@ export default function ClientCoachPage() {
                     <Button type="button" onClick={requestWeeklyCall} className="bg-[#FA0201] hover:bg-red-700">
                       Book weekly call
                     </Button>
-                    <Link href="/client/submit/weekly-checkin">
-                      <Button type="button" variant="outline">Start written check-in</Button>
-                    </Link>
                   </div>
                 </div>
               ) : (
@@ -229,42 +209,6 @@ export default function ClientCoachPage() {
                   </div>
                 </div>
               )}
-            </Card>
-          </section>
-
-          <section className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            <Card className="p-6">
-              <p className="text-xs font-bold uppercase text-gray-500">Weekly check-in</p>
-              <h2 className="mt-1 text-2xl font-black uppercase text-[#000000]">Light written update</h2>
-              <p className="mt-3 text-sm leading-relaxed text-gray-700">
-                Use this if your coach needs written context before your call. Keep it short: score the week, note the main win, and flag anything important.
-              </p>
-              <div className="mt-5">
-                <Link href={coachRequestRoutes.weekly_checkin}>
-                  <Button type="button" className="bg-[#FA0201] hover:bg-red-700">
-                    {weeklyCheckInTask ? 'Complete weekly check-in' : 'Start weekly check-in'}
-                  </Button>
-                </Link>
-              </div>
-            </Card>
-
-            <Card className="p-6">
-              <p className="text-xs font-bold uppercase text-gray-500">Extra support</p>
-              <h2 className="mt-1 text-2xl font-black uppercase text-[#000000]">Need help before the next call?</h2>
-              <p className="mt-3 text-sm leading-relaxed text-gray-700">
-                Request extra support when something cannot wait for the normal weekly call. A reason is required so your coach knows what to prioritise.
-              </p>
-              <Textarea
-                label="Reason for extra support"
-                value={extraSupportReason}
-                onChange={(event) => setExtraSupportReason(event.target.value)}
-                placeholder="Example: Need help adjusting a session, checking a schedule issue, or reviewing something from training."
-              />
-              <div className="mt-5">
-                <Button type="button" onClick={requestExtraSupport} className="bg-[#000000] hover:bg-gray-900">
-                  Request extra support
-                </Button>
-              </div>
             </Card>
           </section>
 
