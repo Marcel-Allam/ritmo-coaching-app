@@ -32,6 +32,7 @@ interface AssignedTaskRecord {
   task_name: string;
   task_type: string;
   instructions: string | null;
+  start_date: string | null;
   end_date: string | null;
 }
 
@@ -71,12 +72,16 @@ interface WorkoutRecord {
   status: string;
 }
 
+type ActionState = 'active' | 'scheduled' | 'not_scheduled';
+
 interface ActionItem {
   id: string;
   title: string;
   description: string;
   href: string;
   date: string | null;
+  state?: ActionState;
+  statusLabel?: string;
 }
 
 const defaultSettings: ClientSettingsRecord = {
@@ -137,6 +142,19 @@ const getTaskHref = (taskType: string) => {
   };
 
   return routes[taskType] ?? '/client/check-in';
+};
+
+const getTaskActionState = (task: AssignedTaskRecord, today: string): ActionState => {
+  if (task.start_date && task.start_date > today) return 'scheduled';
+  return 'active';
+};
+
+const getWeeklyTaskStatusLabel = (task: AssignedTaskRecord | undefined, today: string) => {
+  if (!task) return 'Not scheduled';
+  if (task.start_date && task.start_date > today) return `Next due ${formatDate(task.start_date)}`;
+  if (task.end_date && task.end_date < today) return `Overdue since ${formatDate(task.end_date)}`;
+  if (task.end_date && task.end_date === today) return 'Due today';
+  return task.end_date ? `Due ${formatDate(task.end_date)}` : 'Due now';
 };
 
 const calculateWindowTrend = <T,>(
@@ -257,17 +275,37 @@ const ProgressCard = ({
   </Card>
 );
 
-const HubActionCard = ({ item }: { item: ActionItem }) => (
-  <Link href={item.href} className="block rounded-xl border border-gray-200 bg-white p-4 hover:bg-gray-50">
+const HubActionCard = ({ item }: { item: ActionItem }) => {
+  const isDisabled = item.state === 'scheduled' || item.state === 'not_scheduled';
+  const cardClassName = `block rounded-xl border p-4 ${
+    isDisabled
+      ? 'border-gray-200 bg-gray-100 opacity-70'
+      : 'border-gray-200 bg-white hover:bg-gray-50'
+  }`;
+
+  const innerContent = (
     <div className="flex items-start gap-3">
-      <span className="mt-1 h-3 w-3 rounded-full bg-[#FA0201]" />
+      <span className={`mt-1 h-3 w-3 rounded-full ${isDisabled ? 'bg-gray-400' : 'bg-[#FA0201]'}`} />
       <div>
-        <p className="font-bold uppercase text-[#000000]">{item.title}</p>
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="font-bold uppercase text-[#000000]">{item.title}</p>
+          {item.statusLabel && (
+            <span className="rounded-full bg-black px-2 py-1 text-[10px] font-bold uppercase text-white">
+              {item.statusLabel}
+            </span>
+          )}
+        </div>
         <p className="mt-1 text-sm text-gray-600">{item.description}</p>
       </div>
     </div>
-  </Link>
-);
+  );
+
+  if (isDisabled) {
+    return <div className={cardClassName}>{innerContent}</div>;
+  }
+
+  return <Link href={item.href} className={cardClassName}>{innerContent}</Link>;
+};
 
 export default function ClientHub() {
   const { user } = useAuth();
@@ -315,7 +353,7 @@ export default function ClientHub() {
           .maybeSingle(),
         supabase
           .from('assigned_tasks')
-          .select('id, task_name, task_type, instructions, end_date')
+          .select('id, task_name, task_type, instructions, start_date, end_date')
           .eq('client_id', linkedClient.id)
           .eq('active', true)
           .order('created_at', { ascending: false }),
@@ -435,30 +473,70 @@ export default function ClientHub() {
   const calorieGuideline = getCalorieGuideline(bodyweightFourWeek);
 
   const weeklyCalendarActions = useMemo<ActionItem[]>(() => {
-    const actions: ActionItem[] = [];
+    const today = todayIso();
+    const buildWeeklyAction = ({
+      taskType,
+      enabled,
+      fallbackTitle,
+      activeDescription,
+      scheduledDescription,
+      href,
+    }: {
+      taskType: 'training_availability' | 'bodyweight';
+      enabled: boolean;
+      fallbackTitle: string;
+      activeDescription: string;
+      scheduledDescription: string;
+      href: string;
+    }): ActionItem | null => {
+      if (!enabled) return null;
 
-    if (settings.training_availability_enabled) {
-      actions.push({
-        id: 'weekly-training-availability',
-        title: 'Training availability',
-        description: 'Confirm the days you can train next week. You can configure when this reminder appears.',
+      const task = tasks.find((item) => item.task_type === taskType);
+      if (!task) {
+        return {
+          id: `weekly-${taskType}-not-scheduled`,
+          title: fallbackTitle,
+          description: 'No active weekly item is scheduled yet. Your coach can enable this, or you can adjust reminder preferences in Configure.',
+          href: '/client/configure',
+          date: null,
+          state: 'not_scheduled',
+          statusLabel: 'Not scheduled',
+        };
+      }
+
+      const state = getTaskActionState(task, today);
+      return {
+        id: task.id,
+        title: task.task_name || fallbackTitle,
+        description: state === 'active'
+          ? (task.instructions || activeDescription)
+          : `${scheduledDescription} ${getWeeklyTaskStatusLabel(task, today)}.`,
+        href,
+        date: task.end_date || task.start_date,
+        state,
+        statusLabel: getWeeklyTaskStatusLabel(task, today),
+      };
+    };
+
+    return [
+      buildWeeklyAction({
+        taskType: 'training_availability',
+        enabled: settings.training_availability_enabled,
+        fallbackTitle: 'Training availability',
+        activeDescription: 'Confirm the days you can train next week.',
+        scheduledDescription: 'Your next training availability check-in is already scheduled.',
         href: '/client/submit/training-availability',
-        date: null,
-      });
-    }
-
-    if (settings.bodyweight_enabled) {
-      actions.push({
-        id: 'weekly-bodyweight',
-        title: 'Bodyweight check-in',
-        description: 'Log your weekly bodyweight. You can configure when this reminder appears.',
+      }),
+      buildWeeklyAction({
+        taskType: 'bodyweight',
+        enabled: settings.bodyweight_enabled,
+        fallbackTitle: 'Bodyweight check-in',
+        activeDescription: 'Log your weekly bodyweight.',
+        scheduledDescription: 'Your next bodyweight check-in is already scheduled.',
         href: '/client/submit/nutrition-bodyweight',
-        date: null,
-      });
-    }
-
-    return actions;
-  }, [settings.training_availability_enabled, settings.bodyweight_enabled]);
+      }),
+    ].filter(Boolean) as ActionItem[];
+  }, [settings.training_availability_enabled, settings.bodyweight_enabled, tasks]);
 
   const todayActions = useMemo<ActionItem[]>(() => {
     const today = todayIso();
