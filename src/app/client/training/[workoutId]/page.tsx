@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { PageHeader } from '@/components/layout/page-header';
 import { Card } from '@/components/ui/card';
@@ -13,6 +14,7 @@ import { useAuth } from '@/lib/auth-context';
 
 type ClientRecord = { id: string; full_name: string };
 type WorkoutRecord = { id: string; title: string; instructions: string | null };
+type CompletedSessionRecord = { id: string; completed_at: string | null; review_status: string };
 type ExerciseRecord = { id: string; exercise_order: number; exercise_name: string; notes: string | null };
 type PrescribedSetRecord = {
   id: string;
@@ -31,6 +33,17 @@ const integerOrFallback = (value: string, fallback: string | null) => {
   if (!fallback?.trim()) return null;
   const parsed = Number.parseInt(fallback, 10);
   return Number.isFinite(parsed) ? parsed : null;
+};
+
+const formatDateTime = (value: string | null) => {
+  if (!value) return 'Not recorded';
+  return new Intl.DateTimeFormat('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(value));
 };
 
 const rpeGuide = [
@@ -55,6 +68,7 @@ export default function ClientWorkoutSessionPage() {
 
   const [client, setClient] = useState<ClientRecord | null>(null);
   const [workout, setWorkout] = useState<WorkoutRecord | null>(null);
+  const [completedSession, setCompletedSession] = useState<CompletedSessionRecord | null>(null);
   const [exercises, setExercises] = useState<ExerciseRecord[]>([]);
   const [sets, setSets] = useState<PrescribedSetRecord[]>([]);
   const [logs, setLogs] = useState<Record<string, SetLog>>({});
@@ -87,15 +101,39 @@ export default function ClientWorkoutSessionPage() {
       const linkedClient = clientData as ClientRecord;
       setClient(linkedClient);
 
-      const { data: workoutData, error: workoutError } = await supabase
-        .from('program_workouts')
-        .select('id, title, instructions')
-        .eq('id', workoutId)
-        .eq('client_id', linkedClient.id)
-        .single();
+      const [workoutResult, existingSessionResult] = await Promise.all([
+        supabase
+          .from('program_workouts')
+          .select('id, title, instructions')
+          .eq('id', workoutId)
+          .eq('client_id', linkedClient.id)
+          .single(),
+        supabase
+          .from('workout_sessions')
+          .select('id, completed_at, review_status')
+          .eq('client_id', linkedClient.id)
+          .eq('program_workout_id', workoutId)
+          .eq('status', 'completed')
+          .order('completed_at', { ascending: false })
+          .limit(1),
+      ]);
 
-      if (workoutError || !workoutData) {
-        setError(workoutError?.message || 'Workout not found.');
+      if (workoutResult.error || !workoutResult.data) {
+        setError(workoutResult.error?.message || 'Workout not found.');
+        setLoading(false);
+        return;
+      }
+
+      if (existingSessionResult.error) {
+        setError(existingSessionResult.error.message);
+        setLoading(false);
+        return;
+      }
+
+      const existingSession = ((existingSessionResult.data ?? []) as CompletedSessionRecord[])[0] ?? null;
+      if (existingSession) {
+        setWorkout(workoutResult.data as WorkoutRecord);
+        setCompletedSession(existingSession);
         setLoading(false);
         return;
       }
@@ -134,7 +172,7 @@ export default function ClientWorkoutSessionPage() {
         return acc;
       }, {});
 
-      setWorkout(workoutData as WorkoutRecord);
+      setWorkout(workoutResult.data as WorkoutRecord);
       setExercises(loadedExercises);
       setSets(loadedSets);
       setLogs(initialLogs);
@@ -162,6 +200,29 @@ export default function ClientWorkoutSessionPage() {
     setSaving(true);
     setError(null);
     const supabase = createClient();
+
+    const { data: existingSessionData, error: existingSessionError } = await supabase
+      .from('workout_sessions')
+      .select('id, completed_at, review_status')
+      .eq('client_id', client.id)
+      .eq('program_workout_id', workout.id)
+      .eq('status', 'completed')
+      .order('completed_at', { ascending: false })
+      .limit(1);
+
+    if (existingSessionError) {
+      setError(existingSessionError.message);
+      setSaving(false);
+      return;
+    }
+
+    const existingSession = ((existingSessionData ?? []) as CompletedSessionRecord[])[0] ?? null;
+    if (existingSession) {
+      setCompletedSession(existingSession);
+      setError('This workout has already been submitted, so it is locked to prevent duplicate logs.');
+      setSaving(false);
+      return;
+    }
 
     const { data: sessionData, error: sessionError } = await supabase
       .from('workout_sessions')
@@ -226,6 +287,32 @@ export default function ClientWorkoutSessionPage() {
 
   if (error && !workout) {
     return <div><PageHeader title="START YOUR WORKOUT" /><div className="px-4 py-6 md:px-8 max-w-5xl mx-auto"><Card><p className="text-sm font-semibold text-red-700">{error}</p></Card></div></div>;
+  }
+
+  if (completedSession) {
+    return (
+      <div>
+        <PageHeader title="WORKOUT COMPLETED" subtitle={workout ? `${workout.title} has already been submitted.` : undefined} />
+        <main className="mx-auto max-w-3xl px-4 py-6 md:px-8">
+          <Card className="border-2 border-green-200 bg-green-50">
+            <p className="text-sm font-black uppercase text-green-800">Submission locked</p>
+            <h2 className="mt-2 text-2xl font-black uppercase text-[#000000]">This workout is already complete</h2>
+            <p className="mt-2 text-sm text-gray-700">
+              Completed: {formatDateTime(completedSession.completed_at)}. Your coach can now review the performance and send feedback.
+            </p>
+            <p className="mt-1 text-xs font-bold uppercase text-gray-500">Review status: {completedSession.review_status.replaceAll('_', ' ')}</p>
+            <div className="mt-5 flex flex-wrap gap-3">
+              <Link href="/client/training" className="rounded-lg bg-[#FA0201] px-4 py-2 text-sm font-bold uppercase text-white hover:bg-red-700">
+                Back to training
+              </Link>
+              <Link href="/client" className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-bold uppercase text-[#000000] hover:bg-gray-50">
+                Back to hub
+              </Link>
+            </div>
+          </Card>
+        </main>
+      </div>
+    );
   }
 
   return (
