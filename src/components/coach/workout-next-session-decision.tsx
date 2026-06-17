@@ -7,19 +7,17 @@ import { SectionHeader } from '@/components/ui/section-header';
 import { Textarea } from '@/components/ui/textarea';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
 
-type DecisionValue =
-  | 'keep_as_planned'
+type FeedbackActionValue =
   | 'increase_load'
+  | 'repeat_load'
   | 'reduce_load'
-  | 'reduce_volume'
-  | 'repeat_session'
-  | 'swap_exercise'
-  | 'add_technique_cue'
-  | 'needs_follow_up';
+  | 'technique_issue'
+  | 'programme_adjustment';
 
-type DecisionOption = {
-  value: DecisionValue;
+type FeedbackActionOption = {
+  value: FeedbackActionValue;
   label: string;
+  helpText: string;
   priority: 'low' | 'medium' | 'high';
 };
 
@@ -35,7 +33,6 @@ type ProgramWorkoutRecord = {
   title: string;
   scheduled_date: string | null;
   workout_order: number | null;
-  instructions: string | null;
 };
 
 type ProgramExerciseRecord = {
@@ -44,9 +41,9 @@ type ProgramExerciseRecord = {
   exercise_name: string;
 };
 
-type CatalogueExerciseRecord = {
-  id: string;
-  name: string;
+type ProgramSetRecord = {
+  exercise_id: string;
+  target_weight_kg: number | null;
 };
 
 type WorkoutNextSessionDecisionProps = {
@@ -54,22 +51,44 @@ type WorkoutNextSessionDecisionProps = {
   sessionId: string;
 };
 
-const decisionOptions: DecisionOption[] = [
-  { value: 'keep_as_planned', label: 'Keep as planned', priority: 'low' },
-  { value: 'increase_load', label: 'Increase load', priority: 'medium' },
-  { value: 'reduce_load', label: 'Reduce load', priority: 'medium' },
-  { value: 'reduce_volume', label: 'Reduce volume', priority: 'medium' },
-  { value: 'repeat_session', label: 'Repeat session', priority: 'medium' },
-  { value: 'swap_exercise', label: 'Swap exercise', priority: 'medium' },
-  { value: 'add_technique_cue', label: 'Add technique cue', priority: 'low' },
-  { value: 'needs_follow_up', label: 'Needs follow-up', priority: 'high' },
+const feedbackActions: FeedbackActionOption[] = [
+  {
+    value: 'increase_load',
+    label: 'Increase load next time',
+    helpText: 'Creates a programme adjustment action to increase the selected exercise load.',
+    priority: 'medium',
+  },
+  {
+    value: 'repeat_load',
+    label: 'Repeat same load',
+    helpText: 'Creates a programme adjustment action to keep the selected exercise load unchanged next time.',
+    priority: 'low',
+  },
+  {
+    value: 'reduce_load',
+    label: 'Reduce load',
+    helpText: 'Creates a programme adjustment action to reduce the selected exercise load.',
+    priority: 'medium',
+  },
+  {
+    value: 'technique_issue',
+    label: 'Technique issue',
+    helpText: 'Saves a coach-only technique note. It does not create a programme action.',
+    priority: 'low',
+  },
+  {
+    value: 'programme_adjustment',
+    label: 'Create programme adjustment',
+    helpText: 'Creates an action to edit the current workout and relevant future workouts manually.',
+    priority: 'high',
+  },
 ];
 
+const loadChangeOptionsKg = Array.from({ length: 10 }, (_, index) => (index + 1) * 2.5);
 const todayDate = () => new Date().toISOString().slice(0, 10);
-const numberOrNull = (value: string) => (value.trim() ? Number(value) : null);
 
 const formatDate = (value: string | null) => {
-  if (!value) return 'No date set';
+  if (!value) return 'Unscheduled';
 
   return new Intl.DateTimeFormat('en-GB', {
     day: 'numeric',
@@ -89,26 +108,25 @@ const findFutureWorkouts = (currentWorkout: ProgramWorkoutRecord, workouts: Prog
   return workouts.filter((workout) => workout.id !== currentWorkout.id);
 };
 
+const formatLoadChange = (loadChangeKg: number, baseLoadKg: number | null) => {
+  if (!baseLoadKg || baseLoadKg <= 0) return `${loadChangeKg}kg`;
+
+  const percentage = Number(((loadChangeKg / baseLoadKg) * 100).toFixed(1));
+  const cleanPercentage = Number.isInteger(percentage) ? percentage.toFixed(0) : percentage.toFixed(1);
+  return `${loadChangeKg}kg / ${cleanPercentage}%`;
+};
+
 export function WorkoutNextSessionDecision({ clientId, sessionId }: WorkoutNextSessionDecisionProps) {
-  const [decision, setDecision] = useState<DecisionValue>('keep_as_planned');
-  const [adjustmentNote, setAdjustmentNote] = useState('');
-  const [programId, setProgramId] = useState<string | null>(null);
-  const [workoutTitle, setWorkoutTitle] = useState('Completed workout');
-  const [reviewedWorkoutExercises, setReviewedWorkoutExercises] = useState<ProgramExerciseRecord[]>([]);
+  const [action, setAction] = useState<FeedbackActionValue>('increase_load');
+  const [selectedExerciseId, setSelectedExerciseId] = useState('');
+  const [loadChangeKg, setLoadChangeKg] = useState('2.5');
+  const [coachNote, setCoachNote] = useState('');
+  const [currentWorkout, setCurrentWorkout] = useState<ProgramWorkoutRecord | null>(null);
+  const [reviewedExercises, setReviewedExercises] = useState<ProgramExerciseRecord[]>([]);
+  const [programSets, setProgramSets] = useState<ProgramSetRecord[]>([]);
   const [futureWorkouts, setFutureWorkouts] = useState<ProgramWorkoutRecord[]>([]);
-  const [futureExercises, setFutureExercises] = useState<ProgramExerciseRecord[]>([]);
-  const [catalogueExercises, setCatalogueExercises] = useState<CatalogueExerciseRecord[]>([]);
-  const [showApplyModal, setShowApplyModal] = useState(false);
-  const [swapScope, setSwapScope] = useState<'programme_rule' | 'all_future_program'>('programme_rule');
-  const [exerciseToReplace, setExerciseToReplace] = useState('');
-  const [replacementExercise, setReplacementExercise] = useState('');
-  const [replacementSetCount, setReplacementSetCount] = useState('3');
-  const [replacementReps, setReplacementReps] = useState('');
-  const [replacementKg, setReplacementKg] = useState('');
-  const [replacementRpe, setReplacementRpe] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [isApplying, setIsApplying] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -137,7 +155,7 @@ export function WorkoutNextSessionDecision({ clientId, sessionId }: WorkoutNextS
       const session = sessionData as WorkoutSessionRecord;
       const { data: currentWorkoutData, error: workoutError } = await supabase
         .from('program_workouts')
-        .select('id, program_id, title, scheduled_date, workout_order, instructions')
+        .select('id, program_id, title, scheduled_date, workout_order')
         .eq('id', session.program_workout_id)
         .single();
 
@@ -147,15 +165,14 @@ export function WorkoutNextSessionDecision({ clientId, sessionId }: WorkoutNextS
         return;
       }
 
-      const currentWorkout = currentWorkoutData as ProgramWorkoutRecord;
-      setProgramId(currentWorkout.program_id);
-      setWorkoutTitle(currentWorkout.title || 'Completed workout');
+      const loadedCurrentWorkout = currentWorkoutData as ProgramWorkoutRecord;
+      setCurrentWorkout(loadedCurrentWorkout);
 
       const { data: workoutListData, error: workoutListError } = await supabase
         .from('program_workouts')
-        .select('id, program_id, title, scheduled_date, workout_order, instructions')
+        .select('id, program_id, title, scheduled_date, workout_order')
         .eq('client_id', clientId)
-        .eq('program_id', currentWorkout.program_id)
+        .eq('program_id', loadedCurrentWorkout.program_id)
         .eq('status', 'active')
         .order('scheduled_date', { ascending: true, nullsFirst: false })
         .order('workout_order', { ascending: true });
@@ -167,190 +184,178 @@ export function WorkoutNextSessionDecision({ clientId, sessionId }: WorkoutNextS
       }
 
       const orderedWorkouts = (workoutListData ?? []) as ProgramWorkoutRecord[];
-      const upcomingWorkouts = findFutureWorkouts(currentWorkout, orderedWorkouts);
-      setFutureWorkouts(upcomingWorkouts);
+      setFutureWorkouts(findFutureWorkouts(loadedCurrentWorkout, orderedWorkouts));
 
-      const futureWorkoutIds = upcomingWorkouts.map((workout) => workout.id);
-      const [reviewedExerciseResult, futureExerciseResult, catalogueResult] = await Promise.all([
-        supabase
-          .from('program_exercises')
-          .select('id, workout_id, exercise_name')
-          .eq('workout_id', currentWorkout.id)
-          .order('exercise_order', { ascending: true }),
-        futureWorkoutIds.length > 0
-          ? supabase
-              .from('program_exercises')
-              .select('id, workout_id, exercise_name')
-              .in('workout_id', futureWorkoutIds)
-          : Promise.resolve({ data: [], error: null }),
-        supabase
-          .from('exercise_catalogue')
-          .select('id, name')
-          .eq('is_active', true)
-          .order('name', { ascending: true }),
-      ]);
+      const { data: exerciseData, error: exerciseError } = await supabase
+        .from('program_exercises')
+        .select('id, workout_id, exercise_name')
+        .eq('workout_id', loadedCurrentWorkout.id)
+        .order('exercise_order', { ascending: true });
 
-      if (reviewedExerciseResult.error || futureExerciseResult.error || catalogueResult.error) {
-        setError(reviewedExerciseResult.error?.message || futureExerciseResult.error?.message || catalogueResult.error?.message || 'Could not load swap exercise data.');
+      if (exerciseError) {
+        setError(exerciseError.message);
         setIsLoading(false);
         return;
       }
 
-      setReviewedWorkoutExercises((reviewedExerciseResult.data ?? []) as ProgramExerciseRecord[]);
-      setFutureExercises((futureExerciseResult.data ?? []) as ProgramExerciseRecord[]);
-      setCatalogueExercises((catalogueResult.data ?? []) as CatalogueExerciseRecord[]);
+      const loadedExercises = (exerciseData ?? []) as ProgramExerciseRecord[];
+      setReviewedExercises(loadedExercises);
+      setSelectedExerciseId(loadedExercises[0]?.id || '');
+
+      const exerciseIds = loadedExercises.map((exercise) => exercise.id);
+      const setResult = exerciseIds.length
+        ? await supabase
+            .from('program_sets')
+            .select('exercise_id, target_weight_kg')
+            .in('exercise_id', exerciseIds)
+        : { data: [], error: null };
+
+      if (setResult.error) {
+        setError(setResult.error.message);
+        setIsLoading(false);
+        return;
+      }
+
+      setProgramSets((setResult.data ?? []) as ProgramSetRecord[]);
       setIsLoading(false);
     };
 
     loadWorkoutContext();
   }, [clientId, sessionId]);
 
-  const selectedDecision = decisionOptions.find((option) => option.value === decision) || decisionOptions[0];
-  const scopedWorkoutIds = swapScope === 'all_future_program' ? futureWorkouts.map((workout) => workout.id) : [];
+  const selectedAction = feedbackActions.find((option) => option.value === action) || feedbackActions[0];
+  const selectedExercise = reviewedExercises.find((exercise) => exercise.id === selectedExerciseId) || reviewedExercises[0] || null;
 
-  const exerciseOptions = useMemo(() => {
-    return Array.from(new Set(reviewedWorkoutExercises.map((exercise) => exercise.exercise_name).filter(Boolean))).sort();
-  }, [reviewedWorkoutExercises]);
+  const baseLoadKg = useMemo(() => {
+    if (!selectedExercise) return null;
 
-  const previewWorkouts = futureWorkouts.filter((workout) => scopedWorkoutIds.includes(workout.id));
+    const exerciseLoads = programSets
+      .filter((set) => set.exercise_id === selectedExercise.id && typeof set.target_weight_kg === 'number')
+      .map((set) => set.target_weight_kg as number);
 
-  const buildDecisionDescription = (extraLines: string[] = []) => [
-    `Programme adjustment decision: ${selectedDecision.label}`,
-    adjustmentNote.trim() ? `Adjustment note: ${adjustmentNote.trim()}` : null,
-    ...extraLines,
-  ]
-    .filter(Boolean)
-    .join('\n\n');
+    if (exerciseLoads.length === 0) return null;
+    return Math.max(...exerciseLoads);
+  }, [programSets, selectedExercise]);
 
-  const createProgrammeAction = async (extraLines: string[] = []) => {
+  const loadChangeNumber = Number(loadChangeKg) || 2.5;
+  const loadChangeSummary = formatLoadChange(loadChangeNumber, baseLoadKg);
+  const futureWorkoutSummary = futureWorkouts.length > 0
+    ? futureWorkouts.map((workout) => `${workout.title} (${formatDate(workout.scheduled_date)})`).join(', ')
+    : 'No future workouts are currently scheduled; apply this when building/editing the next sessions.';
+
+  const markReviewNeedsAction = async () => {
     const supabase = createClient();
-
-    return supabase.from('coach_actions').insert({
-      client_id: clientId,
-      action_type: 'programme_adjustment',
-      description: buildDecisionDescription(extraLines),
-      priority: selectedDecision.priority,
-      due_date: todayDate(),
-      status: 'new',
-      notes: `Created from workout review. Programme ID: ${programId || 'unknown'}. Reviewed workout: ${workoutTitle}. Session ID: ${sessionId}.`,
-    });
+    await Promise.all([
+      supabase
+        .from('workout_sessions')
+        .update({ review_status: 'needs_action' })
+        .eq('id', sessionId)
+        .eq('client_id', clientId),
+      supabase
+        .from('task_submissions')
+        .update({ review_status: 'needs_action', followup_required: true })
+        .eq('client_id', clientId)
+        .eq('submission_type', 'workout_session')
+        .eq('answer_text', sessionId),
+    ]);
   };
 
-  const saveDecision = async () => {
+  const createActionDescription = () => {
+    const exerciseName = selectedExercise?.exercise_name || 'selected exercise';
+    const noteLine = coachNote.trim() ? `Coach note: ${coachNote.trim()}` : null;
+    const baseLine = baseLoadKg ? `Current prescribed top set/reference load: ${baseLoadKg}kg.` : 'No prescribed reference load found, so percentage could not be calculated.';
+
+    if (action === 'increase_load') {
+      return [
+        `Increase load next time for ${exerciseName} by ${loadChangeSummary}.`,
+        baseLine,
+        noteLine,
+      ].filter(Boolean).join('\n\n');
+    }
+
+    if (action === 'repeat_load') {
+      return [
+        `Repeat the same load next time for ${exerciseName}.`,
+        baseLine,
+        noteLine,
+      ].filter(Boolean).join('\n\n');
+    }
+
+    if (action === 'reduce_load') {
+      return [
+        `Reduce load next time for ${exerciseName} by ${loadChangeSummary}.`,
+        baseLine,
+        noteLine,
+      ].filter(Boolean).join('\n\n');
+    }
+
+    return [
+      `Create programme adjustment for ${exerciseName}.`,
+      'Edit the current workout and any relevant future workouts manually from the client programme/workout editor.',
+      `Future workout context: ${futureWorkoutSummary}`,
+      noteLine,
+    ].filter(Boolean).join('\n\n');
+  };
+
+  const saveTechniqueNote = async () => {
+    if (!selectedExercise) throw new Error('Choose an exercise first.');
+
+    const note = coachNote.trim() || `Technique issue noted for ${selectedExercise.exercise_name}. Review cueing before the next exposure.`;
+    const supabase = createClient();
+    const { error: noteError } = await supabase.from('feedback_notes').insert({
+      client_id: clientId,
+      feedback_date: todayDate(),
+      main_win: null,
+      main_focus: `Technique issue — ${selectedExercise.exercise_name}`,
+      agreed_action: note,
+      plan_change: `Coach-only note from workout review: ${currentWorkout?.title || 'completed workout'}. Session ID: ${sessionId}.`,
+      client_visible: false,
+    });
+
+    if (noteError) throw noteError;
+  };
+
+  const saveStructuredFeedbackAction = async () => {
     if (!isSupabaseConfigured) return;
+    if (!selectedExercise) {
+      setError('Choose an exercise before saving an action.');
+      return;
+    }
 
     setIsSaving(true);
     setMessage(null);
     setError(null);
 
-    const { error: actionError } = await createProgrammeAction(['Saved for next programme planning.']);
-
-    if (actionError) {
-      setError(actionError.message);
-      setIsSaving(false);
-      return;
-    }
-
-    setMessage('Programme adjustment saved as a coach action.');
-    setAdjustmentNote('');
-    setIsSaving(false);
-  };
-
-  const applySwapExercise = async () => {
-    if (!isSupabaseConfigured) return;
-
-    if (!exerciseToReplace.trim() || !replacementExercise) {
-      throw new Error('Choose the exercise from the reviewed workout and choose the replacement exercise.');
-    }
-
-    const setCount = Math.max(1, Number(replacementSetCount) || 1);
-    if (!replacementReps.trim()) {
-      throw new Error('Add the target reps for the replacement exercise.');
-    }
-
-    const affectedExercises = futureExercises.filter((exercise) => (
-      scopedWorkoutIds.includes(exercise.workout_id) && exercise.exercise_name === exerciseToReplace.trim()
-    ));
-
-    if (swapScope === 'all_future_program' && affectedExercises.length > 0) {
-      const affectedExerciseIds = affectedExercises.map((exercise) => exercise.id);
-      const supabase = createClient();
-
-      const { error: exerciseUpdateError } = await supabase
-        .from('program_exercises')
-        .update({ exercise_name: replacementExercise })
-        .in('id', affectedExerciseIds);
-
-      if (exerciseUpdateError) throw exerciseUpdateError;
-
-      const { error: deleteSetsError } = await supabase
-        .from('program_sets')
-        .delete()
-        .in('exercise_id', affectedExerciseIds);
-
-      if (deleteSetsError) throw deleteSetsError;
-
-      const setRows = affectedExerciseIds.flatMap((exerciseId) => (
-        Array.from({ length: setCount }, (_, index) => ({
-          exercise_id: exerciseId,
-          set_order: index + 1,
-          target_reps: replacementReps.trim(),
-          target_weight_kg: numberOrNull(replacementKg),
-          target_rpe: numberOrNull(replacementRpe),
-          target_rir: null,
-          notes: null,
-        }))
-      ));
-
-      const { error: insertSetsError } = await supabase.from('program_sets').insert(setRows);
-      if (insertSetsError) throw insertSetsError;
-
-      setFutureExercises((current) => current.map((exercise) => (
-        affectedExerciseIds.includes(exercise.id) ? { ...exercise, exercise_name: replacementExercise } : exercise
-      )));
-    }
-
-    const { error: actionError } = await createProgrammeAction([
-      `Swap rule: ${exerciseToReplace.trim()} → ${replacementExercise}`,
-      `Source: exercise selected from reviewed workout (${workoutTitle})`,
-      `Scope: ${swapScope === 'all_future_program' ? 'Updated matching future rows already planned' : 'Programme planning rule for next week'}`,
-      `Prescription: ${setCount} sets x ${replacementReps}${replacementKg.trim() ? ` @ ${replacementKg}kg` : ''}${replacementRpe.trim() ? `, target RPE ${replacementRpe}` : ''}`,
-      swapScope === 'all_future_program' && affectedExercises.length === 0 ? 'No existing future rows matched yet, so this has been saved as a programme planning action.' : '',
-    ]);
-
-    if (actionError) throw actionError;
-  };
-
-  const confirmApply = async () => {
-    if (!isSupabaseConfigured) return;
-
-    setIsApplying(true);
-    setMessage(null);
-    setError(null);
-
     try {
-      if (decision === 'swap_exercise') {
-        await applySwapExercise();
-        setMessage('Exercise swap saved to the programme workflow.');
-      } else {
-        const { error: actionError } = await createProgrammeAction(['Saved for next programme planning.']);
-        if (actionError) throw actionError;
-        setMessage('Programme adjustment saved for next week planning.');
+      if (action === 'technique_issue') {
+        await saveTechniqueNote();
+        setMessage(`Technique note saved for ${selectedExercise.exercise_name}.`);
+        setCoachNote('');
+        setIsSaving(false);
+        return;
       }
 
-      setAdjustmentNote('');
-      setShowApplyModal(false);
-    } catch (applyError) {
-      setError(applyError instanceof Error ? applyError.message : 'Could not apply decision.');
-    } finally {
-      setIsApplying(false);
-    }
-  };
+      const supabase = createClient();
+      const { error: actionError } = await supabase.from('coach_actions').insert({
+        client_id: clientId,
+        action_type: 'programme_adjustment',
+        description: createActionDescription(),
+        priority: selectedAction.priority,
+        due_date: todayDate(),
+        status: 'new',
+        notes: `Created from workout review. Reviewed workout: ${currentWorkout?.title || 'unknown workout'}. Session ID: ${sessionId}. Action type: ${selectedAction.label}.`,
+      });
 
-  const openApplyModal = () => {
-    setError(null);
-    setMessage(null);
-    setShowApplyModal(true);
+      if (actionError) throw actionError;
+
+      await markReviewNeedsAction();
+      setMessage(`${selectedAction.label} saved as a programme action for ${selectedExercise.exercise_name}.`);
+      setCoachNote('');
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Could not save structured feedback action.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   if (isLoading) return null;
@@ -358,39 +363,105 @@ export function WorkoutNextSessionDecision({ clientId, sessionId }: WorkoutNextS
   return (
     <div className="px-6 pt-4 md:px-8 md:pt-5">
       <section>
-        <SectionHeader title="PROGRAMME ADJUSTMENT DECISION" accent />
-        <Card className="space-y-4 p-4">
+        <SectionHeader title="NEXT WORKOUT ACTION" accent />
+        <Card className="space-y-5 p-4">
           <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-700">
-            <p className="font-bold uppercase text-gray-500">Programme workflow</p>
+            <p className="font-bold uppercase text-gray-500">Structured feedback → action</p>
             <p className="mt-1 font-semibold text-[#000000]">
-              This decision is saved for week-to-week programme planning, not attached to one scheduled workout.
+              Choose the exercise, choose the feedback decision, then create the next programme action. Technique issues are saved as notes only.
             </p>
           </div>
 
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-[240px_1fr]">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-[1fr_1fr]">
             <div>
-              <label htmlFor="programme-adjustment-decision" className="text-xs font-bold uppercase text-gray-500">
-                Coach decision
-              </label>
+              <label htmlFor="next-action-exercise" className="text-xs font-bold uppercase text-gray-500">Exercise</label>
               <select
-                id="programme-adjustment-decision"
-                value={decision}
-                onChange={(event) => setDecision(event.target.value as DecisionValue)}
+                id="next-action-exercise"
+                value={selectedExerciseId}
+                onChange={(event) => setSelectedExerciseId(event.target.value)}
                 className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-[#000000] outline-none focus:border-[#FA0201]"
               >
-                {decisionOptions.map((option) => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
+                {reviewedExercises.length === 0 ? (
+                  <option value="">No exercises found</option>
+                ) : reviewedExercises.map((exercise) => (
+                  <option key={exercise.id} value={exercise.id}>{exercise.exercise_name}</option>
                 ))}
               </select>
             </div>
 
-            <Textarea
-              label="Adjustment note"
-              value={adjustmentNote}
-              onChange={(event) => setAdjustmentNote(event.target.value)}
-              placeholder="Example: Bench Press — reduce next week loading and cue tighter pause."
-            />
+            <div>
+              <label htmlFor="next-action-type" className="text-xs font-bold uppercase text-gray-500">Feedback decision</label>
+              <select
+                id="next-action-type"
+                value={action}
+                onChange={(event) => setAction(event.target.value as FeedbackActionValue)}
+                className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-[#000000] outline-none focus:border-[#FA0201]"
+              >
+                {feedbackActions.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </div>
           </div>
+
+          <div className="rounded-lg border border-gray-200 bg-white p-3 text-xs text-gray-700">
+            <p className="font-bold uppercase text-gray-500">Action logic</p>
+            <p className="mt-1 font-semibold text-[#000000]">{selectedAction.helpText}</p>
+            {baseLoadKg ? (
+              <p className="mt-1">Reference load for calculation: <span className="font-bold">{baseLoadKg}kg</span></p>
+            ) : (
+              <p className="mt-1">No prescribed reference load found for this exercise, so percentage will not be shown.</p>
+            )}
+          </div>
+
+          {(action === 'increase_load' || action === 'reduce_load') && (
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-[220px_1fr] md:items-end">
+              <div>
+                <label htmlFor="load-change" className="text-xs font-bold uppercase text-gray-500">Load change</label>
+                <select
+                  id="load-change"
+                  value={loadChangeKg}
+                  onChange={(event) => setLoadChangeKg(event.target.value)}
+                  className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-[#000000] outline-none focus:border-[#FA0201]"
+                >
+                  {loadChangeOptionsKg.map((option) => (
+                    <option key={option} value={option}>{formatLoadChange(option, baseLoadKg)}</option>
+                  ))}
+                </select>
+              </div>
+              <p className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs font-semibold text-gray-700">
+                Preview: {action === 'increase_load' ? 'Increase' : 'Reduce'} {selectedExercise?.exercise_name || 'exercise'} by {loadChangeSummary}.
+              </p>
+            </div>
+          )}
+
+          {action === 'programme_adjustment' && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+              <p className="font-bold uppercase">Manual programme editing</p>
+              <p className="mt-1 font-semibold">This creates an action, but the actual adjustment is done by editing the workout and relevant future workouts.</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {currentWorkout && (
+                  <Link href={`/coach/clients/${clientId}/current-workouts/${currentWorkout.id}/edit`} className="rounded-lg bg-[#000000] px-3 py-2 text-xs font-bold uppercase text-white hover:bg-gray-900">
+                    Edit current workout
+                  </Link>
+                )}
+                <Link href={`/coach/clients/${clientId}/program`} className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-bold uppercase text-[#000000] hover:bg-gray-50">
+                  Client programme
+                </Link>
+              </div>
+            </div>
+          )}
+
+          <Textarea
+            label={action === 'technique_issue' ? 'Technique note' : 'Coach note for action'}
+            value={coachNote}
+            onChange={(event) => setCoachNote(event.target.value)}
+            placeholder={
+              action === 'technique_issue'
+                ? 'Example: Cue tighter brace before descent; knees drifting in on final reps.'
+                : 'Optional context for why this action is needed.'
+            }
+          />
 
           {error && <p className="text-xs font-semibold text-red-700">{error}</p>}
           {message && <p className="text-xs font-semibold text-green-700">{message}</p>}
@@ -398,119 +469,21 @@ export function WorkoutNextSessionDecision({ clientId, sessionId }: WorkoutNextS
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
-              disabled={isSaving || isApplying}
-              onClick={saveDecision}
-              className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-xs font-bold uppercase text-[#000000] hover:bg-gray-50 disabled:opacity-60"
+              disabled={isSaving || !selectedExercise}
+              onClick={saveStructuredFeedbackAction}
+              className="rounded-lg bg-[#FA0201] px-4 py-2 text-xs font-bold uppercase text-white hover:bg-red-700 disabled:opacity-60"
             >
-              {isSaving ? 'Saving...' : 'Save action only'}
-            </button>
-            <button
-              type="button"
-              disabled={isSaving || isApplying}
-              onClick={openApplyModal}
-              className="rounded-lg bg-[#000000] px-4 py-2 text-xs font-bold uppercase text-white hover:bg-gray-900 disabled:opacity-60"
-            >
-              Apply to programme
+              {isSaving ? 'Saving...' : action === 'technique_issue' ? 'Save technique note' : 'Create action'}
             </button>
             <Link
               href={`/coach/clients/${clientId}/program`}
-              className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-center text-xs font-bold uppercase text-[#000000] hover:bg-gray-50 md:ml-auto md:w-auto"
+              className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-xs font-bold uppercase text-[#000000] hover:bg-gray-50"
             >
-              Client programme
+              Programme page
             </Link>
           </div>
         </Card>
       </section>
-
-      {showApplyModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-xs font-bold uppercase text-[#FA0201]">Apply programme decision</p>
-                <h2 className="text-2xl font-black uppercase text-[#000000]">{selectedDecision.label}</h2>
-                <p className="mt-1 text-sm text-gray-600">No redirect. Save this against the programme workflow for next week planning.</p>
-              </div>
-              <button type="button" onClick={() => setShowApplyModal(false)} className="text-xl font-black text-gray-400 hover:text-[#000000]">×</button>
-            </div>
-
-            <div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-700">
-              <p className="font-bold uppercase text-gray-500">Programme impact preview</p>
-              {swapScope === 'all_future_program' ? (
-                <ul className="mt-2 space-y-1 font-semibold text-[#000000]">
-                  {previewWorkouts.length > 0 ? previewWorkouts.map((workout) => (
-                    <li key={workout.id}>{workout.title} • {formatDate(workout.scheduled_date)}</li>
-                  )) : <li>No future workout rows exist yet. The decision will be saved as a programme planning action.</li>}
-                </ul>
-              ) : (
-                <p className="mt-2 font-semibold text-[#000000]">Saved as a programme planning rule for the next week you build.</p>
-              )}
-            </div>
-
-            {decision === 'swap_exercise' ? (
-              <div className="mt-4 space-y-4">
-                <div>
-                  <label className="text-xs font-bold uppercase text-gray-500">Apply behaviour</label>
-                  <select value={swapScope} onChange={(event) => setSwapScope(event.target.value as 'programme_rule' | 'all_future_program')} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-[#000000] outline-none focus:border-[#FA0201]">
-                    <option value="programme_rule">Programme planning rule for next week</option>
-                    <option value="all_future_program">Update matching future rows already planned</option>
-                  </select>
-                </div>
-
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                  <div>
-                    <label className="text-xs font-bold uppercase text-gray-500">Exercise to swap out from reviewed workout</label>
-                    <select value={exerciseToReplace} onChange={(event) => setExerciseToReplace(event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-[#000000] outline-none focus:border-[#FA0201]">
-                      <option value="">Choose exercise from this workout</option>
-                      {exerciseOptions.map((exercise) => <option key={exercise} value={exercise}>{exercise}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-xs font-bold uppercase text-gray-500">Replace with</label>
-                    <select value={replacementExercise} onChange={(event) => setReplacementExercise(event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-[#000000] outline-none focus:border-[#FA0201]">
-                      <option value="">Choose replacement</option>
-                      {catalogueExercises.map((exercise) => <option key={exercise.id} value={exercise.name}>{exercise.name}</option>)}
-                    </select>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
-                  <div>
-                    <label className="text-xs font-bold uppercase text-gray-500">Sets</label>
-                    <input type="number" min="1" step="1" value={replacementSetCount} onChange={(event) => setReplacementSetCount(event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold outline-none focus:border-[#FA0201]" />
-                  </div>
-                  <div>
-                    <label className="text-xs font-bold uppercase text-gray-500">Reps</label>
-                    <input value={replacementReps} onChange={(event) => setReplacementReps(event.target.value)} placeholder="6-8" className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold outline-none focus:border-[#FA0201]" />
-                  </div>
-                  <div>
-                    <label className="text-xs font-bold uppercase text-gray-500">Kg</label>
-                    <input type="number" step="2.5" value={replacementKg} onChange={(event) => setReplacementKg(event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold outline-none focus:border-[#FA0201]" />
-                  </div>
-                  <div>
-                    <label className="text-xs font-bold uppercase text-gray-500">Target RPE</label>
-                    <input type="number" min="1" max="10" step="0.5" value={replacementRpe} onChange={(event) => setReplacementRpe(event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold outline-none focus:border-[#FA0201]" />
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
-                <p className="font-bold uppercase">Programme planning action</p>
-                <p className="mt-1">This will save the decision as a programme adjustment for the next week you build. It will not attach a note to one scheduled workout.</p>
-              </div>
-            )}
-
-            {error && <p className="mt-4 text-xs font-semibold text-red-700">{error}</p>}
-
-            <div className="mt-5 flex flex-wrap justify-end gap-2">
-              <button type="button" onClick={() => setShowApplyModal(false)} className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-xs font-bold uppercase text-[#000000] hover:bg-gray-50">Cancel</button>
-              <button type="button" disabled={isApplying} onClick={confirmApply} className="rounded-lg bg-[#000000] px-4 py-2 text-xs font-bold uppercase text-white hover:bg-gray-900 disabled:opacity-60">
-                {isApplying ? 'Applying...' : 'Confirm change'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
