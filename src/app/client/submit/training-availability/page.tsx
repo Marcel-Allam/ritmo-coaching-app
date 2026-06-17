@@ -28,7 +28,9 @@ const trainingDays: TrainingDay[] = [
   { label: 'Sunday', value: 'Sunday' },
 ];
 
-const promptCopy = `Set your training days now.\n\nWhen your workouts have a clear day attached, they stop being “I’ll fit it in” and become part of the plan. Pick the days you can realistically train next week.`;
+const promptCopy = `Set your training days now.
+
+When your workouts have a clear day attached, they stop being “I’ll fit it in” and become part of the plan. Pick the days you can realistically train next week.`;
 
 export default function TrainingAvailabilityPage() {
   const router = useRouter();
@@ -122,6 +124,8 @@ export default function TrainingAvailabilityPage() {
       `Limits / notes: ${notes.trim() || 'None provided'}`,
     ].join('\n');
 
+    // The database trigger closes the current active weekly task and creates
+    // the next one exactly seven days after this submission date.
     const { error: submissionError } = await supabase.from('task_submissions').insert({
       client_id: client.id,
       assigned_task_id: assignedTask?.id ?? null,
@@ -138,22 +142,9 @@ export default function TrainingAvailabilityPage() {
       return;
     }
 
-    if (assignedTask?.id) {
-      const { error: taskError } = await supabase
-        .from('assigned_tasks')
-        .update({ active: false })
-        .eq('id', assignedTask.id);
-
-      if (taskError) {
-        setMessage(taskError.message);
-        setSaving(false);
-        return;
-      }
-    }
-
-    setMessage('Training availability submitted. Your coach can now schedule your workouts.');
+    setMessage('Training availability submitted. Your next weekly availability check-in will appear after this one is completed.');
     setSaving(false);
-    setTimeout(() => router.push('/client/tasks'), 1200);
+    setTimeout(() => router.push('/client'), 1200);
   };
 
   if (loading) {

@@ -12,6 +12,8 @@ import { useAuth } from '@/lib/auth-context';
 
 type ClientRecord = { id: string; full_name: string };
 
+const ratingOptions = Array.from({ length: 10 }, (_, index) => index + 1);
+
 export default function WeeklyCheckinPage() {
   const router = useRouter();
   const { user } = useAuth();
@@ -63,7 +65,12 @@ export default function WeeklyCheckinPage() {
 
     const ratingNumber = Number(weekRating);
     if (!ratingNumber || ratingNumber < 1 || ratingNumber > 10) {
-      setMessage('Add a week rating from 1 to 10.');
+      setMessage('Choose an overall week rating from 1 to 10.');
+      return;
+    }
+
+    if (!biggestWin.trim() || !biggestChallenge.trim() || !issues.trim() || !helpNeeded.trim()) {
+      setMessage('Complete all five check-in questions before submitting. Write “None” if a section does not apply.');
       return;
     }
 
@@ -86,10 +93,10 @@ export default function WeeklyCheckinPage() {
     const { error: checkinError } = await supabase.from('weekly_checkins').insert({
       client_id: client.id,
       week_rating: ratingNumber,
-      biggest_win: biggestWin.trim() || null,
-      biggest_challenge: biggestChallenge.trim() || null,
-      pain_or_issues: issues.trim() || null,
-      help_needed_on_call: helpNeeded.trim() || null,
+      biggest_win: biggestWin.trim(),
+      biggest_challenge: biggestChallenge.trim(),
+      pain_or_issues: issues.trim(),
+      help_needed_on_call: helpNeeded.trim(),
       review_status: 'new',
     });
 
@@ -101,10 +108,10 @@ export default function WeeklyCheckinPage() {
 
     const summary = [
       `Rating: ${ratingNumber}/10`,
-      `Win: ${biggestWin || 'Not provided'}`,
-      `Challenge: ${biggestChallenge || 'Not provided'}`,
-      `Issues: ${issues || 'Not provided'}`,
-      `Help needed: ${helpNeeded || 'Not provided'}`,
+      `Win: ${biggestWin.trim()}`,
+      `Challenge: ${biggestChallenge.trim()}`,
+      `Issues: ${issues.trim()}`,
+      `Help needed: ${helpNeeded.trim()}`,
     ].join('\n');
 
     const { error: submissionError } = await supabase.from('task_submissions').insert({
@@ -132,7 +139,7 @@ export default function WeeklyCheckinPage() {
     return (
       <div>
         <PageHeader title="WEEKLY CHECK-IN" />
-        <main className="px-4 py-6 md:px-8 max-w-2xl mx-auto">
+        <main className="mx-auto max-w-2xl px-4 py-6 md:px-8">
           <Card><p>Loading check-in...</p></Card>
         </main>
       </div>
@@ -142,47 +149,104 @@ export default function WeeklyCheckinPage() {
   return (
     <div>
       <PageHeader title="WEEKLY CHECK-IN" subtitle={client ? `For ${client.full_name}` : undefined} />
-      <main className="px-4 py-6 md:px-8 max-w-2xl mx-auto">
+      <main className="mx-auto max-w-2xl px-4 py-6 md:px-8">
         {message && (
           <Card className="mb-6">
-            <p className="font-semibold text-sm text-gray-800">{message}</p>
+            <p className="text-sm font-semibold text-gray-800">{message}</p>
           </Card>
         )}
 
+        <Card className="mb-6 border-2 border-gray-200 bg-gray-50">
+          <p className="text-xs font-bold uppercase text-gray-500">Weekly accountability</p>
+          <h2 className="mt-1 text-xl font-black uppercase text-[#000000]">Tell your coach what actually happened this week.</h2>
+          <p className="mt-2 text-sm text-gray-700">
+            Be specific. This is used to adjust your training, nutrition focus, and next check-in — not to judge you.
+          </p>
+        </Card>
+
         <form onSubmit={submitCheckin} className="space-y-8">
           <section>
-            <SectionHeader title="WEEK RATING" />
-            <label className="block text-sm font-bold uppercase mb-2">Rate your week from 1 to 10</label>
-            <input
-              type="number"
-              min="1"
-              max="10"
-              value={weekRating}
-              onChange={(event) => setWeekRating(event.target.value)}
-              className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm"
-              required
-            />
+            <SectionHeader title="1. OVERALL WEEK RATING" />
+            <Card>
+              <label className="block text-sm font-bold uppercase text-[#000000]">How would you rate this week overall?</label>
+              <p className="mt-1 text-sm text-gray-600">1 = very poor, 10 = excellent. Think training, nutrition, energy, routine, and stress.</p>
+              <div className="mt-4 grid grid-cols-5 gap-2 sm:grid-cols-10">
+                {ratingOptions.map((rating) => {
+                  const isSelected = weekRating === String(rating);
+                  return (
+                    <button
+                      key={rating}
+                      type="button"
+                      onClick={() => setWeekRating(String(rating))}
+                      className={`rounded-lg border-2 px-3 py-2 text-sm font-black transition ${
+                        isSelected
+                          ? 'border-[#FA0201] bg-[#FA0201] text-white'
+                          : 'border-gray-300 bg-white text-[#000000] hover:border-[#FA0201]'
+                      }`}
+                      aria-pressed={isSelected}
+                    >
+                      {rating}
+                    </button>
+                  );
+                })}
+              </div>
+            </Card>
           </section>
 
           <section>
-            <SectionHeader title="CHECK-IN QUESTIONS" />
-            <Textarea label="Biggest Win" value={biggestWin} onChange={(event) => setBiggestWin(event.target.value)} />
+            <SectionHeader title="2. BIGGEST WIN" />
+            <Card>
+              <Textarea
+                label="What was your biggest win this week?"
+                value={biggestWin}
+                onChange={(event) => setBiggestWin(event.target.value)}
+                placeholder="Example: Hit all 3 sessions, got protein in every day, slept better, or pushed through a stressful week."
+                required
+              />
+            </Card>
           </section>
 
           <section>
-            <Textarea label="Biggest Challenge" value={biggestChallenge} onChange={(event) => setBiggestChallenge(event.target.value)} />
+            <SectionHeader title="3. BIGGEST CHALLENGE" />
+            <Card>
+              <Textarea
+                label="What was the biggest thing that made progress harder?"
+                value={biggestChallenge}
+                onChange={(event) => setBiggestChallenge(event.target.value)}
+                placeholder="Example: Work stress, missed sessions, low energy, poor planning, hunger, social meals, motivation, time."
+                required
+              />
+            </Card>
           </section>
 
           <section>
-            <Textarea label="Issues" value={issues} onChange={(event) => setIssues(event.target.value)} />
+            <SectionHeader title="4. PAIN, RECOVERY OR ISSUES" />
+            <Card>
+              <Textarea
+                label="Any pain, injury, fatigue, sleep, stress, or recovery issues?"
+                value={issues}
+                onChange={(event) => setIssues(event.target.value)}
+                placeholder="Write “None” if there were no issues. Include where the issue is, when it happens, and whether it affected training."
+                required
+              />
+            </Card>
           </section>
 
           <section>
-            <Textarea label="Help Needed" value={helpNeeded} onChange={(event) => setHelpNeeded(event.target.value)} />
+            <SectionHeader title="5. COACH SUPPORT" />
+            <Card>
+              <Textarea
+                label="What do you need help with before or on the next check-in?"
+                value={helpNeeded}
+                onChange={(event) => setHelpNeeded(event.target.value)}
+                placeholder="Example: Adjust a workout, food structure, accountability, schedule, exercise swap, confidence with the plan. Write “None” if nothing."
+                required
+              />
+            </Card>
           </section>
 
           <Button type="submit" variant="primary" size="lg" fullWidth disabled={saving || !client} className="bg-[#FA0201] hover:bg-red-700 disabled:opacity-60">
-            {saving ? 'SAVING...' : 'SUBMIT CHECK-IN'}
+            {saving ? 'SAVING...' : 'SUBMIT WEEKLY CHECK-IN'}
           </Button>
         </form>
       </main>

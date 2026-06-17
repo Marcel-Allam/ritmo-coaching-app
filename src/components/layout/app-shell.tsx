@@ -34,12 +34,6 @@ const MessageIcon = () => (
   </svg>
 );
 
-const CheckIcon = () => (
-  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-  </svg>
-);
-
 const PlusIcon = () => (
   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -52,15 +46,10 @@ const DumbbellIcon = () => (
   </svg>
 );
 
-const HistoryIcon = () => (
+const SettingsIcon = () => (
   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-  </svg>
-);
-
-const NutritionIcon = () => (
-  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v18m5-15H9.5a3.5 3.5 0 000 7H14a3.5 3.5 0 010 7H7" />
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37a1.724 1.724 0 002.572-1.065z" />
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
   </svg>
 );
 
@@ -74,16 +63,17 @@ const coachNavItems = [
   { label: 'Dashboard', href: '/coach', icon: HomeIcon },
   { label: 'Clients', href: '/coach/clients', icon: UsersIcon },
   { label: 'Actions', href: '/coach/actions', icon: ClipboardIcon },
-  { label: 'Catalogue', href: '/coach/exercise-catalogue', icon: DumbbellIcon },
+  { label: 'Calendar', href: '/coach/calendar', icon: SettingsIcon },
+  { label: 'Programs', href: '/coach/programs', icon: DumbbellIcon },
   { label: 'Feedback', href: '/coach/feedback', icon: MessageIcon },
 ];
 
 const clientNavItems = [
   { label: 'Hub', href: '/client', icon: HomeIcon },
-  { label: 'Tasks', href: '/client/tasks', icon: CheckIcon },
-  { label: 'Start your workout', href: '/client/training', icon: DumbbellIcon },
-  { label: 'Completed Workouts', href: '/client/training/history', icon: HistoryIcon },
-  { label: 'Submit', href: '/client/submit', icon: PlusIcon },
+  { label: 'Workout', href: '/client/training', icon: DumbbellIcon },
+  { label: 'Coach', href: '/client/coach', icon: PlusIcon },
+  { label: 'Diet', href: '/client/diet', icon: ClipboardIcon },
+  { label: 'Configure', href: '/client/configure', icon: SettingsIcon },
   { label: 'Feedback', href: '/client/feedback', icon: MessageIcon },
 ];
 
@@ -92,12 +82,10 @@ export const AppShell: React.FC<AppShellProps> = ({ role, children }) => {
   const { profile, signOut } = useAuth();
   const [userMenuOpen, setUserMenuOpen] = useState(false);
 
-  const clientRouteMatch = pathname.match(/^\/coach\/clients\/([^/]+)/);
-  const clientId = clientRouteMatch?.[1];
-  const contextualCoachItems = clientId
-    ? [{ label: 'Nutrition', href: `/coach/clients/${clientId}/nutrition`, icon: NutritionIcon }]
-    : [];
-  const navItems = role === 'coach' ? [...coachNavItems, ...contextualCoachItems] : clientNavItems;
+  // Keep the sidebar global-only. Client-specific tools such as Nutrition,
+  // Bodyweight, Progress, Timeline, Adherence, and Risk belong inside the
+  // selected client profile page so the coach always stays in client context.
+  const navItems = role === 'coach' ? coachNavItems : clientNavItems;
 
   const isActive = (href: string) => {
     if (href === '/coach' && pathname === '/coach') return true;
@@ -121,27 +109,13 @@ export const AppShell: React.FC<AppShellProps> = ({ role, children }) => {
         <div className="px-4 py-3 flex items-center justify-between">
           <div className="text-2xl font-bold text-[#FA0201] tracking-tight">RITMO</div>
           <div className="relative">
-            <button
-              onClick={() => setUserMenuOpen(!userMenuOpen)}
-              className="w-9 h-9 rounded-full bg-[#FA0201] text-white flex items-center justify-center text-sm font-bold"
-            >
-              {initials}
-            </button>
+            <button onClick={() => setUserMenuOpen(!userMenuOpen)} className="w-9 h-9 rounded-full bg-[#FA0201] text-white flex items-center justify-center text-sm font-bold">{initials}</button>
             {userMenuOpen && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setUserMenuOpen(false)} />
                 <div className="absolute right-0 mt-2 w-48 bg-black border border-gray-700 rounded-lg shadow-xl z-50">
-                  <div className="px-4 py-3 border-b border-gray-700">
-                    <p className="text-sm font-semibold text-white">{profile?.full_name}</p>
-                    <p className="text-xs text-gray-400">{profile?.email}</p>
-                  </div>
-                  <button
-                    onClick={handleSignOut}
-                    className="w-full text-left px-4 py-3 text-sm text-gray-300 hover:bg-gray-900 flex items-center gap-2 rounded-b-lg"
-                  >
-                    <LogOutIcon />
-                    Sign Out
-                  </button>
+                  <div className="px-4 py-3 border-b border-gray-700"><p className="text-sm font-semibold text-white">{profile?.full_name}</p><p className="text-xs text-gray-400">{profile?.email}</p></div>
+                  <button onClick={handleSignOut} className="w-full text-left px-4 py-3 text-sm text-gray-300 hover:bg-gray-900 flex items-center gap-2 rounded-b-lg"><LogOutIcon />Sign Out</button>
                 </div>
               </>
             )}
@@ -156,15 +130,7 @@ export const AppShell: React.FC<AppShellProps> = ({ role, children }) => {
               const Icon = item.icon;
               const active = isActive(item.href);
               return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={`flex items-center gap-3 px-6 py-3 text-white transition-colors ${
-                    active
-                      ? 'border-l-4 border-[#FA0201] bg-gray-900 font-semibold'
-                      : 'border-l-4 border-transparent hover:bg-gray-900'
-                  }`}
-                >
+                <Link key={item.href} href={item.href} className={`flex items-center gap-3 px-6 py-3 text-white transition-colors ${active ? 'border-l-4 border-[#FA0201] bg-gray-900 font-semibold' : 'border-l-4 border-transparent hover:bg-gray-900'}`}>
                   <Icon />
                   <span className="text-sm">{item.label}</span>
                 </Link>
@@ -173,9 +139,7 @@ export const AppShell: React.FC<AppShellProps> = ({ role, children }) => {
           </div>
         </nav>
 
-        <main className="flex-1 overflow-y-auto bg-[#D9D9D9] pb-20 md:pb-0">
-          {children}
-        </main>
+        <main className="flex-1 overflow-y-auto bg-[#D9D9D9] pb-20 md:pb-0">{children}</main>
       </div>
 
       <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-black border-t border-gray-800 z-30">
@@ -184,15 +148,7 @@ export const AppShell: React.FC<AppShellProps> = ({ role, children }) => {
             const Icon = item.icon;
             const active = isActive(item.href);
             return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`flex-1 flex flex-col items-center justify-center py-3 text-white transition-colors ${
-                  active
-                    ? 'border-b-2 border-[#FA0201] text-[#FA0201]'
-                    : 'border-b-2 border-transparent'
-                }`}
-              >
+              <Link key={item.href} href={item.href} className={`flex-1 flex flex-col items-center justify-center py-3 text-white transition-colors ${active ? 'border-b-2 border-[#FA0201] text-[#FA0201]' : 'border-b-2 border-transparent'}`}>
                 <Icon />
                 <span className="text-[10px] mt-1 font-medium">{item.label}</span>
               </Link>

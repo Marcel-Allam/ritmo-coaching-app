@@ -18,7 +18,6 @@ interface ClientRecord {
 
 const emptyForm = {
   fullName: '',
-  email: '',
   currentFocus: '',
   nextReviewDate: '',
 };
@@ -102,7 +101,7 @@ export default function CoachClientsPage() {
 
     const { error: insertError } = await supabase.from('clients').insert({
       full_name: form.fullName.trim(),
-      email: form.email.trim() || null,
+      email: null,
       status: 'active',
       start_date: new Date().toISOString().slice(0, 10),
       current_focus: form.currentFocus.trim() || null,
@@ -141,7 +140,7 @@ export default function CoachClientsPage() {
                   Add Client
                 </h2>
                 <p className="text-sm text-gray-600 mt-1">
-                  Create a client record for tracking, check-ins, actions, and feedback.
+                  Create a client record for coaching. The client can add their email when they claim their RITMO access.
                 </p>
               </div>
               <button
@@ -165,20 +164,6 @@ export default function CoachClientsPage() {
                   }
                   placeholder="e.g. Alex Smith"
                   required
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold uppercase text-gray-600 mb-2">
-                  Email
-                </label>
-                <Input
-                  type="email"
-                  value={form.email}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, email: event.target.value }))
-                  }
-                  placeholder="client@email.com"
                 />
               </div>
 

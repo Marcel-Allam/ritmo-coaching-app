@@ -239,9 +239,9 @@ export default function ClientTrainingPage() {
   if (isLoading) {
     return (
       <div>
-        <PageHeader title="START YOUR WORKOUT" />
+        <PageHeader title="WORKOUT" />
         <div className="px-4 py-6 md:px-8 max-w-5xl mx-auto">
-          <Card><p className="font-semibold text-gray-700">Loading your assigned workouts...</p></Card>
+          <Card><p className="font-semibold text-gray-700">Loading your workouts...</p></Card>
         </div>
       </div>
     );
@@ -250,10 +250,10 @@ export default function ClientTrainingPage() {
   if (message || !client) {
     return (
       <div>
-        <PageHeader title="START YOUR WORKOUT" />
+        <PageHeader title="WORKOUT" />
         <div className="px-4 py-6 md:px-8 max-w-5xl mx-auto">
           <Card>
-            <p className="font-bold uppercase text-[#000000]">Training not available</p>
+            <p className="font-bold uppercase text-[#000000]">Workout area not available</p>
             <p className="mt-2 text-sm text-gray-600">{message}</p>
           </Card>
         </div>
@@ -264,7 +264,7 @@ export default function ClientTrainingPage() {
   if (workouts.length === 0) {
     return (
       <div>
-        <PageHeader title="START YOUR WORKOUT" subtitle={`Welcome, ${client.full_name}`} />
+        <PageHeader title="WORKOUT" subtitle={`Welcome, ${client.full_name}`} />
         <div className="px-4 py-6 md:px-8 max-w-5xl mx-auto space-y-8">
           {submitted && (
             <Card className="border-2 border-green-200 bg-green-50">
@@ -288,7 +288,7 @@ export default function ClientTrainingPage() {
 
   return (
     <div>
-      <PageHeader title="START YOUR WORKOUT" subtitle={`Welcome, ${client.full_name}`} />
+      <PageHeader title="WORKOUT" subtitle={`Welcome, ${client.full_name}`} />
       <div className="px-4 py-6 md:px-8 max-w-5xl mx-auto space-y-8">
         {submitted && (
           <Card className="border-2 border-green-200 bg-green-50">
