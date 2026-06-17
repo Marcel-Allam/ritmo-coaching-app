@@ -266,7 +266,7 @@ export default function ClientCoachPage() {
     setMessage(null);
 
     const supabase = createClient();
-    const { data, error } = await supabase
+    const { error } = await supabase
       .from('coach_call_bookings')
       .update({
         status: 'cancelled',
@@ -277,13 +277,13 @@ export default function ClientCoachPage() {
       .select(bookingSelect)
       .single();
 
-    if (error || !data) {
-      setMessage(error?.message || 'Could not cancel coach call.');
+    if (error) {
+      setMessage(error.message || 'Could not cancel coach call.');
       setUpdatingMeeting(false);
       return;
     }
 
-    setBooking(data as CoachCallBookingRecord);
+    setBooking(null);
     setMessage('Coach call cancelled. You can request a new call when ready.');
     setUpdatingMeeting(false);
   };
@@ -408,7 +408,7 @@ export default function ClientCoachPage() {
                   {booking.status === 'reschedule_pending' && (
                     <div className="mt-6 flex flex-wrap gap-3">
                       <Button type="button" disabled={updatingMeeting} onClick={() => respondToReschedule(true)} className="bg-[#FA0201] hover:bg-red-700">Accept proposed time</Button>
-                      <Button type="button" disabled={updatingMeeting} onClick={() => respondToReschedule(false)} variant="outline">Decline proposed time</Button>
+                      <Button type="button" disabled={updatingMeeting} onClick={() => respondToReschedule(false)} className="border-2 border-white bg-white text-black hover:bg-gray-100">Decline proposed time</Button>
                     </div>
                   )}
                 </div>
