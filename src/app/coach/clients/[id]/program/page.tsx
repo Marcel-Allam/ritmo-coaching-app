@@ -50,6 +50,8 @@ type ProgrammeTemplate = {
 };
 type PrescribedSetForm = { reps: string; weightKg: string; rpe: string; notes: string };
 
+type ExerciseIdRecord = { id: string };
+
 const workoutTemplates: WorkoutTemplate[] = [
   {
     id: 'squat-focus',
@@ -232,6 +234,7 @@ export default function CoachClientProgramPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [updatingActionId, setUpdatingActionId] = useState<string | null>(null);
+  const [deletingWorkoutId, setDeletingWorkoutId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -352,6 +355,77 @@ export default function CoachClientProgramPage() {
     setPendingAdjustments((current) => current.filter((action) => action.id !== actionId));
     setMessage('Programme adjustment marked as handled.');
     setUpdatingActionId(null);
+  };
+
+  const deleteWorkout = async (workout: WorkoutRecord) => {
+    if (!isSupabaseConfigured) return;
+
+    const currentStatus = statusForWorkout(workout, completedIds);
+    if (currentStatus === 'completed') {
+      setError('Completed workouts are locked. Keep them as history and duplicate future work instead.');
+      return;
+    }
+
+    const confirmed = window.confirm(`Delete ${workout.title} from this client's programme? This removes the workout, exercises and prescribed sets. This should only be used before the client completes it.`);
+    if (!confirmed) return;
+
+    setDeletingWorkoutId(workout.id);
+    setMessage(null);
+    setError(null);
+
+    const supabase = createClient();
+    const { data: exerciseData, error: exerciseLoadError } = await supabase
+      .from('program_exercises')
+      .select('id')
+      .eq('workout_id', workout.id);
+
+    if (exerciseLoadError) {
+      setError(exerciseLoadError.message);
+      setDeletingWorkoutId(null);
+      return;
+    }
+
+    const exerciseIds = ((exerciseData ?? []) as ExerciseIdRecord[]).map((exercise) => exercise.id);
+
+    if (exerciseIds.length > 0) {
+      const { error: setDeleteError } = await supabase
+        .from('program_sets')
+        .delete()
+        .in('exercise_id', exerciseIds);
+
+      if (setDeleteError) {
+        setError(setDeleteError.message);
+        setDeletingWorkoutId(null);
+        return;
+      }
+    }
+
+    const { error: exerciseDeleteError } = await supabase
+      .from('program_exercises')
+      .delete()
+      .eq('workout_id', workout.id);
+
+    if (exerciseDeleteError) {
+      setError(exerciseDeleteError.message);
+      setDeletingWorkoutId(null);
+      return;
+    }
+
+    const { error: workoutDeleteError } = await supabase
+      .from('program_workouts')
+      .delete()
+      .eq('id', workout.id)
+      .eq('client_id', clientId);
+
+    if (workoutDeleteError) {
+      setError(workoutDeleteError.message);
+      setDeletingWorkoutId(null);
+      return;
+    }
+
+    setWorkouts((current) => current.filter((currentWorkout) => currentWorkout.id !== workout.id));
+    setMessage(`${workout.title} deleted from this client's programme.`);
+    setDeletingWorkoutId(null);
   };
 
   const getOrCreateProgramId = async (supabase: ReturnType<typeof createClient>, goal: string) => {
@@ -576,19 +650,11 @@ export default function CoachClientProgramPage() {
         <SectionHeader title="ASSIGN FROM TEMPLATE" accent />
         <Card className="space-y-6">
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            <button
-              type="button"
-              onClick={() => setAssignmentMode('programme')}
-              className={`rounded-xl border p-4 text-left ${assignmentMode === 'programme' ? 'border-[#FA0201] bg-red-50' : 'border-gray-200 bg-white hover:bg-gray-50'}`}
-            >
+            <button type="button" onClick={() => setAssignmentMode('programme')} className={`rounded-xl border p-4 text-left ${assignmentMode === 'programme' ? 'border-[#FA0201] bg-red-50' : 'border-gray-200 bg-white hover:bg-gray-50'}`}>
               <p className="text-sm font-black uppercase text-[#000000]">Programme template</p>
               <p className="mt-1 text-xs font-semibold text-gray-600">Creates a full split made from multiple workout templates.</p>
             </button>
-            <button
-              type="button"
-              onClick={() => setAssignmentMode('workout')}
-              className={`rounded-xl border p-4 text-left ${assignmentMode === 'workout' ? 'border-[#FA0201] bg-red-50' : 'border-gray-200 bg-white hover:bg-gray-50'}`}
-            >
+            <button type="button" onClick={() => setAssignmentMode('workout')} className={`rounded-xl border p-4 text-left ${assignmentMode === 'workout' ? 'border-[#FA0201] bg-red-50' : 'border-gray-200 bg-white hover:bg-gray-50'}`}>
               <p className="text-sm font-black uppercase text-[#000000]">Single workout template</p>
               <p className="mt-1 text-xs font-semibold text-gray-600">Creates one session. Useful for adding or replacing one day.</p>
             </button>
@@ -693,6 +759,7 @@ export default function CoachClientProgramPage() {
             <div className="space-y-4">
               {workouts.map((workout) => {
                 const status = statusForWorkout(workout, completedIds);
+                const locked = status === 'completed';
                 const program = programById[workout.program_id];
                 return (
                   <div key={workout.id} className="rounded-xl border border-gray-200 bg-white p-4">
@@ -701,10 +768,23 @@ export default function CoachClientProgramPage() {
                         <p className="text-xs font-bold uppercase text-gray-500">{program?.title || 'Programme'}</p>
                         <p className="mt-1 text-lg font-bold uppercase text-[#000000]">{workout.title}</p>
                         <p className="mt-1 text-sm text-gray-600">Scheduled: {formatDate(workout.scheduled_date)} • Exercises: {exerciseCounts[workout.id] || 0}</p>
+                        {locked && <p className="mt-2 text-xs font-semibold uppercase text-gray-500">Completed workouts are locked as history.</p>}
                       </div>
                       <div className="flex flex-col gap-2 md:items-end">
                         <Badge variant={statusVariant(status) as any}>{status}</Badge>
-                        <Link href={`/coach/clients/${clientId}/current-workouts/${workout.id}/edit`} className="text-xs font-bold uppercase text-[#FA0201] hover:underline">Edit workout</Link>
+                        <div className="flex flex-wrap gap-2 md:justify-end">
+                          <Link href={`/coach/clients/${clientId}/current-workouts/${workout.id}/edit`} className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-bold uppercase text-[#000000] hover:bg-gray-50">Edit</Link>
+                          {!locked && (
+                            <button
+                              type="button"
+                              onClick={() => deleteWorkout(workout)}
+                              disabled={deletingWorkoutId === workout.id}
+                              className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-xs font-bold uppercase text-[#FA0201] hover:bg-red-100 disabled:opacity-60"
+                            >
+                              {deletingWorkoutId === workout.id ? 'Deleting...' : 'Delete'}
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
