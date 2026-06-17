@@ -33,6 +33,21 @@ interface SubmissionRecord {
   followup_required: boolean;
 }
 
+interface CoachCallBookingRecord {
+  id: string;
+  client_id: string;
+  booking_type: string;
+  status: string;
+  client_notes: string | null;
+  coach_note: string | null;
+  starts_at: string | null;
+  suggested_starts_at: string | null;
+  created_at: string;
+  clients: {
+    full_name: string;
+  } | null;
+}
+
 interface ClientRecord {
   id: string;
   full_name: string;
@@ -82,9 +97,9 @@ const normaliseActionStatusForFilter = (status: string): ActionFilter => {
 const formatLabel = (value: string) => value.replaceAll('_', ' ');
 
 const getStatusBadgeVariant = (status: string) => {
-  if (status === 'done' || status === 'reviewed') return 'success';
-  if (status === 'resolved' || status === 'flagged') return 'danger';
-  if (status === 'in_progress' || status === 'waiting_on_client' || status === 'waiting_on_coach' || status === 'needs_feedback' || status === 'needs_action') return 'warning';
+  if (status === 'done' || status === 'reviewed' || status === 'accepted' || status === 'completed') return 'success';
+  if (status === 'resolved' || status === 'flagged' || status === 'declined' || status === 'cancelled') return 'danger';
+  if (status === 'in_progress' || status === 'waiting_on_client' || status === 'waiting_on_coach' || status === 'needs_feedback' || status === 'needs_action' || status === 'reschedule_pending') return 'warning';
   return 'default';
 };
 
@@ -95,12 +110,6 @@ const getPriorityBadgeVariant = (priority: string) => {
 };
 
 const getSubmissionBadgeLabel = (submission: SubmissionRecord) => {
-  if (submission.submission_type === 'coach_call_request') {
-    if (submission.review_status === 'reviewed') return 'Accepted';
-    if (submission.review_status === 'resolved') return 'Declined';
-    if (submission.review_status === 'needs_feedback') return 'Reschedule pending';
-    return 'Coach call request';
-  }
   if (submission.submission_type === 'weekly_checkin') return 'Review check-in';
   if (submission.submission_type === 'training_availability') return 'Use to schedule';
   if (submission.submission_type === 'workout_session' || submission.submission_type === 'workout_checkin') return 'Review workout';
@@ -110,18 +119,24 @@ const getSubmissionBadgeLabel = (submission: SubmissionRecord) => {
   return 'Review';
 };
 
-const getSubmissionCardClass = (submission: SubmissionRecord) => {
-  if (submission.submission_type === 'coach_call_request' && submission.review_status === 'resolved') {
-    return 'block rounded-lg border border-red-200 bg-gray-100 p-4 opacity-75 hover:bg-gray-100';
-  }
+const getBookingTitle = (booking: CoachCallBookingRecord) => {
+  if (booking.status === 'requested') return 'Coach call request';
+  if (booking.status === 'reschedule_pending') return 'Awaiting client reschedule response';
+  if (booking.status === 'accepted') return 'Confirmed coach call';
+  return 'Coach call booking';
+};
 
-  return 'block rounded-lg border border-gray-200 p-4 hover:bg-gray-50';
+const getBookingTimeLabel = (booking: CoachCallBookingRecord) => {
+  if (booking.status === 'reschedule_pending' && booking.suggested_starts_at) return `Proposed ${formatDateTime(booking.suggested_starts_at)}`;
+  if (booking.starts_at) return formatDateTime(booking.starts_at);
+  return `Requested ${formatDateTime(booking.created_at)}`;
 };
 
 export default function CoachActionsPage() {
   const [filteredStatus, setFilteredStatus] = useState<ActionFilter>('all');
   const [actions, setActions] = useState<CoachActionRecord[]>([]);
   const [submissions, setSubmissions] = useState<SubmissionRecord[]>([]);
+  const [callBookings, setCallBookings] = useState<CoachCallBookingRecord[]>([]);
   const [clients, setClients] = useState<Record<string, string>>({});
   const [unscheduledWorkouts, setUnscheduledWorkouts] = useState<WorkoutRecord[]>([]);
   const [upcomingWorkouts, setUpcomingWorkouts] = useState<WorkoutRecord[]>([]);
@@ -137,7 +152,7 @@ export default function CoachActionsPage() {
 
     const supabase = createClient();
 
-    const [actionResult, submissionResult, workoutResult, completedWorkoutResult] = await Promise.all([
+    const [actionResult, submissionResult, bookingResult, workoutResult, completedWorkoutResult] = await Promise.all([
       supabase
         .from('coach_actions')
         .select('id, client_id, action_type, description, due_date, status, priority, clients(full_name)')
@@ -145,8 +160,15 @@ export default function CoachActionsPage() {
       supabase
         .from('task_submissions')
         .select('id, client_id, submission_type, submitted_at, answer_value, answer_text, review_status, followup_required')
+        .neq('submission_type', 'coach_call_request')
         .order('submitted_at', { ascending: false })
         .limit(75),
+      supabase
+        .from('coach_call_bookings')
+        .select('id, client_id, booking_type, status, client_notes, coach_note, starts_at, suggested_starts_at, created_at, clients(full_name)')
+        .in('status', ['requested', 'reschedule_pending', 'accepted'])
+        .order('created_at', { ascending: false })
+        .limit(50),
       supabase
         .from('program_workouts')
         .select('id, client_id, title, scheduled_date, status')
@@ -171,6 +193,12 @@ export default function CoachActionsPage() {
       return;
     }
 
+    if (bookingResult.error) {
+      setError(bookingResult.error.message);
+      setIsLoading(false);
+      return;
+    }
+
     if (workoutResult.error) {
       setError(workoutResult.error.message);
       setIsLoading(false);
@@ -184,6 +212,7 @@ export default function CoachActionsPage() {
     }
 
     const loadedSubmissions = (submissionResult.data ?? []) as SubmissionRecord[];
+    const loadedBookings = (bookingResult.data ?? []) as CoachCallBookingRecord[];
     const loadedWorkouts = (workoutResult.data ?? []) as WorkoutRecord[];
     const completedWorkoutIds = new Set(
       ((completedWorkoutResult.data ?? []) as CompletedWorkoutRecord[]).map((session) => session.program_workout_id)
@@ -192,6 +221,7 @@ export default function CoachActionsPage() {
 
     const clientIds = Array.from(new Set([
       ...loadedSubmissions.map((submission) => submission.client_id),
+      ...loadedBookings.map((booking) => booking.client_id),
       ...activeIncompleteWorkouts.map((workout) => workout.client_id),
     ]));
 
@@ -217,6 +247,7 @@ export default function CoachActionsPage() {
 
     setActions((actionResult.data ?? []) as CoachActionRecord[]);
     setSubmissions(loadedSubmissions);
+    setCallBookings(loadedBookings);
     setUnscheduledWorkouts(activeIncompleteWorkouts.filter((workout) => !workout.scheduled_date));
     setUpcomingWorkouts(activeIncompleteWorkouts.filter((workout) => workout.scheduled_date).slice(0, 8));
     setIsLoading(false);
@@ -229,6 +260,7 @@ export default function CoachActionsPage() {
   const newSubmissions = submissions.filter((submission) => submission.review_status !== 'reviewed' && submission.review_status !== 'resolved');
   const highAttentionSubmissions = newSubmissions.filter((submission) => submission.followup_required || submission.review_status === 'flagged' || submission.review_status === 'needs_action');
   const normalReviewSubmissions = newSubmissions.filter((submission) => !highAttentionSubmissions.some((item) => item.id === submission.id));
+  const openCallBookings = callBookings.filter((booking) => booking.status === 'requested' || booking.status === 'reschedule_pending');
   const recentlyReviewed = submissions.filter((submission) => submission.review_status === 'reviewed' || submission.review_status === 'resolved').slice(0, 6);
   const trainingAvailabilityToSchedule = newSubmissions.filter((submission) => submission.submission_type === 'training_availability');
 
@@ -239,7 +271,7 @@ export default function CoachActionsPage() {
 
   const queueCounts = {
     needsReview: newSubmissions.length,
-    highAttention: highAttentionSubmissions.length,
+    callRequests: openCallBookings.length,
     scheduling: trainingAvailabilityToSchedule.length + unscheduledWorkouts.length,
     manualOpen: actions.filter((action) => normaliseActionStatusForFilter(action.status) !== 'completed').length,
   };
@@ -278,12 +310,12 @@ export default function CoachActionsPage() {
   };
 
   const renderSubmission = (submission: SubmissionRecord) => (
-    <Link key={submission.id} href={getSubmissionHref(submission)} className={getSubmissionCardClass(submission)}>
+    <Link key={submission.id} href={getSubmissionHref(submission)} className="block rounded-lg border border-gray-200 p-4 hover:bg-gray-50">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <p className="font-bold text-sm uppercase text-[#000000]">{submission.submission_type === 'coach_call_request' ? 'Coach call request' : formatLabel(submission.submission_type)}</p>
+          <p className="font-bold text-sm uppercase text-[#000000]">{formatLabel(submission.submission_type)}</p>
           <p className="mt-1 text-xs text-gray-500">{clients[submission.client_id] || 'Client'} • {formatDateTime(submission.submitted_at)}</p>
-          {submission.followup_required && submission.review_status !== 'resolved' && <p className="mt-1 text-xs font-bold uppercase text-[#FA0201]">Follow-up required</p>}
+          {submission.followup_required && <p className="mt-1 text-xs font-bold uppercase text-[#FA0201]">Follow-up required</p>}
         </div>
         <div className="flex flex-col items-end gap-2">
           {submission.answer_value !== null && <span className="text-sm font-bold text-gray-700">{submission.answer_value}/10</span>}
@@ -293,9 +325,22 @@ export default function CoachActionsPage() {
     </Link>
   );
 
+  const renderBooking = (booking: CoachCallBookingRecord) => (
+    <Link key={booking.id} href={`/coach/actions/bookings/${booking.id}`} className="block rounded-lg border border-gray-200 p-4 hover:bg-gray-50">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="font-bold text-sm uppercase text-[#000000]">{getBookingTitle(booking)}</p>
+          <p className="mt-1 text-xs text-gray-500">{booking.clients?.full_name ?? clients[booking.client_id] ?? 'Client'} • {getBookingTimeLabel(booking)}</p>
+          {booking.client_notes && <p className="mt-2 line-clamp-2 text-sm text-gray-700">{booking.client_notes}</p>}
+        </div>
+        <Badge variant={getStatusBadgeVariant(booking.status) as any}>{formatLabel(booking.status)}</Badge>
+      </div>
+    </Link>
+  );
+
   return (
     <div className="p-6 md:p-8">
-      <PageHeader title="ACTION QUEUE" subtitle="Submissions, scheduling work, and manual coach actions in one place" />
+      <PageHeader title="ACTION QUEUE" subtitle="Submissions, call requests, scheduling work, and manual coach actions in one place" />
 
       <div className="mt-8 space-y-8">
         {isLoading && <div className="bg-white rounded-lg border border-gray-200 p-8 text-center"><p className="font-semibold text-gray-700">Loading actions...</p></div>}
@@ -305,9 +350,14 @@ export default function CoachActionsPage() {
           <>
             <section className="grid grid-cols-1 gap-4 md:grid-cols-4">
               <Card><p className="text-xs font-bold uppercase text-gray-500">Needs Review</p><p className="mt-2 text-3xl font-black text-[#000000]">{queueCounts.needsReview}</p></Card>
-              <Card><p className="text-xs font-bold uppercase text-gray-500">High Attention</p><p className="mt-2 text-3xl font-black text-[#FA0201]">{queueCounts.highAttention}</p></Card>
+              <Card><p className="text-xs font-bold uppercase text-gray-500">Call Requests</p><p className="mt-2 text-3xl font-black text-[#FA0201]">{queueCounts.callRequests}</p></Card>
               <Card><p className="text-xs font-bold uppercase text-gray-500">Needs Scheduling</p><p className="mt-2 text-3xl font-black text-[#000000]">{queueCounts.scheduling}</p></Card>
               <Card><p className="text-xs font-bold uppercase text-gray-500">Open Manual Actions</p><p className="mt-2 text-3xl font-black text-[#000000]">{queueCounts.manualOpen}</p></Card>
+            </section>
+
+            <section>
+              <SectionHeader title="COACH CALL REQUESTS" accent />
+              <Card>{openCallBookings.length === 0 ? <p className="text-sm text-gray-600">No coach call requests right now.</p> : <div className="space-y-3">{openCallBookings.map(renderBooking)}</div>}</Card>
             </section>
 
             <section>
