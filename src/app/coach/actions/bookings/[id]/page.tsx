@@ -30,6 +30,8 @@ type BookingRecord = {
 type TimeRange = { starts_at: string; ends_at: string };
 type BookingStatusUpdate = 'accepted' | 'reschedule_pending' | 'declined' | 'completed' | 'cancelled';
 
+const MEETING_DURATION_MINUTES = 30;
+const HALF_HOUR_STEP_SECONDS = 1800;
 const bookingSelect = 'id, client_id, booking_type, status, client_notes, coach_note, requested_starts_at, requested_ends_at, starts_at, ends_at, suggested_starts_at, suggested_ends_at, created_at, clients(full_name)';
 
 const formatDateTime = (value: string | null) => {
@@ -44,7 +46,7 @@ const formatLabel = (value: string) => value.replaceAll('_', ' ');
 const getBadgeVariant = (status: string) => {
   if (status === 'accepted' || status === 'completed') return 'success';
   if (status === 'declined' || status === 'cancelled') return 'danger';
-  if (status === 'reschedule_pending') return 'warning';
+  if (status === 'requested' || status === 'reschedule_pending') return 'warning';
   return 'default';
 };
 
@@ -63,15 +65,15 @@ const getDefaultDateTimeLocal = () => {
   return date.toISOString().slice(0, 16);
 };
 
-const getIsoRange = (localStart: string, durationMinutes: number) => {
+const getIsoRange = (localStart: string) => {
   const startsAt = new Date(localStart);
-  const endsAt = new Date(startsAt.getTime() + durationMinutes * 60_000);
+  const endsAt = new Date(startsAt.getTime() + MEETING_DURATION_MINUTES * 60_000);
   return { starts_at: startsAt.toISOString(), ends_at: endsAt.toISOString() };
 };
 
-const getDurationMinutes = (start: string | null, end: string | null) => {
-  if (!start || !end) return 30;
-  return Math.max(15, Math.round((new Date(end).getTime() - new Date(start).getTime()) / 60_000));
+const isThirtyMinuteSlot = (localStart: string) => {
+  const date = new Date(localStart);
+  return !Number.isNaN(date.getTime()) && date.getMinutes() % 30 === 0;
 };
 
 export default function CoachBookingReviewPage() {
@@ -80,7 +82,6 @@ export default function CoachBookingReviewPage() {
   const bookingId = params.id;
   const [booking, setBooking] = useState<BookingRecord | null>(null);
   const [meetingDateTime, setMeetingDateTime] = useState('');
-  const [durationMinutes, setDurationMinutes] = useState(30);
   const [coachNote, setCoachNote] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -117,7 +118,6 @@ export default function CoachBookingReviewPage() {
           || toDateTimeLocal(loadedBooking.requested_starts_at)
           || getDefaultDateTimeLocal()
       );
-      setDurationMinutes(getDurationMinutes(loadedBooking.requested_starts_at, loadedBooking.requested_ends_at));
       setIsLoading(false);
     };
 
@@ -156,7 +156,13 @@ export default function CoachBookingReviewPage() {
         return;
       }
 
-      const range = getIsoRange(meetingDateTime, durationMinutes);
+      if (!isThirtyMinuteSlot(meetingDateTime)) {
+        setError('Choose a time on the hour or half-hour.');
+        setIsSaving(false);
+        return;
+      }
+
+      const range = getIsoRange(meetingDateTime);
       const conflictMessage = await getConflictMessage(range);
       if (conflictMessage) {
         setError(conflictMessage);
@@ -212,9 +218,7 @@ export default function CoachBookingReviewPage() {
     router.refresh();
   };
 
-  if (isLoading) {
-    return <div className="p-6 md:p-8"><PageHeader title="BOOKING REVIEW" /><Card><p className="text-sm font-semibold text-gray-700">Loading booking...</p></Card></div>;
-  }
+  if (isLoading) return <div className="p-6 md:p-8"><PageHeader title="BOOKING REVIEW" /><Card><p className="text-sm font-semibold text-gray-700">Loading booking...</p></Card></div>;
 
   if (error && !booking) {
     return (
@@ -233,7 +237,7 @@ export default function CoachBookingReviewPage() {
 
   return (
     <div className="p-6 md:p-8">
-      <PageHeader title="BOOKING REVIEW" subtitle="Accept the client's requested time, reschedule, decline, cancel, or complete a coach call." />
+      <PageHeader title="BOOKING REVIEW" subtitle="Accept, reschedule, decline, cancel, or complete a fixed 30-minute coach call." />
       <div className="mt-8 space-y-6">
         <Link href="/coach/actions" className="text-sm font-bold uppercase text-[#FA0201]">← Back to actions</Link>
         {message && <Card><p className="text-sm font-semibold text-green-700">{message}</p></Card>}
@@ -262,20 +266,10 @@ export default function CoachBookingReviewPage() {
               <p className="mt-2 whitespace-pre-wrap text-sm text-gray-700">{booking.client_notes || 'No notes added.'}</p>
             </div>
 
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-[2fr_1fr]">
-              <div>
-                <label className="mb-2 block text-sm font-semibold uppercase">Call date and time</label>
-                <input type="datetime-local" value={meetingDateTime} onChange={(event) => setMeetingDateTime(event.target.value)} className="w-full rounded-lg border-2 border-gray-300 bg-white px-4 py-2 text-black focus:border-black focus:outline-none focus:ring-2 focus:ring-black/50" />
-              </div>
-              <div>
-                <label className="mb-2 block text-sm font-semibold uppercase">Duration</label>
-                <select value={durationMinutes} onChange={(event) => setDurationMinutes(Number(event.target.value))} className="w-full rounded-lg border-2 border-gray-300 bg-white px-4 py-2 text-black focus:border-black focus:outline-none focus:ring-2 focus:ring-black/50">
-                  <option value={15}>15 minutes</option>
-                  <option value={30}>30 minutes</option>
-                  <option value={45}>45 minutes</option>
-                  <option value={60}>60 minutes</option>
-                </select>
-              </div>
+            <div>
+              <label className="mb-2 block text-sm font-semibold uppercase">Call date and time</label>
+              <input type="datetime-local" step={HALF_HOUR_STEP_SECONDS} value={meetingDateTime} onChange={(event) => setMeetingDateTime(event.target.value)} className="w-full rounded-lg border-2 border-gray-300 bg-white px-4 py-2 text-black focus:border-black focus:outline-none focus:ring-2 focus:ring-black/50" />
+              <p className="mt-2 text-xs font-semibold uppercase text-gray-500">All coach calls are 30 minutes.</p>
             </div>
 
             <Textarea label="Coach note" value={coachNote} onChange={(event) => setCoachNote(event.target.value)} placeholder="Optional note for the client." />
