@@ -95,6 +95,8 @@ const buildExerciseSummary = (exercise: LibraryExercise, sets: LibrarySet[]) => 
 
 export default function CoachLibraryPage() {
   const [activeTab, setActiveTab] = useState<LibraryTab>('exercises');
+  const [selectedMuscle, setSelectedMuscle] = useState('all');
+  const [selectedEquipment, setSelectedEquipment] = useState('all');
   const [equipmentTypes, setEquipmentTypes] = useState<EquipmentType[]>([]);
   const [exerciseCatalogue, setExerciseCatalogue] = useState<ExerciseCatalogueItem[]>([]);
   const [workouts, setWorkouts] = useState<LibraryWorkout[]>([]);
@@ -116,7 +118,7 @@ export default function CoachLibraryPage() {
       const supabase = createClient();
       const [equipmentResult, catalogueResult, workoutResult, programmeResult] = await Promise.all([
         supabase.from('equipment_types').select('id, name, default_increment_kg, increment_unit, progression_mode, notes').eq('is_active', true).order('name'),
-        supabase.from('exercise_catalogue').select('id, name, category, movement_pattern, equipment, equipment_type_id, primary_muscles, default_notes').eq('is_active', true).order('category').order('name'),
+        supabase.from('exercise_catalogue').select('id, name, category, movement_pattern, equipment, equipment_type_id, primary_muscles, default_notes').eq('is_active', true).order('name'),
         supabase.from('library_workouts').select('id, name, category, goal, instructions').eq('is_active', true).order('category').order('name'),
         supabase.from('library_programmes').select('id, name, category, goal, description').eq('is_active', true).order('category').order('name'),
       ]);
@@ -202,12 +204,27 @@ export default function CoachLibraryPage() {
 
   const equipmentById = useMemo(() => equipmentTypes.reduce<Record<string, EquipmentType>>((acc, equipment) => ({ ...acc, [equipment.id]: equipment }), {}), [equipmentTypes]);
 
-  const exerciseGroups = useMemo(() => {
-    return exerciseCatalogue.reduce<Record<string, ExerciseCatalogueItem[]>>((acc, exercise) => {
-      acc[exercise.category] = [...(acc[exercise.category] || []), exercise];
-      return acc;
-    }, {});
+  const muscleOptions = useMemo(() => {
+    const muscles = exerciseCatalogue.flatMap((exercise) => exercise.primary_muscles || []);
+    return Array.from(new Set(muscles)).sort((a, b) => a.localeCompare(b));
   }, [exerciseCatalogue]);
+
+  const getExerciseEquipmentLabel = (exercise: ExerciseCatalogueItem) => {
+    return (exercise.equipment_type_id ? equipmentById[exercise.equipment_type_id]?.name : null) || exercise.equipment || 'Unassigned';
+  };
+
+  const equipmentOptions = useMemo(() => {
+    const labels = exerciseCatalogue.map((exercise) => getExerciseEquipmentLabel(exercise));
+    return Array.from(new Set(labels)).sort((a, b) => a.localeCompare(b));
+  }, [exerciseCatalogue, equipmentById]);
+
+  const filteredExercises = useMemo(() => {
+    return exerciseCatalogue.filter((exercise) => {
+      const muscleMatch = selectedMuscle === 'all' || (exercise.primary_muscles || []).includes(selectedMuscle);
+      const equipmentMatch = selectedEquipment === 'all' || getExerciseEquipmentLabel(exercise) === selectedEquipment;
+      return muscleMatch && equipmentMatch;
+    });
+  }, [exerciseCatalogue, selectedMuscle, selectedEquipment, equipmentById]);
 
   const programmeWorkoutsByProgramme = useMemo(() => {
     return programmeWorkouts.reduce<Record<string, LibraryProgrammeWorkout[]>>((acc, item) => {
@@ -246,43 +263,72 @@ export default function CoachLibraryPage() {
       {!loading && !error && activeTab === 'exercises' && (
         <section>
           <div className="mb-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <SectionHeader title="EXERCISE LIBRARY" accent />
+            <SectionHeader title="EXERCISES" accent />
             <Link href="/coach/exercise-catalogue">
               <Button type="button" className="bg-[#FA0201] hover:bg-red-700">Manage Exercise Library</Button>
             </Link>
           </div>
           <Card className="mb-4 border-2 border-gray-200 bg-gray-50">
-            <p className="text-sm text-gray-700">
-              This is the base exercise catalogue used when building workouts, assigning programmes and later generating analytics. Equipment type controls default progression jumps.
-            </p>
-          </Card>
-          <div className="space-y-6">
-            {Object.entries(exerciseGroups).map(([category, categoryExercises]) => (
-              <div key={category}>
-                <h2 className="mb-3 text-xl font-black uppercase text-[#000000]">{category}</h2>
-                <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-                  {categoryExercises.map((exercise) => {
-                    const equipment = exercise.equipment_type_id ? equipmentById[exercise.equipment_type_id] : null;
-                    return (
-                      <Card key={exercise.id}>
-                        <div className="mb-3 flex items-start justify-between gap-3">
-                          <div>
-                            <h3 className="text-lg font-black uppercase text-[#000000]">{exercise.name}</h3>
-                            <p className="mt-1 text-xs font-bold uppercase text-gray-500">{exercise.movement_pattern || 'No movement pattern'}</p>
-                          </div>
-                          <Badge variant="default">{equipment?.name || exercise.equipment || 'No equipment'}</Badge>
-                        </div>
-                        <div className="space-y-2 text-sm text-gray-700">
-                          <p><span className="font-bold uppercase text-gray-500">Muscles:</span> {exercise.primary_muscles?.length ? exercise.primary_muscles.join(', ') : 'Not set'}</p>
-                          <p><span className="font-bold uppercase text-gray-500">Progression:</span> {equipment ? formatIncrement(equipment) : 'Equipment default not linked yet'}</p>
-                          {exercise.default_notes && <p><span className="font-bold uppercase text-gray-500">Notes:</span> {exercise.default_notes}</p>}
-                        </div>
-                      </Card>
-                    );
-                  })}
-                </div>
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_0.35fr_0.35fr] lg:items-end">
+              <div>
+                <h2 className="text-xl font-black uppercase text-[#000000]">Exercise Library</h2>
+                <p className="mt-2 text-sm text-gray-700">
+                  All exercises sit here. Filter by muscle worked or equipment type before using them in workouts and programmes.
+                </p>
+                <p className="mt-2 text-xs font-bold uppercase text-gray-500">
+                  Showing {filteredExercises.length} of {exerciseCatalogue.length} exercises
+                </p>
               </div>
-            ))}
+              <label className="block">
+                <span className="text-xs font-black uppercase text-gray-500">Muscle</span>
+                <select
+                  value={selectedMuscle}
+                  onChange={(event) => setSelectedMuscle(event.target.value)}
+                  className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-bold text-[#000000]"
+                >
+                  <option value="all">All muscles</option>
+                  {muscleOptions.map((muscle) => (
+                    <option key={muscle} value={muscle}>{muscle}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                <span className="text-xs font-black uppercase text-gray-500">Equipment</span>
+                <select
+                  value={selectedEquipment}
+                  onChange={(event) => setSelectedEquipment(event.target.value)}
+                  className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-bold text-[#000000]"
+                >
+                  <option value="all">All equipment</option>
+                  {equipmentOptions.map((equipment) => (
+                    <option key={equipment} value={equipment}>{equipment}</option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          </Card>
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+            {filteredExercises.map((exercise) => {
+              const equipment = exercise.equipment_type_id ? equipmentById[exercise.equipment_type_id] : null;
+              const equipmentLabel = getExerciseEquipmentLabel(exercise);
+              return (
+                <Card key={exercise.id}>
+                  <div className="mb-3 flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-bold uppercase text-gray-500">{exercise.category}</p>
+                      <h3 className="mt-1 text-lg font-black uppercase text-[#000000]">{exercise.name}</h3>
+                      <p className="mt-1 text-xs font-bold uppercase text-gray-500">{exercise.movement_pattern || 'No movement pattern'}</p>
+                    </div>
+                    <Badge variant="default">{equipmentLabel}</Badge>
+                  </div>
+                  <div className="space-y-2 text-sm text-gray-700">
+                    <p><span className="font-bold uppercase text-gray-500">Muscles:</span> {exercise.primary_muscles?.length ? exercise.primary_muscles.join(', ') : 'Not set'}</p>
+                    <p><span className="font-bold uppercase text-gray-500">Progression:</span> {equipment ? formatIncrement(equipment) : 'Equipment default not linked yet'}</p>
+                    {exercise.default_notes && <p><span className="font-bold uppercase text-gray-500">Notes:</span> {exercise.default_notes}</p>}
+                  </div>
+                </Card>
+              );
+            })}
           </div>
         </section>
       )}
