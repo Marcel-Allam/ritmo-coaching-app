@@ -28,6 +28,7 @@ type BookingRecord = {
 };
 
 type TimeRange = { starts_at: string; ends_at: string };
+type BookingStatusUpdate = 'accepted' | 'reschedule_pending' | 'declined' | 'completed' | 'cancelled';
 
 const bookingSelect = 'id, client_id, booking_type, status, client_notes, coach_note, requested_starts_at, requested_ends_at, starts_at, ends_at, suggested_starts_at, suggested_ends_at, created_at, clients(full_name)';
 
@@ -137,7 +138,7 @@ export default function CoachBookingReviewPage() {
     return null;
   };
 
-  const updateBooking = async (nextStatus: 'accepted' | 'reschedule_pending' | 'declined' | 'completed') => {
+  const updateBooking = async (nextStatus: BookingStatusUpdate) => {
     if (!booking || !isSupabaseConfigured) return;
 
     setIsSaving(true);
@@ -176,7 +177,7 @@ export default function CoachBookingReviewPage() {
       }
     }
 
-    if (nextStatus === 'declined' || nextStatus === 'completed') {
+    if (nextStatus === 'declined' || nextStatus === 'completed' || nextStatus === 'cancelled') {
       updatePayload.suggested_starts_at = null;
       updatePayload.suggested_ends_at = null;
     }
@@ -195,7 +196,17 @@ export default function CoachBookingReviewPage() {
     }
 
     setBooking(data as BookingRecord);
-    setMessage(nextStatus === 'accepted' ? 'Coach call accepted.' : nextStatus === 'reschedule_pending' ? 'Proposed time sent to client.' : nextStatus === 'completed' ? 'Coach call marked completed.' : 'Coach call declined.');
+    setMessage(
+      nextStatus === 'accepted'
+        ? 'Coach call accepted.'
+        : nextStatus === 'reschedule_pending'
+          ? 'Proposed time sent to client.'
+          : nextStatus === 'completed'
+            ? 'Coach call marked completed.'
+            : nextStatus === 'cancelled'
+              ? 'Coach call cancelled.'
+              : 'Coach call declined.'
+    );
     setIsSaving(false);
     router.push('/coach/actions');
     router.refresh();
@@ -218,9 +229,11 @@ export default function CoachBookingReviewPage() {
     );
   }
 
+  const canCancelMeeting = Boolean(booking && !['declined', 'cancelled', 'completed'].includes(booking.status));
+
   return (
     <div className="p-6 md:p-8">
-      <PageHeader title="BOOKING REVIEW" subtitle="Accept the client's requested time, reschedule, decline, or complete a coach call." />
+      <PageHeader title="BOOKING REVIEW" subtitle="Accept the client's requested time, reschedule, decline, cancel, or complete a coach call." />
       <div className="mt-8 space-y-6">
         <Link href="/coach/actions" className="text-sm font-bold uppercase text-[#FA0201]">← Back to actions</Link>
         {message && <Card><p className="text-sm font-semibold text-green-700">{message}</p></Card>}
@@ -271,6 +284,7 @@ export default function CoachBookingReviewPage() {
               <Button type="button" disabled={isSaving} onClick={() => updateBooking('accepted')}>Accept requested time</Button>
               <Button type="button" disabled={isSaving} variant="secondary" onClick={() => updateBooking('reschedule_pending')}>Suggest another time</Button>
               <Button type="button" disabled={isSaving} variant="outline" onClick={() => updateBooking('declined')}>Decline</Button>
+              {canCancelMeeting && <Button type="button" disabled={isSaving} variant="outline" onClick={() => updateBooking('cancelled')}>Cancel meeting</Button>}
               {booking.status === 'accepted' && <Button type="button" disabled={isSaving} variant="outline" onClick={() => updateBooking('completed')}>Mark completed</Button>}
             </div>
           </Card>
