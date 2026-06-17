@@ -35,6 +35,16 @@ const integerOrFallback = (value: string, fallback: string | null) => {
   return Number.isFinite(parsed) ? parsed : null;
 };
 
+const defaultActualReps = (targetReps: string | null) => {
+  if (!targetReps?.trim()) return '';
+
+  const rangeMatch = targetReps.match(/(\d+)\s*-\s*(\d+)/);
+  if (rangeMatch) return rangeMatch[2];
+
+  const singleMatch = targetReps.match(/\d+/);
+  return singleMatch ? singleMatch[0] : '';
+};
+
 const formatDateTime = (value: string | null) => {
   if (!value) return 'Not recorded';
   return new Intl.DateTimeFormat('en-GB', {
@@ -56,6 +66,14 @@ const rpeGuide = [
   { score: '10', repsLeft: 'No reps left' },
 ];
 
+const sessionFeelOptions = [
+  { value: '1', label: '1 — Very poor' },
+  { value: '2', label: '2 — Poor' },
+  { value: '3', label: '3 — Below normal' },
+  { value: '4', label: '4 — Fine' },
+  { value: '5', label: '5 — Strong' },
+];
+
 const getRpeDescription = (value: string) => {
   return rpeGuide.find((item) => item.score === value.trim());
 };
@@ -72,6 +90,7 @@ export default function ClientWorkoutSessionPage() {
   const [exercises, setExercises] = useState<ExerciseRecord[]>([]);
   const [sets, setSets] = useState<PrescribedSetRecord[]>([]);
   const [logs, setLogs] = useState<Record<string, SetLog>>({});
+  const [sessionFeel, setSessionFeel] = useState('');
   const [sessionNotes, setSessionNotes] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -168,7 +187,11 @@ export default function ClientWorkoutSessionPage() {
 
       const loadedSets = (setResult.data ?? []) as PrescribedSetRecord[];
       const initialLogs = loadedSets.reduce<Record<string, SetLog>>((acc, set) => {
-        acc[set.id] = { ...emptyLog };
+        acc[set.id] = {
+          ...emptyLog,
+          weight: set.target_weight_kg?.toString() || '',
+          reps: defaultActualReps(set.target_reps),
+        };
         return acc;
       }, {});
 
@@ -189,13 +212,35 @@ export default function ClientWorkoutSessionPage() {
     }, {});
   }, [exercises, sets]);
 
+  const completionStats = useMemo(() => {
+    const completedCount = sets.filter((set) => logs[set.id]?.completed).length;
+    return { completedCount, totalCount: sets.length };
+  }, [logs, sets]);
+
   const updateLog = (setId: string, updates: Partial<SetLog>) => {
     setLogs((current) => ({ ...current, [setId]: { ...(current[setId] || emptyLog), ...updates } }));
+  };
+
+  const markAllSetsComplete = () => {
+    setLogs((current) => {
+      return sets.reduce<Record<string, SetLog>>((acc, set) => {
+        acc[set.id] = {
+          ...(current[set.id] || emptyLog),
+          weight: current[set.id]?.weight || set.target_weight_kg?.toString() || '',
+          reps: current[set.id]?.reps || defaultActualReps(set.target_reps),
+          completed: true,
+        };
+        return acc;
+      }, {});
+    });
   };
 
   const submitWorkout = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!client || !workout || !isSupabaseConfigured) return;
+
+    const confirmed = window.confirm(`Submit ${workout.title}? You will not be able to submit this workout again.`);
+    if (!confirmed) return;
 
     setSaving(true);
     setError(null);
@@ -224,6 +269,12 @@ export default function ClientWorkoutSessionPage() {
       return;
     }
 
+    const sessionFeelLabel = sessionFeelOptions.find((option) => option.value === sessionFeel)?.label || '';
+    const combinedSessionNotes = [
+      sessionFeelLabel ? `Session felt: ${sessionFeelLabel}` : null,
+      sessionNotes.trim() || null,
+    ].filter(Boolean).join('\n\n') || null;
+
     const { data: sessionData, error: sessionError } = await supabase
       .from('workout_sessions')
       .insert({
@@ -232,7 +283,7 @@ export default function ClientWorkoutSessionPage() {
         status: 'completed',
         completed_at: new Date().toISOString(),
         review_status: 'new',
-        client_notes: sessionNotes.trim() || null,
+        client_notes: combinedSessionNotes,
       })
       .select('id')
       .single();
@@ -322,6 +373,23 @@ export default function ClientWorkoutSessionPage() {
         {error && <Card className="mb-6 border-2 border-red-200 bg-red-50"><p className="text-sm font-semibold text-red-700">{error}</p></Card>}
         {workout?.instructions && <Card className="mb-6"><p className="text-sm text-gray-700">{workout.instructions}</p></Card>}
 
+        <Card className="mb-6 border-2 border-gray-200 bg-gray-50">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="text-xs font-bold uppercase text-gray-500">Workout progress</p>
+              <p className="text-lg font-black uppercase text-[#000000]">{completionStats.completedCount}/{completionStats.totalCount} sets complete</p>
+              <p className="text-xs text-gray-600">Prescribed KG and reps are prefilled. Adjust anything that changed on the day.</p>
+            </div>
+            <button
+              type="button"
+              onClick={markAllSetsComplete}
+              className="rounded-lg bg-[#000000] px-4 py-2 text-xs font-bold uppercase text-white hover:bg-gray-900"
+            >
+              Mark all sets complete
+            </button>
+          </div>
+        </Card>
+
         <form onSubmit={submitWorkout} className="space-y-8">
           {exercises.map((exercise) => (
             <section key={exercise.id}>
@@ -383,7 +451,25 @@ export default function ClientWorkoutSessionPage() {
               </Card>
             </section>
           ))}
-          <Textarea label="Overall workout notes" value={sessionNotes} onChange={(e) => setSessionNotes(e.target.value)} />
+
+          <Card className="space-y-5">
+            <div>
+              <label className="block text-sm font-semibold uppercase mb-2">How did this session feel?</label>
+              <select
+                value={sessionFeel}
+                onChange={(event) => setSessionFeel(event.target.value)}
+                className="w-full px-4 py-2 bg-white border-2 border-gray-300 rounded-lg text-black transition-colors duration-200 focus:outline-none focus:border-black focus:ring-2 focus:ring-black focus:ring-opacity-50"
+              >
+                <option value="">Select a rating</option>
+                {sessionFeelOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+            </div>
+            <Textarea label="Overall workout notes" value={sessionNotes} onChange={(e) => setSessionNotes(e.target.value)} />
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs font-semibold text-amber-900">
+              Submit only when the workout is finished. After submission, this workout locks and your coach reviews it.
+            </div>
+          </Card>
+
           <Button type="submit" variant="primary" size="lg" fullWidth disabled={saving} className="bg-[#FA0201] hover:bg-red-700 disabled:opacity-60">
             {saving ? 'SUBMITTING...' : 'SUBMIT WORKOUT'}
           </Button>
