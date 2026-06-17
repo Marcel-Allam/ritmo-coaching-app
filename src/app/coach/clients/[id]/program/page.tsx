@@ -49,7 +49,6 @@ type ProgrammeTemplate = {
   workoutTemplateIds: string[];
 };
 type PrescribedSetForm = { reps: string; weightKg: string; rpe: string; notes: string };
-
 type ExerciseIdRecord = { id: string };
 
 const workoutTemplates: WorkoutTemplate[] = [
@@ -224,6 +223,7 @@ export default function CoachClientProgramPage() {
   const [completedIds, setCompletedIds] = useState<Set<string>>(new Set());
   const [exerciseCounts, setExerciseCounts] = useState<Record<string, number>>({});
   const [assignmentMode, setAssignmentMode] = useState<AssignmentMode>('programme');
+  const [templateBuilderOpen, setTemplateBuilderOpen] = useState(false);
   const [programmeTemplateId, setProgrammeTemplateId] = useState(programmeTemplates[0].id);
   const [workoutTemplateId, setWorkoutTemplateId] = useState(workoutTemplates[0].id);
   const [programTitle, setProgramTitle] = useState(programmeTemplates[0].defaultProgramTitle);
@@ -543,6 +543,7 @@ export default function CoachClientProgramPage() {
         });
       }
 
+      setTemplateBuilderOpen(false);
       setMessage(`${selectedProgrammeTemplate.name} assigned. Workouts are unscheduled so they can be mapped to the client's availability.`);
       setSaving(false);
       setLoading(true);
@@ -581,6 +582,7 @@ export default function CoachClientProgramPage() {
         prescription: singlePrescription,
       });
 
+      setTemplateBuilderOpen(false);
       setMessage('Single workout template assigned with prescribed reps, KG and target RPE.');
       setSaving(false);
       setLoading(true);
@@ -647,114 +649,19 @@ export default function CoachClientProgramPage() {
       </section>
 
       <section>
-        <SectionHeader title="ASSIGN FROM TEMPLATE" accent />
-        <Card className="space-y-6">
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            <button type="button" onClick={() => setAssignmentMode('programme')} className={`rounded-xl border p-4 text-left ${assignmentMode === 'programme' ? 'border-[#FA0201] bg-red-50' : 'border-gray-200 bg-white hover:bg-gray-50'}`}>
-              <p className="text-sm font-black uppercase text-[#000000]">Programme template</p>
-              <p className="mt-1 text-xs font-semibold text-gray-600">Creates a full split made from multiple workout templates.</p>
-            </button>
-            <button type="button" onClick={() => setAssignmentMode('workout')} className={`rounded-xl border p-4 text-left ${assignmentMode === 'workout' ? 'border-[#FA0201] bg-red-50' : 'border-gray-200 bg-white hover:bg-gray-50'}`}>
-              <p className="text-sm font-black uppercase text-[#000000]">Single workout template</p>
-              <p className="mt-1 text-xs font-semibold text-gray-600">Creates one session. Useful for adding or replacing one day.</p>
-            </button>
-          </div>
-
-          {assignmentMode === 'programme' ? (
-            <form onSubmit={assignProgrammeTemplate} className="space-y-6">
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <div>
-                  <label className="mb-2 block text-sm font-semibold uppercase">Programme template</label>
-                  <select value={programmeTemplateId} onChange={(event) => chooseProgrammeTemplate(event.target.value)} className="w-full rounded-lg border-2 border-gray-300 bg-white px-4 py-2 text-black">
-                    {programmeTemplates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
-                  </select>
-                </div>
-                <Input label="Programme title" value={programTitle} onChange={(event) => setProgramTitle(event.target.value)} required />
-              </div>
-
-              <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-                <div className="mb-3 flex flex-wrap items-center gap-2">
-                  <Badge variant="default">{selectedProgrammeTemplate.category}</Badge>
-                  <p className="text-sm font-bold uppercase text-[#000000]">{selectedProgrammeTemplate.name}</p>
-                </div>
-                <p className="text-sm text-gray-700">{selectedProgrammeTemplate.description}</p>
-                <p className="mt-2 text-xs font-bold uppercase text-gray-500">Creates {selectedProgrammeWorkouts.length} workout{selectedProgrammeWorkouts.length === 1 ? '' : 's'} unscheduled for later mapping to client availability.</p>
-              </div>
-
-              <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-                {selectedProgrammeWorkouts.map((template, index) => (
-                  <div key={`${template.id}-${index}`} className="rounded-xl border border-gray-200 bg-white p-4">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge variant="default">Workout {index + 1}</Badge>
-                      <Badge variant="warning">{template.category}</Badge>
-                    </div>
-                    <p className="mt-3 text-lg font-black uppercase text-[#000000]">{template.defaultWorkoutTitle}</p>
-                    <p className="mt-1 text-xs font-semibold text-gray-600">{template.goal}</p>
-                    <div className="mt-4 space-y-3">
-                      {template.exercises.map((exercise) => (
-                        <div key={`${template.id}-${exercise.name}`} className="rounded-lg bg-gray-50 p-3">
-                          <p className="text-xs font-black uppercase text-[#000000]">{exercise.name}</p>
-                          <p className="mt-1 text-xs text-gray-600">{exercise.sets.map(getSetLabel).join(' / ')}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <Button type="submit" isLoading={saving} className="bg-[#FA0201] hover:bg-red-700">Assign programme split</Button>
-            </form>
-          ) : (
-            <form onSubmit={assignSingleWorkoutTemplate} className="space-y-6">
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <div>
-                  <label className="mb-2 block text-sm font-semibold uppercase">Workout template</label>
-                  <select value={workoutTemplateId} onChange={(event) => chooseWorkoutTemplate(event.target.value)} className="w-full rounded-lg border-2 border-gray-300 bg-white px-4 py-2 text-black">
-                    {workoutTemplates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
-                  </select>
-                </div>
-                <Input label="Scheduled date" type="date" value={singleScheduledDate} onChange={(event) => setSingleScheduledDate(event.target.value)} />
-                <Input label="Programme title" value={programTitle} onChange={(event) => setProgramTitle(event.target.value)} required />
-                <Input label="Workout title" value={singleWorkoutTitle} onChange={(event) => setSingleWorkoutTitle(event.target.value)} required />
-              </div>
-              <Textarea label="Client-facing instructions" value={singleInstructions} onChange={(event) => setSingleInstructions(event.target.value)} />
-
-              <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-                <div className="mb-3 flex flex-wrap items-center gap-2">
-                  <Badge variant="default">{selectedWorkoutTemplate.category}</Badge>
-                  <p className="text-sm font-bold uppercase text-[#000000]">{selectedWorkoutTemplate.name}</p>
-                </div>
-                <p className="mb-4 text-sm text-gray-700">{selectedWorkoutTemplate.goal}</p>
-                <div className="space-y-4">
-                  {selectedWorkoutTemplate.exercises.map((exercise, exerciseIndex) => (
-                    <div key={`${exercise.name}-${exerciseIndex}`} className="rounded-lg bg-white p-4">
-                      <p className="text-sm font-bold uppercase text-[#000000]">{exerciseIndex + 1}. {exercise.name}</p>
-                      <div className="mt-3 space-y-3">
-                        {(singlePrescription[exerciseIndex] || []).map((set, setIndex) => (
-                          <div key={`${exercise.name}-${setIndex}`} className="grid grid-cols-1 gap-3 md:grid-cols-[70px_1fr_1fr_1fr_2fr] md:items-end">
-                            <p className="pb-2 text-xs font-bold uppercase text-gray-500">Set {setIndex + 1}</p>
-                            <Input label="Reps" value={set.reps} onChange={(event) => updatePrescriptionSet(exerciseIndex, setIndex, { reps: event.target.value })} />
-                            <Input label="KG" type="number" step="2.5" value={set.weightKg} onChange={(event) => updatePrescriptionSet(exerciseIndex, setIndex, { weightKg: event.target.value })} placeholder="Optional" />
-                            <Input label="Target RPE" type="number" step="0.5" min="1" max="10" value={set.rpe} onChange={(event) => updatePrescriptionSet(exerciseIndex, setIndex, { rpe: event.target.value })} placeholder="Optional" />
-                            <Input label="Set notes" value={set.notes} onChange={(event) => updatePrescriptionSet(exerciseIndex, setIndex, { notes: event.target.value })} placeholder="Optional" />
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <Button type="submit" isLoading={saving} className="bg-[#FA0201] hover:bg-red-700">Assign single workout</Button>
-            </form>
-          )}
-        </Card>
-      </section>
-
-      <section>
         <SectionHeader title="CURRENT PROGRAMME DELIVERY" accent />
         <Card>
           {workouts.length === 0 ? (
-            <p className="text-sm text-gray-600">No active workouts assigned yet.</p>
+            <div className="space-y-3">
+              <p className="text-sm text-gray-600">No active workouts assigned yet.</p>
+              <button
+                type="button"
+                onClick={() => setTemplateBuilderOpen(true)}
+                className="text-sm font-bold uppercase text-[#FA0201] hover:underline"
+              >
+                Open template builder
+              </button>
+            </div>
           ) : (
             <div className="space-y-4">
               {workouts.map((workout) => {
@@ -793,6 +700,122 @@ export default function CoachClientProgramPage() {
             </div>
           )}
         </Card>
+      </section>
+
+      <section>
+        <div className="mb-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <SectionHeader title="ASSIGN FROM TEMPLATE" accent />
+          <button
+            type="button"
+            onClick={() => setTemplateBuilderOpen((current) => !current)}
+            className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-xs font-bold uppercase text-[#000000] hover:bg-gray-50"
+          >
+            {templateBuilderOpen ? 'Hide template builder' : 'Open template builder'}
+          </button>
+        </div>
+
+        {templateBuilderOpen && (
+          <Card className="space-y-6">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <button type="button" onClick={() => setAssignmentMode('programme')} className={`rounded-xl border p-4 text-left ${assignmentMode === 'programme' ? 'border-[#FA0201] bg-red-50' : 'border-gray-200 bg-white hover:bg-gray-50'}`}>
+                <p className="text-sm font-black uppercase text-[#000000]">Programme template</p>
+                <p className="mt-1 text-xs font-semibold text-gray-600">Creates a full split made from multiple workout templates.</p>
+              </button>
+              <button type="button" onClick={() => setAssignmentMode('workout')} className={`rounded-xl border p-4 text-left ${assignmentMode === 'workout' ? 'border-[#FA0201] bg-red-50' : 'border-gray-200 bg-white hover:bg-gray-50'}`}>
+                <p className="text-sm font-black uppercase text-[#000000]">Single workout template</p>
+                <p className="mt-1 text-xs font-semibold text-gray-600">Creates one session. Useful for adding or replacing one day.</p>
+              </button>
+            </div>
+
+            {assignmentMode === 'programme' ? (
+              <form onSubmit={assignProgrammeTemplate} className="space-y-6">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div>
+                    <label className="mb-2 block text-sm font-semibold uppercase">Programme template</label>
+                    <select value={programmeTemplateId} onChange={(event) => chooseProgrammeTemplate(event.target.value)} className="w-full rounded-lg border-2 border-gray-300 bg-white px-4 py-2 text-black">
+                      {programmeTemplates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
+                    </select>
+                  </div>
+                  <Input label="Programme title" value={programTitle} onChange={(event) => setProgramTitle(event.target.value)} required />
+                </div>
+
+                <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                  <div className="mb-3 flex flex-wrap items-center gap-2">
+                    <Badge variant="default">{selectedProgrammeTemplate.category}</Badge>
+                    <p className="text-sm font-bold uppercase text-[#000000]">{selectedProgrammeTemplate.name}</p>
+                  </div>
+                  <p className="text-sm text-gray-700">{selectedProgrammeTemplate.description}</p>
+                  <p className="mt-2 text-xs font-bold uppercase text-gray-500">Creates {selectedProgrammeWorkouts.length} workout{selectedProgrammeWorkouts.length === 1 ? '' : 's'} unscheduled for later mapping to client availability.</p>
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+                  {selectedProgrammeWorkouts.map((template, index) => (
+                    <div key={`${template.id}-${index}`} className="rounded-xl border border-gray-200 bg-white p-4">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge variant="default">Workout {index + 1}</Badge>
+                        <Badge variant="warning">{template.category}</Badge>
+                      </div>
+                      <p className="mt-3 text-lg font-black uppercase text-[#000000]">{template.defaultWorkoutTitle}</p>
+                      <p className="mt-1 text-xs font-semibold text-gray-600">{template.goal}</p>
+                      <div className="mt-4 space-y-3">
+                        {template.exercises.map((exercise) => (
+                          <div key={`${template.id}-${exercise.name}`} className="rounded-lg bg-gray-50 p-3">
+                            <p className="text-xs font-black uppercase text-[#000000]">{exercise.name}</p>
+                            <p className="mt-1 text-xs text-gray-600">{exercise.sets.map(getSetLabel).join(' / ')}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <Button type="submit" isLoading={saving} className="bg-[#FA0201] hover:bg-red-700">Assign programme split</Button>
+              </form>
+            ) : (
+              <form onSubmit={assignSingleWorkoutTemplate} className="space-y-6">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div>
+                    <label className="mb-2 block text-sm font-semibold uppercase">Workout template</label>
+                    <select value={workoutTemplateId} onChange={(event) => chooseWorkoutTemplate(event.target.value)} className="w-full rounded-lg border-2 border-gray-300 bg-white px-4 py-2 text-black">
+                      {workoutTemplates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}
+                    </select>
+                  </div>
+                  <Input label="Scheduled date" type="date" value={singleScheduledDate} onChange={(event) => setSingleScheduledDate(event.target.value)} />
+                  <Input label="Programme title" value={programTitle} onChange={(event) => setProgramTitle(event.target.value)} required />
+                  <Input label="Workout title" value={singleWorkoutTitle} onChange={(event) => setSingleWorkoutTitle(event.target.value)} required />
+                </div>
+                <Textarea label="Client-facing instructions" value={singleInstructions} onChange={(event) => setSingleInstructions(event.target.value)} />
+
+                <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                  <div className="mb-3 flex flex-wrap items-center gap-2">
+                    <Badge variant="default">{selectedWorkoutTemplate.category}</Badge>
+                    <p className="text-sm font-bold uppercase text-[#000000]">{selectedWorkoutTemplate.name}</p>
+                  </div>
+                  <p className="mb-4 text-sm text-gray-700">{selectedWorkoutTemplate.goal}</p>
+                  <div className="space-y-4">
+                    {selectedWorkoutTemplate.exercises.map((exercise, exerciseIndex) => (
+                      <div key={`${exercise.name}-${exerciseIndex}`} className="rounded-lg bg-white p-4">
+                        <p className="text-sm font-bold uppercase text-[#000000]">{exerciseIndex + 1}. {exercise.name}</p>
+                        <div className="mt-3 space-y-3">
+                          {(singlePrescription[exerciseIndex] || []).map((set, setIndex) => (
+                            <div key={`${exercise.name}-${setIndex}`} className="grid grid-cols-1 gap-3 md:grid-cols-[70px_1fr_1fr_1fr_2fr] md:items-end">
+                              <p className="pb-2 text-xs font-bold uppercase text-gray-500">Set {setIndex + 1}</p>
+                              <Input label="Reps" value={set.reps} onChange={(event) => updatePrescriptionSet(exerciseIndex, setIndex, { reps: event.target.value })} />
+                              <Input label="KG" type="number" step="2.5" value={set.weightKg} onChange={(event) => updatePrescriptionSet(exerciseIndex, setIndex, { weightKg: event.target.value })} placeholder="Optional" />
+                              <Input label="Target RPE" type="number" step="0.5" min="1" max="10" value={set.rpe} onChange={(event) => updatePrescriptionSet(exerciseIndex, setIndex, { rpe: event.target.value })} placeholder="Optional" />
+                              <Input label="Set notes" value={set.notes} onChange={(event) => updatePrescriptionSet(exerciseIndex, setIndex, { notes: event.target.value })} placeholder="Optional" />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <Button type="submit" isLoading={saving} className="bg-[#FA0201] hover:bg-red-700">Assign single workout</Button>
+              </form>
+            )}
+          </Card>
+        )}
       </section>
     </div>
   );
