@@ -26,9 +26,10 @@ type CallRequestRecord = {
   review_status: string;
 };
 
-type MeetingStatus = 'none' | 'requested' | 'confirmed';
+type MeetingStatus = 'none' | 'requested' | 'confirmed' | 'reschedule_pending';
 
 type MeetingDraft = {
+  id?: string;
   status: MeetingStatus;
   dateLabel: string;
   notes: string;
@@ -62,6 +63,38 @@ const extractNotes = (text: string | null) => {
   return notesLine?.replace('Notes:', '').trim() || '';
 };
 
+const getSuggestedTimeIso = (text: string | null) => {
+  if (!text) return null;
+  const suggestedLine = text.split('\n').find((line) => line.startsWith('Suggested time:'));
+  return suggestedLine?.replace('Suggested time:', '').trim() || null;
+};
+
+const getMeetingStatus = (reviewStatus: string): MeetingStatus => {
+  if (reviewStatus === 'reviewed') return 'confirmed';
+  if (reviewStatus === 'needs_feedback') return 'reschedule_pending';
+  return 'requested';
+};
+
+const getMeetingDateLabel = (request: CallRequestRecord) => {
+  const suggestedTime = getSuggestedTimeIso(request.answer_text);
+  if (suggestedTime) return formatDateTime(suggestedTime);
+  if (request.review_status === 'reviewed') return 'Confirmed by coach';
+  return 'Awaiting coach confirmation';
+};
+
+const getStatusLabel = (status: MeetingStatus) => {
+  if (status === 'confirmed') return 'Confirmed';
+  if (status === 'reschedule_pending') return 'Reschedule pending';
+  if (status === 'requested') return 'Requested';
+  return 'No meeting booked';
+};
+
+const getStatusColour = (status: MeetingStatus) => {
+  if (status === 'confirmed') return 'text-green-400';
+  if (status === 'reschedule_pending') return 'text-yellow-300';
+  return 'text-green-400';
+};
+
 export default function ClientCoachPage() {
   const { user } = useAuth();
   const [client, setClient] = useState<ClientRecord | null>(null);
@@ -70,6 +103,7 @@ export default function ClientCoachPage() {
   const [quickNote, setQuickNote] = useState('');
   const [loading, setLoading] = useState(true);
   const [savingRequest, setSavingRequest] = useState(false);
+  const [updatingMeeting, setUpdatingMeeting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
@@ -129,8 +163,9 @@ export default function ClientCoachPage() {
       const latestCallRequest = (callRequestResult.data?.[0] ?? null) as CallRequestRecord | null;
       if (latestCallRequest) {
         setMeeting({
-          status: latestCallRequest.review_status === 'reviewed' ? 'confirmed' : 'requested',
-          dateLabel: 'Awaiting coach confirmation',
+          id: latestCallRequest.id,
+          status: getMeetingStatus(latestCallRequest.review_status),
+          dateLabel: getMeetingDateLabel(latestCallRequest),
           notes: extractNotes(latestCallRequest.answer_text),
           submittedAt: latestCallRequest.submitted_at,
         });
@@ -179,13 +214,42 @@ export default function ClientCoachPage() {
 
     const request = data as CallRequestRecord;
     setMeeting({
+      id: request.id,
       status: 'requested',
-      dateLabel: 'Awaiting coach confirmation',
+      dateLabel: getMeetingDateLabel(request),
       notes: extractNotes(request.answer_text),
       submittedAt: request.submitted_at,
     });
     setMessage('Coach call requested. Your coach will see it in their action queue.');
     setSavingRequest(false);
+  };
+
+  const respondToReschedule = async (accepted: boolean) => {
+    if (!meeting.id || !isSupabaseConfigured) return;
+    setUpdatingMeeting(true);
+    setMessage(null);
+
+    const supabase = createClient();
+    const nextStatus = accepted ? 'reviewed' : 'resolved';
+    const { error } = await supabase
+      .from('task_submissions')
+      .update({ review_status: nextStatus })
+      .eq('id', meeting.id);
+
+    if (error) {
+      setMessage(error.message);
+      setUpdatingMeeting(false);
+      return;
+    }
+
+    if (accepted) {
+      setMeeting((current) => ({ ...current, status: 'confirmed' }));
+      setMessage('Rescheduled coach call accepted.');
+    } else {
+      setMeeting(defaultMeetingDraft);
+      setMessage('Rescheduled coach call declined.');
+    }
+    setUpdatingMeeting(false);
   };
 
   if (loading) {
@@ -240,7 +304,7 @@ export default function ClientCoachPage() {
                     onChange={(event) => setQuickNote(event.target.value)}
                     placeholder="Example: Talk through next week, adjust a session, or review an exercise."
                   />
-                  <Button type="button" onClick={requestWeeklyCall} isLoading={savingRequest} className="w-fit bg-[#FA0201] hover:bg-red-700">Book weekly call</Button>
+                  <Button type="button" onClick={requestWeeklyCall} disabled={savingRequest} className="w-fit bg-[#FA0201] hover:bg-red-700">{savingRequest ? 'Requesting...' : 'Book weekly call'}</Button>
                 </div>
               ) : (
                 <div>
@@ -252,7 +316,7 @@ export default function ClientCoachPage() {
                       {meeting.submittedAt && <p className="mt-3 text-sm text-white/60">Requested {formatDateTime(meeting.submittedAt)}</p>}
                       <div className="mt-12 border-t border-white/40 pt-5">
                         <p className="text-2xl font-bold">Status:</p>
-                        <p className="mt-2 text-3xl font-bold text-green-400">{meeting.status === 'confirmed' ? 'Confirmed' : 'Requested'}</p>
+                        <p className={`mt-2 text-3xl font-bold ${getStatusColour(meeting.status)}`}>{getStatusLabel(meeting.status)}</p>
                       </div>
                     </div>
                     <div className="rounded-xl border-2 border-white p-5 text-white">
@@ -266,6 +330,13 @@ export default function ClientCoachPage() {
                       )}
                     </div>
                   </div>
+
+                  {meeting.status === 'reschedule_pending' && (
+                    <div className="mt-6 flex flex-wrap gap-3">
+                      <Button type="button" disabled={updatingMeeting} onClick={() => respondToReschedule(true)} className="bg-[#FA0201] hover:bg-red-700">Accept proposed time</Button>
+                      <Button type="button" disabled={updatingMeeting} onClick={() => respondToReschedule(false)} variant="outline">Decline proposed time</Button>
+                    </div>
+                  )}
                 </div>
               )}
             </Card>
