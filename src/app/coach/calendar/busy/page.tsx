@@ -44,6 +44,7 @@ export default function CoachBusyTimePage() {
   const [durationMinutes, setDurationMinutes] = useState(60);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [deletingSlotId, setDeletingSlotId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -113,6 +114,30 @@ export default function CoachBusyTimePage() {
     await loadSlots();
   };
 
+  const deleteSlot = async (slotId: string) => {
+    if (!isSupabaseConfigured) return;
+
+    setDeletingSlotId(slotId);
+    setMessage(null);
+    setError(null);
+
+    const supabase = createClient();
+    const { error: deleteError } = await supabase
+      .from('coach_calendar_blocks')
+      .delete()
+      .eq('id', slotId);
+
+    if (deleteError) {
+      setError(deleteError.message);
+      setDeletingSlotId(null);
+      return;
+    }
+
+    setSlots((currentSlots) => currentSlots.filter((slot) => slot.id !== slotId));
+    setMessage('Busy time deleted.');
+    setDeletingSlotId(null);
+  };
+
   return (
     <div className="p-6 md:p-8">
       <PageHeader title="BUSY TIME" subtitle="Add times when the coach is not available for calls." />
@@ -151,9 +176,14 @@ export default function CoachBusyTimePage() {
           ) : slots.length === 0 ? (
             <Card><p className="text-sm text-gray-600">No busy time added yet.</p></Card>
           ) : slots.map((slot) => (
-            <Card key={slot.id} className="bg-gray-50">
-              <p className="font-bold uppercase text-[#000000]">{slot.title || 'Busy time'}</p>
-              <p className="mt-1 text-xs text-gray-500">{formatDateTime(slot.starts_at)} – {formatDateTime(slot.ends_at)}</p>
+            <Card key={slot.id} className="flex flex-col gap-4 bg-gray-50 md:flex-row md:items-center md:justify-between">
+              <div>
+                <p className="font-bold uppercase text-[#000000]">{slot.title || 'Busy time'}</p>
+                <p className="mt-1 text-xs text-gray-500">{formatDateTime(slot.starts_at)} – {formatDateTime(slot.ends_at)}</p>
+              </div>
+              <Button type="button" variant="outline" disabled={deletingSlotId === slot.id} onClick={() => deleteSlot(slot.id)}>
+                {deletingSlotId === slot.id ? 'Deleting...' : 'Delete'}
+              </Button>
             </Card>
           ))}
         </div>
