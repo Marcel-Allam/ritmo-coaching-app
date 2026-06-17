@@ -71,6 +71,7 @@ export default function CoachScheduleWorkoutsPage() {
         .select('id, submitted_at, answer_value, answer_text, review_status')
         .eq('client_id', clientId)
         .eq('submission_type', 'training_availability')
+        .not('review_status', 'in', '(reviewed,resolved)')
         .order('submitted_at', { ascending: false })
         .limit(1),
       supabase
@@ -158,6 +159,12 @@ export default function CoachScheduleWorkoutsPage() {
   const saveSchedule = async () => {
     if (!isSupabaseConfigured) return;
 
+    const hasAtLeastOneScheduledDate = workouts.some((workout) => Boolean(scheduleDates[workout.id]));
+    if (workouts.length > 0 && !hasAtLeastOneScheduledDate) {
+      setError('Add at least one scheduled workout date before saving the schedule.');
+      return;
+    }
+
     setSaving(true);
     setError(null);
     setMessage(null);
@@ -179,11 +186,31 @@ export default function CoachScheduleWorkoutsPage() {
       return;
     }
 
+    if (availability) {
+      const { error: availabilityError } = await supabase
+        .from('task_submissions')
+        .update({
+          review_status: 'reviewed',
+          followup_required: false,
+          coach_note: 'Workouts scheduled from this training availability submission.',
+        })
+        .eq('id', availability.id)
+        .eq('client_id', clientId);
+
+      if (availabilityError) {
+        setError(availabilityError.message);
+        setSaving(false);
+        return;
+      }
+
+      setAvailability({ ...availability, review_status: 'reviewed' });
+    }
+
     setWorkouts((current) => current.map((workout) => ({
       ...workout,
       scheduled_date: scheduleDates[workout.id] || null,
     })));
-    setMessage('Workout schedule saved. The client can now see these sessions by date.');
+    setMessage('Workout schedule saved. Training availability has been marked reviewed and removed from Needs Scheduling.');
     setSaving(false);
   };
 
@@ -212,7 +239,7 @@ export default function CoachScheduleWorkoutsPage() {
       {error && <Card className="border-2 border-red-200 bg-red-50"><p className="text-sm font-semibold text-red-700">{error}</p></Card>}
 
       <section>
-        <SectionHeader title="LATEST AVAILABILITY" accent />
+        <SectionHeader title="LATEST UNREVIEWED AVAILABILITY" accent />
         <Card>
           {availability ? (
             <div className="space-y-4">
@@ -222,7 +249,7 @@ export default function CoachScheduleWorkoutsPage() {
               </div>
             </div>
           ) : (
-            <p className="text-sm text-gray-600">No training availability submission found yet.</p>
+            <p className="text-sm text-gray-600">No unreviewed training availability submission. You can still schedule or adjust workouts below.</p>
           )}
         </Card>
       </section>
