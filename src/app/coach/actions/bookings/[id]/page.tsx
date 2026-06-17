@@ -27,6 +27,11 @@ type BookingRecord = {
   } | null;
 };
 
+type TimeRange = {
+  starts_at: string;
+  ends_at: string;
+};
+
 const formatDateTime = (value: string | null) => {
   if (!value) return 'Not set';
 
@@ -121,6 +126,41 @@ export default function CoachBookingReviewPage() {
     loadBooking();
   }, [bookingId]);
 
+  const getConflictMessage = async (range: TimeRange) => {
+    if (!booking) return 'Booking not loaded.';
+
+    const supabase = createClient();
+    const [busyResult, callResult] = await Promise.all([
+      supabase
+        .from('coach_calendar_blocks')
+        .select('id, title')
+        .lt('starts_at', range.ends_at)
+        .gt('ends_at', range.starts_at)
+        .limit(1),
+      supabase
+        .from('coach_call_bookings')
+        .select('id, clients(full_name)')
+        .eq('status', 'accepted')
+        .neq('id', booking.id)
+        .lt('starts_at', range.ends_at)
+        .gt('ends_at', range.starts_at)
+        .limit(1),
+    ]);
+
+    if (busyResult.error) return busyResult.error.message;
+    if (callResult.error) return callResult.error.message;
+
+    if ((busyResult.data ?? []).length > 0) {
+      return 'This time overlaps with existing busy time.';
+    }
+
+    if ((callResult.data ?? []).length > 0) {
+      return 'This time overlaps with another accepted coach call.';
+    }
+
+    return null;
+  };
+
   const updateBooking = async (nextStatus: 'accepted' | 'reschedule_pending' | 'declined' | 'completed') => {
     if (!booking || !isSupabaseConfigured) return;
 
@@ -140,6 +180,13 @@ export default function CoachBookingReviewPage() {
       }
 
       const range = getIsoRange(meetingDateTime, durationMinutes);
+      const conflictMessage = await getConflictMessage(range);
+
+      if (conflictMessage) {
+        setError(conflictMessage);
+        setIsSaving(false);
+        return;
+      }
 
       if (nextStatus === 'accepted') {
         updatePayload.starts_at = range.starts_at;
