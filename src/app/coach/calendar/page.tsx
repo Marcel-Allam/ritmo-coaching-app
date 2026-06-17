@@ -21,6 +21,13 @@ type CoachCallBookingRecord = {
   clients: { full_name: string } | null;
 };
 
+type BusySlotRecord = {
+  id: string;
+  title: string | null;
+  starts_at: string;
+  ends_at: string;
+};
+
 type CalendarCall = {
   id: string;
   clientName: string;
@@ -105,6 +112,7 @@ const getCallClassName = (status: string) => {
 
 export default function CoachCalendarPage() {
   const [bookings, setBookings] = useState<CoachCallBookingRecord[]>([]);
+  const [busySlots, setBusySlots] = useState<BusySlotRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -131,25 +139,41 @@ export default function CoachCalendarPage() {
       }
 
       const supabase = createClient();
-      const { data, error: bookingError } = await supabase
-        .from('coach_call_bookings')
-        .select('id, client_id, booking_type, status, starts_at, ends_at, suggested_starts_at, suggested_ends_at, created_at, clients(full_name)')
-        .in('status', ['requested', 'accepted', 'reschedule_pending', 'declined', 'cancelled', 'completed'])
-        .order('created_at', { ascending: false })
-        .limit(200);
+      const [bookingResult, busyResult] = await Promise.all([
+        supabase
+          .from('coach_call_bookings')
+          .select('id, client_id, booking_type, status, starts_at, ends_at, suggested_starts_at, suggested_ends_at, created_at, clients(full_name)')
+          .in('status', ['requested', 'accepted', 'reschedule_pending', 'declined', 'cancelled', 'completed'])
+          .order('created_at', { ascending: false })
+          .limit(200),
+        supabase
+          .from('coach_calendar_blocks')
+          .select('id, title, starts_at, ends_at')
+          .gte('ends_at', weekStart.toISOString())
+          .lte('starts_at', weekEnd.toISOString())
+          .order('starts_at', { ascending: true })
+          .limit(100),
+      ]);
 
-      if (bookingError) {
-        setError(bookingError.message);
+      if (bookingResult.error) {
+        setError(bookingResult.error.message);
         setLoading(false);
         return;
       }
 
-      setBookings((data ?? []) as CoachCallBookingRecord[]);
+      if (busyResult.error) {
+        setError(busyResult.error.message);
+        setLoading(false);
+        return;
+      }
+
+      setBookings((bookingResult.data ?? []) as CoachCallBookingRecord[]);
+      setBusySlots((busyResult.data ?? []) as BusySlotRecord[]);
       setLoading(false);
     };
 
     loadCalendar();
-  }, []);
+  }, [weekStart, weekEnd]);
 
   const scheduledCalls = useMemo(() => {
     return bookings
@@ -177,7 +201,7 @@ export default function CoachCalendarPage() {
 
   return (
     <div className="p-6 md:p-8">
-      <PageHeader title="CALENDAR" subtitle="Coach call requests, accepted calls, and reschedule-pending calls from the new booking system." />
+      <PageHeader title="CALENDAR" subtitle="Coach call requests, accepted calls, busy time, and reschedule-pending calls." />
 
       <div className="mt-8 space-y-8">
         {loading && <Card><p className="font-semibold text-gray-700">Loading calendar...</p></Card>}
@@ -185,10 +209,11 @@ export default function CoachCalendarPage() {
 
         {!loading && !error && (
           <>
-            <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <section className="grid grid-cols-1 gap-4 md:grid-cols-4">
               <Card><p className="text-xs font-bold uppercase text-gray-500">Requested</p><p className="mt-2 text-3xl font-black text-[#FA0201]">{requestedBookings.length}</p></Card>
               <Card><p className="text-xs font-bold uppercase text-gray-500">Accepted this week</p><p className="mt-2 text-3xl font-black text-green-600">{acceptedThisWeek}</p></Card>
               <Card><p className="text-xs font-bold uppercase text-gray-500">Reschedule pending this week</p><p className="mt-2 text-3xl font-black text-amber-600">{reschedulesThisWeek}</p></Card>
+              <Card><p className="text-xs font-bold uppercase text-gray-500">Busy slots</p><p className="mt-2 text-3xl font-black text-gray-600">{busySlots.length}</p></Card>
             </section>
 
             <section>
@@ -268,6 +293,23 @@ export default function CoachCalendarPage() {
                       <Badge variant={getStatusBadgeVariant(call.status) as any}>{formatStatus(call.status)}</Badge>
                     </Card>
                   </Link>
+                ))}
+              </div>
+            </section>
+
+            <section>
+              <SectionHeader title="BUSY TIME THIS WEEK" accent />
+              <div className="space-y-3">
+                {busySlots.length === 0 ? (
+                  <Card><p className="text-sm text-gray-600">No busy time added this week.</p></Card>
+                ) : busySlots.map((slot) => (
+                  <Card key={slot.id} className="flex items-center justify-between gap-4 bg-gray-50">
+                    <div>
+                      <p className="font-bold uppercase text-[#000000]">{slot.title || 'Busy time'}</p>
+                      <p className="text-xs text-gray-500">{formatDateTime(slot.starts_at)} – {formatDateTime(slot.ends_at)}</p>
+                    </div>
+                    <Badge>Busy</Badge>
+                  </Card>
                 ))}
               </div>
             </section>
