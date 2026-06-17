@@ -64,7 +64,7 @@ const coachNavItems = [
   { label: 'Clients', href: '/coach/clients', icon: UsersIcon },
   { label: 'Actions', href: '/coach/actions', icon: ClipboardIcon },
   { label: 'Calendar', href: '/coach/calendar', icon: SettingsIcon },
-  { label: 'Programs', href: '/coach/programs', icon: DumbbellIcon },
+  { label: 'Library', href: '/coach/library', icon: DumbbellIcon },
   { label: 'Feedback', href: '/coach/feedback', icon: MessageIcon },
 ];
 
