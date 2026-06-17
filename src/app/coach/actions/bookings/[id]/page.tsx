@@ -279,7 +279,7 @@ export default function CoachBookingReviewPage() {
 
             <div className="flex flex-wrap gap-3">
               <Button type="button" disabled={isSaving} onClick={() => updateBooking('accepted')}>Accept booking</Button>
-              <Button type="button" disabled={isSaving} variant="secondary" onClick={() => updateBooking('reschedule_pending')}>Send proposed time</Button>
+              <Button type="button" disabled={isSaving} variant="secondary" onClick={() => updateBooking('reschedule_pending')}>Reschedule</Button>
               <Button type="button" disabled={isSaving} variant="outline" onClick={() => updateBooking('declined')}>Decline</Button>
             </div>
           </Card>
