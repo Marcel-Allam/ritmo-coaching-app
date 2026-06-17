@@ -368,7 +368,19 @@ export default function ClientCoachPage() {
                 </div>
               ) : booking ? (
                 <div>
-                  <h1 className="text-5xl font-black uppercase tracking-tight text-white md:text-7xl">Coach Meeting</h1>
+                  <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                    <h1 className="text-5xl font-black uppercase tracking-tight text-white md:text-7xl">Coach Meeting</h1>
+                    {canCancelMeeting && (
+                      <button
+                        type="button"
+                        disabled={updatingMeeting}
+                        onClick={cancelMeeting}
+                        className="w-full rounded-lg bg-[#FA0201] px-5 py-3 text-sm font-black uppercase tracking-wide text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60 md:w-fit"
+                      >
+                        {updatingMeeting ? 'Cancelling...' : 'Cancel meeting'}
+                      </button>
+                    )}
+                  </div>
                   <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-[1fr_1fr]">
                     <div className="rounded-xl border-2 border-white p-5 text-white">
                       <p className="text-2xl font-bold">Date:</p>
@@ -393,15 +405,12 @@ export default function ClientCoachPage() {
                     </div>
                   </div>
 
-                  <div className="mt-6 flex flex-wrap gap-3">
-                    {booking.status === 'reschedule_pending' && (
-                      <>
-                        <Button type="button" disabled={updatingMeeting} onClick={() => respondToReschedule(true)} className="bg-[#FA0201] hover:bg-red-700">Accept proposed time</Button>
-                        <Button type="button" disabled={updatingMeeting} onClick={() => respondToReschedule(false)} variant="outline">Decline proposed time</Button>
-                      </>
-                    )}
-                    {canCancelMeeting && <Button type="button" disabled={updatingMeeting} onClick={cancelMeeting} variant="outline">Cancel meeting</Button>}
-                  </div>
+                  {booking.status === 'reschedule_pending' && (
+                    <div className="mt-6 flex flex-wrap gap-3">
+                      <Button type="button" disabled={updatingMeeting} onClick={() => respondToReschedule(true)} className="bg-[#FA0201] hover:bg-red-700">Accept proposed time</Button>
+                      <Button type="button" disabled={updatingMeeting} onClick={() => respondToReschedule(false)} variant="outline">Decline proposed time</Button>
+                    </div>
+                  )}
                 </div>
               ) : null}
             </Card>
