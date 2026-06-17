@@ -150,7 +150,7 @@ export function AssignFromLibraryPanel() {
 
       const loadedExercises = (exerciseData ?? []) as LibraryExercise[];
       const exerciseIds = loadedExercises.map((exercise) => exercise.id);
-      const { data: setData, error: setError } = exerciseIds.length
+      const { data: setData, error: setLoadError } = exerciseIds.length
         ? await supabase
             .from('library_workout_sets')
             .select('id, library_workout_exercise_id, set_order, target_reps, target_rpe')
@@ -158,8 +158,8 @@ export function AssignFromLibraryPanel() {
             .order('set_order')
         : { data: [], error: null };
 
-      if (setError) {
-        setError(setError.message);
+      if (setLoadError) {
+        setError(setLoadError.message);
         setLoading(false);
         return;
       }
