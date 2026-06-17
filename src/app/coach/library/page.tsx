@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { SectionHeader } from '@/components/ui/section-header';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
 
-type LibraryTab = 'workouts' | 'programmes' | 'equipment';
+type LibraryTab = 'exercises' | 'workouts' | 'programmes' | 'equipment';
 
 type EquipmentType = {
   id: string;
@@ -18,6 +18,17 @@ type EquipmentType = {
   increment_unit: 'total' | 'per_hand' | 'per_side' | 'none';
   progression_mode: 'load' | 'double_progression' | 'rep_first' | 'manual';
   notes: string | null;
+};
+
+type ExerciseCatalogueItem = {
+  id: string;
+  name: string;
+  category: string;
+  movement_pattern: string | null;
+  equipment: string | null;
+  equipment_type_id: string | null;
+  primary_muscles: string[];
+  default_notes: string | null;
 };
 
 type LibraryWorkout = {
@@ -61,6 +72,7 @@ type LibraryProgrammeWorkout = {
 };
 
 const tabs: { label: string; value: LibraryTab }[] = [
+  { label: 'Exercise Library', value: 'exercises' },
   { label: 'Workout Library', value: 'workouts' },
   { label: 'Programme Library', value: 'programmes' },
   { label: 'Equipment Defaults', value: 'equipment' },
@@ -82,8 +94,9 @@ const buildExerciseSummary = (exercise: LibraryExercise, sets: LibrarySet[]) => 
 };
 
 export default function CoachLibraryPage() {
-  const [activeTab, setActiveTab] = useState<LibraryTab>('workouts');
+  const [activeTab, setActiveTab] = useState<LibraryTab>('exercises');
   const [equipmentTypes, setEquipmentTypes] = useState<EquipmentType[]>([]);
+  const [exerciseCatalogue, setExerciseCatalogue] = useState<ExerciseCatalogueItem[]>([]);
   const [workouts, setWorkouts] = useState<LibraryWorkout[]>([]);
   const [exercises, setExercises] = useState<LibraryExercise[]>([]);
   const [sets, setSets] = useState<LibrarySet[]>([]);
@@ -101,14 +114,15 @@ export default function CoachLibraryPage() {
       }
 
       const supabase = createClient();
-      const [equipmentResult, workoutResult, programmeResult] = await Promise.all([
+      const [equipmentResult, catalogueResult, workoutResult, programmeResult] = await Promise.all([
         supabase.from('equipment_types').select('id, name, default_increment_kg, increment_unit, progression_mode, notes').eq('is_active', true).order('name'),
+        supabase.from('exercise_catalogue').select('id, name, category, movement_pattern, equipment, equipment_type_id, primary_muscles, default_notes').eq('is_active', true).order('category').order('name'),
         supabase.from('library_workouts').select('id, name, category, goal, instructions').eq('is_active', true).order('category').order('name'),
         supabase.from('library_programmes').select('id, name, category, goal, description').eq('is_active', true).order('category').order('name'),
       ]);
 
-      if (equipmentResult.error || workoutResult.error || programmeResult.error) {
-        setError(equipmentResult.error?.message || workoutResult.error?.message || programmeResult.error?.message || 'Could not load library.');
+      if (equipmentResult.error || catalogueResult.error || workoutResult.error || programmeResult.error) {
+        setError(equipmentResult.error?.message || catalogueResult.error?.message || workoutResult.error?.message || programmeResult.error?.message || 'Could not load library.');
         setLoading(false);
         return;
       }
@@ -158,6 +172,7 @@ export default function CoachLibraryPage() {
       }
 
       setEquipmentTypes((equipmentResult.data ?? []) as EquipmentType[]);
+      setExerciseCatalogue((catalogueResult.data ?? []) as ExerciseCatalogueItem[]);
       setWorkouts(loadedWorkouts);
       setProgrammes(loadedProgrammes);
       setExercises(loadedExercises);
@@ -185,6 +200,15 @@ export default function CoachLibraryPage() {
 
   const workoutsById = useMemo(() => workouts.reduce<Record<string, LibraryWorkout>>((acc, workout) => ({ ...acc, [workout.id]: workout }), {}), [workouts]);
 
+  const equipmentById = useMemo(() => equipmentTypes.reduce<Record<string, EquipmentType>>((acc, equipment) => ({ ...acc, [equipment.id]: equipment }), {}), [equipmentTypes]);
+
+  const exerciseGroups = useMemo(() => {
+    return exerciseCatalogue.reduce<Record<string, ExerciseCatalogueItem[]>>((acc, exercise) => {
+      acc[exercise.category] = [...(acc[exercise.category] || []), exercise];
+      return acc;
+    }, {});
+  }, [exerciseCatalogue]);
+
   const programmeWorkoutsByProgramme = useMemo(() => {
     return programmeWorkouts.reduce<Record<string, LibraryProgrammeWorkout[]>>((acc, item) => {
       acc[item.library_programme_id] = [...(acc[item.library_programme_id] || []), item];
@@ -196,7 +220,7 @@ export default function CoachLibraryPage() {
     <div className="space-y-8 p-6 md:p-8">
       <PageHeader
         title="LIBRARY"
-        subtitle="Reusable workouts, reusable programmes, and equipment-based progression defaults for RITMO coaching."
+        subtitle="Reusable exercises, workouts, programmes, and equipment-based progression defaults for RITMO coaching."
       />
 
       <Card>
@@ -218,6 +242,50 @@ export default function CoachLibraryPage() {
 
       {loading && <Card>Loading library...</Card>}
       {error && <Card className="border-2 border-red-200 bg-red-50"><p className="text-sm font-semibold text-red-700">{error}</p></Card>}
+
+      {!loading && !error && activeTab === 'exercises' && (
+        <section>
+          <div className="mb-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <SectionHeader title="EXERCISE LIBRARY" accent />
+            <Link href="/coach/exercise-catalogue">
+              <Button type="button" className="bg-[#FA0201] hover:bg-red-700">Manage Exercise Library</Button>
+            </Link>
+          </div>
+          <Card className="mb-4 border-2 border-gray-200 bg-gray-50">
+            <p className="text-sm text-gray-700">
+              This is the base exercise catalogue used when building workouts, assigning programmes and later generating analytics. Equipment type controls default progression jumps.
+            </p>
+          </Card>
+          <div className="space-y-6">
+            {Object.entries(exerciseGroups).map(([category, categoryExercises]) => (
+              <div key={category}>
+                <h2 className="mb-3 text-xl font-black uppercase text-[#000000]">{category}</h2>
+                <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                  {categoryExercises.map((exercise) => {
+                    const equipment = exercise.equipment_type_id ? equipmentById[exercise.equipment_type_id] : null;
+                    return (
+                      <Card key={exercise.id}>
+                        <div className="mb-3 flex items-start justify-between gap-3">
+                          <div>
+                            <h3 className="text-lg font-black uppercase text-[#000000]">{exercise.name}</h3>
+                            <p className="mt-1 text-xs font-bold uppercase text-gray-500">{exercise.movement_pattern || 'No movement pattern'}</p>
+                          </div>
+                          <Badge variant="default">{equipment?.name || exercise.equipment || 'No equipment'}</Badge>
+                        </div>
+                        <div className="space-y-2 text-sm text-gray-700">
+                          <p><span className="font-bold uppercase text-gray-500">Muscles:</span> {exercise.primary_muscles?.length ? exercise.primary_muscles.join(', ') : 'Not set'}</p>
+                          <p><span className="font-bold uppercase text-gray-500">Progression:</span> {equipment ? formatIncrement(equipment) : 'Equipment default not linked yet'}</p>
+                          {exercise.default_notes && <p><span className="font-bold uppercase text-gray-500">Notes:</span> {exercise.default_notes}</p>}
+                        </div>
+                      </Card>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {!loading && !error && activeTab === 'workouts' && (
         <section>
