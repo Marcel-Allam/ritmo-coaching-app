@@ -18,6 +18,7 @@ type CoachCallBookingRecord = {
   suggested_starts_at: string | null;
   suggested_ends_at: string | null;
   created_at: string;
+  requested_starts_at: string | null;
   clients: { full_name: string } | null;
 };
 
@@ -28,16 +29,25 @@ type BusySlotRecord = {
   ends_at: string;
 };
 
-type CalendarCall = {
+type CalendarBlock = {
   id: string;
-  clientName: string;
+  type: 'call' | 'busy';
+  title: string;
+  subtitle: string;
   dateKey: string;
-  timeLabel: string;
-  status: string;
+  startsAt: Date;
+  endsAt: Date;
+  href?: string;
+  status?: string;
 };
 
-const calendarHours = Array.from({ length: 25 }, (_, index) => {
-  const totalMinutes = 8 * 60 + index * 30;
+const CALENDAR_START_HOUR = 8;
+const CALENDAR_END_HOUR = 20;
+const SLOT_MINUTES = 30;
+const SLOT_HEIGHT_PX = 64;
+
+const calendarSlots = Array.from({ length: ((CALENDAR_END_HOUR - CALENDAR_START_HOUR) * 60) / SLOT_MINUTES + 1 }, (_, index) => {
+  const totalMinutes = CALENDAR_START_HOUR * 60 + index * SLOT_MINUTES;
   const hours = Math.floor(totalMinutes / 60).toString().padStart(2, '0');
   const minutes = (totalMinutes % 60).toString().padStart(2, '0');
   return `${hours}:${minutes}`;
@@ -49,7 +59,12 @@ const addDays = (date: Date, days: number) => {
   return nextDate;
 };
 
-const toDateKey = (date: Date) => date.toISOString().slice(0, 10);
+const toDateKey = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
 
 const toTimeLabel = (date: Date) => {
   const hours = date.getHours().toString().padStart(2, '0');
@@ -80,11 +95,33 @@ const formatDateTime = (value: string) => new Intl.DateTimeFormat('en-GB', {
   minute: '2-digit',
 }).format(new Date(value));
 
+const formatWeekRange = (weekStart: Date, weekEnd: Date) => {
+  const formatter = new Intl.DateTimeFormat('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+
+  return `${formatter.format(weekStart)} – ${formatter.format(weekEnd)}`;
+};
+
 const formatLabel = (value: string) => value.replaceAll('_', ' ');
 
-const getBookingDisplayDate = (booking: CoachCallBookingRecord) => {
-  if (booking.status === 'reschedule_pending' && booking.suggested_starts_at) return new Date(booking.suggested_starts_at);
-  if ((booking.status === 'accepted' || booking.status === 'completed') && booking.starts_at) return new Date(booking.starts_at);
+const getBookingDisplayRange = (booking: CoachCallBookingRecord) => {
+  if (booking.status === 'reschedule_pending' && booking.suggested_starts_at && booking.suggested_ends_at) {
+    return {
+      startsAt: new Date(booking.suggested_starts_at),
+      endsAt: new Date(booking.suggested_ends_at),
+    };
+  }
+
+  if ((booking.status === 'accepted' || booking.status === 'completed') && booking.starts_at && booking.ends_at) {
+    return {
+      startsAt: new Date(booking.starts_at),
+      endsAt: new Date(booking.ends_at),
+    };
+  }
+
   return null;
 };
 
@@ -104,19 +141,33 @@ const getStatusBadgeVariant = (status: string) => {
   return 'default';
 };
 
-const getCallClassName = (status: string) => {
-  if (status === 'accepted' || status === 'completed') return 'bg-green-600 text-white';
-  if (status === 'reschedule_pending') return 'bg-amber-500 text-black';
-  return 'bg-[#FA0201] text-white';
+const getBlockClassName = (block: CalendarBlock) => {
+  if (block.type === 'busy') return 'border border-gray-500 bg-gray-900 text-white';
+  if (block.status === 'accepted' || block.status === 'completed') return 'border border-green-700 bg-green-600 text-white';
+  if (block.status === 'reschedule_pending') return 'border border-amber-600 bg-amber-400 text-black';
+  return 'border border-[#FA0201] bg-[#FA0201] text-white';
+};
+
+const getBlockGridPlacement = (startsAt: Date, endsAt: Date) => {
+  const startMinutes = startsAt.getHours() * 60 + startsAt.getMinutes();
+  const endMinutes = endsAt.getHours() * 60 + endsAt.getMinutes();
+  const calendarStartMinutes = CALENDAR_START_HOUR * 60;
+  const firstSlotIndex = Math.max(0, Math.floor((startMinutes - calendarStartMinutes) / SLOT_MINUTES));
+  const slotSpan = Math.max(1, Math.ceil((endMinutes - startMinutes) / SLOT_MINUTES));
+
+  return {
+    gridRow: `${firstSlotIndex + 1} / span ${slotSpan}`,
+  };
 };
 
 export default function CoachCalendarPage() {
+  const [weekAnchor, setWeekAnchor] = useState(() => new Date());
   const [bookings, setBookings] = useState<CoachCallBookingRecord[]>([]);
   const [busySlots, setBusySlots] = useState<BusySlotRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const weekStart = useMemo(() => getWeekStart(new Date()), []);
+  const weekStart = useMemo(() => getWeekStart(weekAnchor), [weekAnchor]);
   const weekEnd = useMemo(() => {
     const end = addDays(weekStart, 6);
     end.setHours(23, 59, 59, 999);
@@ -126,7 +177,7 @@ export default function CoachCalendarPage() {
   const weekDays = useMemo(() => {
     return Array.from({ length: 7 }, (_, index) => {
       const date = addDays(weekStart, index);
-      return { dateKey: toDateKey(date), label: formatDayLabel(date) };
+      return { dateKey: toDateKey(date), label: formatDayLabel(date), date };
     });
   }, [weekStart]);
 
@@ -138,11 +189,14 @@ export default function CoachCalendarPage() {
         return;
       }
 
+      setLoading(true);
+      setError(null);
+
       const supabase = createClient();
       const [bookingResult, busyResult] = await Promise.all([
         supabase
           .from('coach_call_bookings')
-          .select('id, client_id, booking_type, status, starts_at, ends_at, suggested_starts_at, suggested_ends_at, created_at, clients(full_name)')
+          .select('id, client_id, booking_type, status, starts_at, ends_at, suggested_starts_at, suggested_ends_at, requested_starts_at, created_at, clients(full_name)')
           .in('status', ['requested', 'accepted', 'reschedule_pending', 'declined', 'cancelled', 'completed'])
           .order('created_at', { ascending: false })
           .limit(200),
@@ -175,29 +229,50 @@ export default function CoachCalendarPage() {
     loadCalendar();
   }, [weekStart, weekEnd]);
 
-  const scheduledCalls = useMemo(() => {
-    return bookings
+  const calendarBlocks = useMemo(() => {
+    const callBlocks = bookings
       .map((booking) => {
-        const displayDate = getBookingDisplayDate(booking);
-        if (!displayDate) return null;
+        const range = getBookingDisplayRange(booking);
+        if (!range) return null;
 
-        const dateKey = toDateKey(displayDate);
+        const dateKey = toDateKey(range.startsAt);
         if (dateKey < toDateKey(weekStart) || dateKey > toDateKey(weekEnd)) return null;
 
         return {
           id: booking.id,
-          clientName: booking.clients?.full_name || 'Client',
+          type: 'call' as const,
+          title: booking.clients?.full_name || 'Client',
+          subtitle: `${toTimeLabel(range.startsAt)}–${toTimeLabel(range.endsAt)} • ${formatStatus(booking.status)}`,
           dateKey,
-          timeLabel: toTimeLabel(displayDate),
+          startsAt: range.startsAt,
+          endsAt: range.endsAt,
+          href: `/coach/actions/bookings/${booking.id}`,
           status: booking.status,
         };
       })
-      .filter(Boolean) as CalendarCall[];
-  }, [bookings, weekStart, weekEnd]);
+      .filter(Boolean) as CalendarBlock[];
+
+    const busyBlocks = busySlots.map((slot) => {
+      const startsAt = new Date(slot.starts_at);
+      const endsAt = new Date(slot.ends_at);
+
+      return {
+        id: slot.id,
+        type: 'busy' as const,
+        title: slot.title || 'Busy time',
+        subtitle: `${toTimeLabel(startsAt)}–${toTimeLabel(endsAt)}`,
+        dateKey: toDateKey(startsAt),
+        startsAt,
+        endsAt,
+      };
+    });
+
+    return [...callBlocks, ...busyBlocks];
+  }, [bookings, busySlots, weekStart, weekEnd]);
 
   const requestedBookings = bookings.filter((booking) => booking.status === 'requested');
-  const acceptedThisWeek = scheduledCalls.filter((call) => call.status === 'accepted').length;
-  const reschedulesThisWeek = scheduledCalls.filter((call) => call.status === 'reschedule_pending').length;
+  const acceptedThisWeek = calendarBlocks.filter((block) => block.type === 'call' && block.status === 'accepted').length;
+  const reschedulesThisWeek = calendarBlocks.filter((block) => block.type === 'call' && block.status === 'reschedule_pending').length;
 
   return (
     <div className="p-6 md:p-8">
@@ -213,7 +288,7 @@ export default function CoachCalendarPage() {
               <Card><p className="text-xs font-bold uppercase text-gray-500">Requested</p><p className="mt-2 text-3xl font-black text-[#FA0201]">{requestedBookings.length}</p></Card>
               <Card><p className="text-xs font-bold uppercase text-gray-500">Accepted this week</p><p className="mt-2 text-3xl font-black text-green-600">{acceptedThisWeek}</p></Card>
               <Card><p className="text-xs font-bold uppercase text-gray-500">Reschedule pending this week</p><p className="mt-2 text-3xl font-black text-amber-600">{reschedulesThisWeek}</p></Card>
-              <Card><p className="text-xs font-bold uppercase text-gray-500">Busy slots</p><p className="mt-2 text-3xl font-black text-gray-600">{busySlots.length}</p></Card>
+              <Card><p className="text-xs font-bold uppercase text-gray-500">Busy blocks</p><p className="mt-2 text-3xl font-black text-gray-700">{busySlots.length}</p></Card>
             </section>
 
             <section>
@@ -229,31 +304,68 @@ export default function CoachCalendarPage() {
             <section>
               <SectionHeader title="WEEKLY CALL CALENDAR" accent />
               <Card>
-                <div className="max-h-[760px] overflow-auto">
-                  <div className="grid min-w-[900px] grid-cols-[72px_repeat(7,minmax(0,1fr))] overflow-hidden rounded-lg border border-gray-200 text-xs">
-                    <div className="bg-black p-3 font-bold uppercase text-white">Time</div>
-                    {weekDays.map((day) => <div key={day.dateKey} className="border-l border-gray-200 bg-black p-3 text-center font-bold uppercase text-white">{day.label}</div>)}
+                <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <p className="text-xs font-bold uppercase text-gray-500">Viewing week</p>
+                    <p className="mt-1 text-xl font-black uppercase text-[#000000]">{formatWeekRange(weekStart, weekEnd)}</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button type="button" onClick={() => setWeekAnchor(addDays(weekStart, -7))} className="rounded-lg bg-gray-200 px-4 py-2 text-xs font-black uppercase text-[#000000] hover:bg-gray-300">Previous week</button>
+                    <button type="button" onClick={() => setWeekAnchor(new Date())} className="rounded-lg bg-[#FA0201] px-4 py-2 text-xs font-black uppercase text-white hover:bg-red-700">Today</button>
+                    <button type="button" onClick={() => setWeekAnchor(addDays(weekStart, 7))} className="rounded-lg bg-gray-200 px-4 py-2 text-xs font-black uppercase text-[#000000] hover:bg-gray-300">Next week</button>
+                  </div>
+                </div>
 
-                    {calendarHours.map((hour) => (
-                      <div key={hour} className="contents">
-                        <div className="border-t border-gray-200 bg-gray-100 p-3 font-bold text-[#000000]">{hour}</div>
-                        {weekDays.map((day) => {
-                          const dayCalls = scheduledCalls.filter((call) => call.dateKey === day.dateKey && call.timeLabel === hour);
-                          return (
-                            <div key={`${day.dateKey}-${hour}`} className="min-h-16 border-l border-t border-gray-200 bg-white p-2">
-                              <div className="space-y-2">
-                                {dayCalls.map((call) => (
-                                  <Link key={call.id} href={`/coach/actions/bookings/${call.id}`} className={`block rounded-lg p-2 text-xs font-bold uppercase ${getCallClassName(call.status)}`}>
-                                    <p>{call.clientName}</p>
-                                    <p className="mt-1 opacity-80">{formatStatus(call.status)}</p>
+                <div className="overflow-auto rounded-lg border border-gray-200">
+                  <div className="grid min-w-[1100px] grid-cols-[80px_repeat(7,minmax(0,1fr))]">
+                    <div className="bg-black p-3 text-xs font-bold uppercase text-white">Time</div>
+                    {weekDays.map((day) => <div key={day.dateKey} className="border-l border-gray-700 bg-black p-3 text-center text-xs font-bold uppercase text-white">{day.label}</div>)}
+
+                    <div className="grid" style={{ gridTemplateRows: `repeat(${calendarSlots.length}, ${SLOT_HEIGHT_PX}px)` }}>
+                      {calendarSlots.map((slot) => (
+                        <div key={slot} className="border-t border-gray-200 bg-gray-100 px-3 py-2 text-xs font-bold text-[#000000]">{slot}</div>
+                      ))}
+                    </div>
+
+                    {weekDays.map((day) => {
+                      const dayBlocks = calendarBlocks.filter((block) => block.dateKey === day.dateKey);
+
+                      return (
+                        <div key={day.dateKey} className="relative border-l border-gray-200">
+                          <div className="grid" style={{ gridTemplateRows: `repeat(${calendarSlots.length}, ${SLOT_HEIGHT_PX}px)` }}>
+                            {calendarSlots.map((slot) => (
+                              <div key={`${day.dateKey}-${slot}`} className="border-t border-gray-200 bg-white" />
+                            ))}
+                          </div>
+
+                          <div className="pointer-events-none absolute inset-0 grid p-1" style={{ gridTemplateRows: `repeat(${calendarSlots.length}, ${SLOT_HEIGHT_PX}px)` }}>
+                            {dayBlocks.map((block) => {
+                              const className = `pointer-events-auto m-1 overflow-hidden rounded-lg p-2 text-xs font-bold uppercase shadow-sm ${getBlockClassName(block)}`;
+                              const content = (
+                                <>
+                                  <p className="truncate">{block.title}</p>
+                                  <p className="mt-1 truncate opacity-80">{block.subtitle}</p>
+                                </>
+                              );
+
+                              if (block.href) {
+                                return (
+                                  <Link key={block.id} href={block.href} className={className} style={getBlockGridPlacement(block.startsAt, block.endsAt)}>
+                                    {content}
                                   </Link>
-                                ))}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ))}
+                                );
+                              }
+
+                              return (
+                                <div key={block.id} className={className} style={getBlockGridPlacement(block.startsAt, block.endsAt)}>
+                                  {content}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               </Card>
@@ -269,7 +381,7 @@ export default function CoachCalendarPage() {
                     <Card className="flex items-center justify-between gap-4 hover:bg-gray-50">
                       <div>
                         <p className="font-bold uppercase text-[#000000]">{booking.clients?.full_name || 'Client'}</p>
-                        <p className="text-xs text-gray-500">Requested {formatDateTime(booking.created_at)}</p>
+                        <p className="text-xs text-gray-500">{booking.requested_starts_at ? `Client available ${formatDateTime(booking.requested_starts_at)}` : `Requested ${formatDateTime(booking.created_at)}`}</p>
                       </div>
                       <Badge variant={getStatusBadgeVariant(booking.status) as any}>{formatLabel(booking.status)}</Badge>
                     </Card>
@@ -281,16 +393,16 @@ export default function CoachCalendarPage() {
             <section>
               <SectionHeader title="SCHEDULED CALLS THIS WEEK" accent />
               <div className="space-y-3">
-                {scheduledCalls.length === 0 ? (
+                {calendarBlocks.filter((block) => block.type === 'call').length === 0 ? (
                   <Card><p className="text-sm text-gray-600">No accepted or reschedule-pending calls this week.</p></Card>
-                ) : scheduledCalls.map((call) => (
-                  <Link key={call.id} href={`/coach/actions/bookings/${call.id}`}>
+                ) : calendarBlocks.filter((block) => block.type === 'call').map((block) => (
+                  <Link key={block.id} href={block.href || '#'}>
                     <Card className="flex items-center justify-between gap-4 hover:bg-gray-50">
                       <div>
-                        <p className="font-bold uppercase text-[#000000]">{call.clientName}</p>
-                        <p className="text-xs text-gray-500">{call.dateKey} • {call.timeLabel}</p>
+                        <p className="font-bold uppercase text-[#000000]">{block.title}</p>
+                        <p className="text-xs text-gray-500">{block.dateKey} • {block.subtitle}</p>
                       </div>
-                      <Badge variant={getStatusBadgeVariant(call.status) as any}>{formatStatus(call.status)}</Badge>
+                      <Badge variant={getStatusBadgeVariant(block.status || '') as any}>{formatStatus(block.status || '')}</Badge>
                     </Card>
                   </Link>
                 ))}
