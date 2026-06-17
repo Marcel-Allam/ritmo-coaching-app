@@ -1,26 +1,12 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { PageHeader } from '@/components/layout/page-header';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { SectionHeader } from '@/components/ui/section-header';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
-
-interface CoachActionRecord {
-  id: string;
-  client_id: string;
-  action_type: string;
-  description: string;
-  due_date: string | null;
-  status: string;
-  priority: string;
-  clients: {
-    full_name: string;
-  } | null;
-}
 
 interface SubmissionRecord {
   id: string;
@@ -65,8 +51,6 @@ interface CompletedWorkoutRecord {
   program_workout_id: string;
 }
 
-type ActionFilter = 'all' | 'pending' | 'in-progress' | 'waiting' | 'completed';
-
 const formatDate = (value: string | null) => {
   if (!value) return 'No due date';
 
@@ -87,25 +71,12 @@ const formatDateTime = (value: string) => {
   }).format(new Date(value));
 };
 
-const normaliseActionStatusForFilter = (status: string): ActionFilter => {
-  if (status === 'done' || status === 'no_action_needed') return 'completed';
-  if (status === 'in_progress') return 'in-progress';
-  if (status === 'waiting_on_client' || status === 'waiting_on_coach') return 'waiting';
-  return 'pending';
-};
-
 const formatLabel = (value: string) => value.replaceAll('_', ' ');
 
 const getStatusBadgeVariant = (status: string) => {
-  if (status === 'done' || status === 'reviewed' || status === 'accepted' || status === 'completed') return 'success';
+  if (status === 'reviewed' || status === 'accepted' || status === 'completed') return 'success';
   if (status === 'resolved' || status === 'flagged' || status === 'declined' || status === 'cancelled') return 'danger';
-  if (status === 'in_progress' || status === 'waiting_on_client' || status === 'waiting_on_coach' || status === 'needs_feedback' || status === 'needs_action' || status === 'reschedule_pending') return 'warning';
-  return 'default';
-};
-
-const getPriorityBadgeVariant = (priority: string) => {
-  if (priority === 'high') return 'danger';
-  if (priority === 'medium') return 'warning';
+  if (status === 'needs_feedback' || status === 'needs_action' || status === 'reschedule_pending') return 'warning';
   return 'default';
 };
 
@@ -138,8 +109,6 @@ const getBookingTimeLabel = (booking: CoachCallBookingRecord) => {
 const completedBookingStatuses = ['accepted', 'declined', 'cancelled', 'completed'];
 
 export default function CoachActionsPage() {
-  const [filteredStatus, setFilteredStatus] = useState<ActionFilter>('all');
-  const [actions, setActions] = useState<CoachActionRecord[]>([]);
   const [submissions, setSubmissions] = useState<SubmissionRecord[]>([]);
   const [callBookings, setCallBookings] = useState<CoachCallBookingRecord[]>([]);
   const [clients, setClients] = useState<Record<string, string>>({});
@@ -157,11 +126,7 @@ export default function CoachActionsPage() {
 
     const supabase = createClient();
 
-    const [actionResult, submissionResult, bookingResult, workoutResult, completedWorkoutResult] = await Promise.all([
-      supabase
-        .from('coach_actions')
-        .select('id, client_id, action_type, description, due_date, status, priority, clients(full_name)')
-        .order('due_date', { ascending: true }),
+    const [submissionResult, bookingResult, workoutResult, completedWorkoutResult] = await Promise.all([
       supabase
         .from('task_submissions')
         .select('id, client_id, submission_type, submitted_at, answer_value, answer_text, review_status, followup_required')
@@ -185,12 +150,6 @@ export default function CoachActionsPage() {
         .select('program_workout_id')
         .eq('status', 'completed'),
     ]);
-
-    if (actionResult.error) {
-      setError(actionResult.error.message);
-      setIsLoading(false);
-      return;
-    }
 
     if (submissionResult.error) {
       setError(submissionResult.error.message);
@@ -250,7 +209,6 @@ export default function CoachActionsPage() {
       setClients(clientMap);
     }
 
-    setActions((actionResult.data ?? []) as CoachActionRecord[]);
     setSubmissions(loadedSubmissions);
     setCallBookings(loadedBookings);
     setUnscheduledWorkouts(activeIncompleteWorkouts.filter((workout) => !workout.scheduled_date));
@@ -270,41 +228,11 @@ export default function CoachActionsPage() {
   const completedSubmissions = submissions.filter((submission) => submission.review_status === 'reviewed' || submission.review_status === 'resolved').slice(0, 6);
   const trainingAvailabilityToSchedule = newSubmissions.filter((submission) => submission.submission_type === 'training_availability');
 
-  const filteredActions = useMemo(() => {
-    if (filteredStatus === 'all') return actions;
-    return actions.filter((action) => normaliseActionStatusForFilter(action.status) === filteredStatus);
-  }, [actions, filteredStatus]);
-
   const queueCounts = {
     needsReview: newSubmissions.length,
     callRequests: openCallBookings.length,
     scheduling: trainingAvailabilityToSchedule.length + unscheduledWorkouts.length,
     completedActions: completedSubmissions.length + completedCallBookings.length,
-  };
-
-  const handleComplete = async (actionId: string) => {
-    if (!isSupabaseConfigured) return;
-
-    const supabase = createClient();
-
-    const { error: updateError } = await supabase
-      .from('coach_actions')
-      .update({
-        status: 'done',
-        completed_at: new Date().toISOString(),
-      })
-      .eq('id', actionId);
-
-    if (updateError) {
-      setError(updateError.message);
-      return;
-    }
-
-    setActions((currentActions) =>
-      currentActions.map((action) =>
-        action.id === actionId ? { ...action, status: 'done' } : action
-      )
-    );
   };
 
   const getSubmissionHref = (submission: SubmissionRecord) => {
@@ -377,7 +305,7 @@ export default function CoachActionsPage() {
 
   return (
     <div className="p-6 md:p-8">
-      <PageHeader title="ACTION QUEUE" subtitle="Submissions, call requests, scheduling work, and manual coach actions in one place" />
+      <PageHeader title="ACTION QUEUE" subtitle="Submissions, call requests, scheduling work, and completed coach decisions." />
 
       <div className="mt-8 space-y-8">
         {isLoading && <div className="bg-white rounded-lg border border-gray-200 p-8 text-center"><p className="font-semibold text-gray-700">Loading actions...</p></div>}
@@ -441,28 +369,6 @@ export default function CoachActionsPage() {
                   </div>
                 </div>
               </Card>
-            </section>
-
-            <section>
-              <SectionHeader title="MANUAL COACH ACTIONS" accent />
-              <div className="bg-white p-4 rounded-lg border border-gray-200 flex flex-wrap gap-2 mb-4">
-                {[{ label: 'All', value: 'all' }, { label: 'Pending', value: 'pending' }, { label: 'In Progress', value: 'in-progress' }, { label: 'Waiting', value: 'waiting' }, { label: 'Completed', value: 'completed' }].map((filter) => (
-                  <button key={filter.value} onClick={() => setFilteredStatus(filter.value as ActionFilter)} className={`px-4 py-2 font-semibold uppercase text-sm rounded-lg transition-colors ${filteredStatus === filter.value ? 'bg-[#FA0201] text-white' : 'bg-gray-200 text-[#000000] hover:bg-gray-300'}`}>{filter.label}</button>
-                ))}
-              </div>
-              {filteredActions.length === 0 ? <div className="text-center py-8 bg-white rounded-lg border border-gray-200"><p className="text-gray-600 font-semibold">No manual actions found.</p></div> : (
-                <div className="space-y-4">
-                  {filteredActions.map((action) => (
-                    <Card key={action.id} className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                      <div className="flex-1">
-                        <div className="mb-2 flex items-start justify-between gap-4"><h3 className="text-lg font-bold uppercase text-[#000000]">{action.description}</h3><div className="flex flex-wrap justify-end gap-2"><Badge variant={getPriorityBadgeVariant(action.priority) as any}>{action.priority}</Badge><Badge variant={getStatusBadgeVariant(action.status) as any}>{formatLabel(action.status)}</Badge></div></div>
-                        <div className="grid grid-cols-1 gap-4 text-sm md:grid-cols-3"><div><p className="text-xs font-semibold uppercase text-gray-500">Type</p><p className="text-gray-700">{formatLabel(action.action_type)}</p></div><div><p className="text-xs font-semibold uppercase text-gray-500">Client</p><p className="text-gray-700">{action.clients?.full_name ?? clients[action.client_id] ?? 'No client linked'}</p></div><div><p className="text-xs font-semibold uppercase text-gray-500">Due Date</p><p className="text-gray-700">{formatDate(action.due_date)}</p></div></div>
-                      </div>
-                      {normaliseActionStatusForFilter(action.status) !== 'completed' ? <Button onClick={() => handleComplete(action.id)} variant="primary" size="md" className="w-full md:w-auto">Complete</Button> : <div className="text-sm font-semibold uppercase text-green-600">Done</div>}
-                    </Card>
-                  ))}
-                </div>
-              )}
             </section>
 
             <section>
