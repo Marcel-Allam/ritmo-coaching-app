@@ -1,0 +1,3 @@
+const tableName = 'coach_calendar_blocks';
+const blockType = 'blocked';
+const title = 'Busy time';
