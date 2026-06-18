@@ -241,17 +241,17 @@ export function AssignFromLibraryPanel() {
       return;
     }
 
-    setMessage(`${selectedProgramme.name} assigned from Library. Reloading programme delivery...`);
+    setMessage(`${selectedProgramme.name} assigned as the active programme. Previous active programme has been archived. Reloading programme delivery...`);
     window.setTimeout(() => window.location.reload(), 600);
   };
 
   if (loading) {
-    return <div className="p-6 pt-0 md:p-8 md:pt-0"><Card>Loading Programme Library...</Card></div>;
+    return <div id="assign-from-library" className="p-6 pt-0 md:p-8 md:pt-0"><Card>Loading Programme Library...</Card></div>;
   }
 
   if (programmes.length === 0) {
     return (
-      <div className="p-6 pt-0 md:p-8 md:pt-0">
+      <div id="assign-from-library" className="p-6 pt-0 md:p-8 md:pt-0">
         <Card>
           <p className="text-sm text-gray-600">No active library programmes found. Build the Programme Library first.</p>
         </Card>
@@ -260,7 +260,7 @@ export function AssignFromLibraryPanel() {
   }
 
   return (
-    <div className="p-6 pt-0 md:p-8 md:pt-0">
+    <div id="assign-from-library" className="p-6 pt-0 md:p-8 md:pt-0">
       <section>
         <SectionHeader title="ASSIGN FROM LIBRARY" accent />
         <Card className="space-y-6">
@@ -291,7 +291,7 @@ export function AssignFromLibraryPanel() {
               </div>
               {selectedProgramme.description && <p className="text-sm text-gray-700">{selectedProgramme.description}</p>}
               <p className="mt-2 text-xs font-bold uppercase text-gray-500">
-                Creates {selectedProgrammeWorkouts.length} unscheduled workout{selectedProgrammeWorkouts.length === 1 ? '' : 's'} copied into this client only.
+                Creates {selectedProgrammeWorkouts.length} unscheduled workout{selectedProgrammeWorkouts.length === 1 ? '' : 's'} copied into this client only. This will become the only active programme.
               </p>
             </div>
           )}
@@ -327,10 +327,10 @@ export function AssignFromLibraryPanel() {
 
           <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <p className="text-xs font-semibold uppercase text-gray-500">
-              Assignment copies the library programme into client-specific tables, so future edits will not change the master library.
+              Assignment copies the library programme into client-specific tables and archives the previous active programme.
             </p>
             <Button type="button" disabled={saving} onClick={assignProgramme} className="bg-[#FA0201] hover:bg-red-700">
-              {saving ? 'Assigning...' : 'Assign programme from Library'}
+              {saving ? 'Assigning...' : 'Change active programme'}
             </Button>
           </div>
         </Card>
