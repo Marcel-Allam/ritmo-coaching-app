@@ -176,7 +176,6 @@ export default function CoachCalendarSettingsPage() {
     }
 
     const rulePayload = rules.map((rule) => ({
-      id: rule.id,
       coach_id: coachId,
       weekday: rule.weekday,
       is_available: rule.is_available,
