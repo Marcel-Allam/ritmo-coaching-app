@@ -306,7 +306,7 @@ export default function ClientProgramPage() {
         <SectionHeader title="CURRENT PROGRAMME DELIVERY" accent />
         <Card>
           {workouts.length === 0 ? (
-            <p className="text-sm text-gray-600">No active workouts assigned yet. Use Assign From Library below to copy a reusable programme into this client.</p>
+            <p className="text-sm text-gray-600">No active workouts assigned yet. Use Replace Active Programme below to copy a reusable programme into this client.</p>
           ) : (
             <div className="space-y-6">
               {programmeGroups.map((group) => (
@@ -319,6 +319,7 @@ export default function ClientProgramPage() {
                     </div>
                     <div className="flex flex-wrap gap-2 md:justify-end">
                       <Badge variant="default">{group.workouts.length} workout{group.workouts.length === 1 ? '' : 's'}</Badge>
+                      <Link href={`/coach/clients/${clientId}/current-workouts`} className="rounded-lg bg-[#FA0201] px-3 py-2 text-xs font-bold uppercase text-white hover:bg-red-700">Edit client programme</Link>
                       <Link href={`/coach/clients/${clientId}/schedule-workouts`} className="rounded-lg bg-[#000000] px-3 py-2 text-xs font-bold uppercase text-white hover:bg-gray-900">Schedule programme</Link>
                     </div>
                   </div>
@@ -345,7 +346,7 @@ export default function ClientProgramPage() {
                               {!workout.scheduled_date && !locked && (
                                 <Link href={`/coach/clients/${clientId}/schedule-workouts`} className="rounded-lg bg-[#FA0201] px-3 py-2 text-xs font-bold uppercase text-white hover:bg-red-700">Schedule</Link>
                               )}
-                              <Link href={`/coach/clients/${clientId}/current-workouts/${workout.id}/edit`} className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-bold uppercase text-[#000000] hover:bg-gray-50">Edit</Link>
+                              <Link href={`/coach/clients/${clientId}/current-workouts/${workout.id}/edit`} className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-bold uppercase text-[#000000] hover:bg-gray-50">Edit workout</Link>
                               {!locked && (
                                 <button type="button" onClick={() => deleteWorkout(workout)} disabled={deletingWorkoutId === workout.id} className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-xs font-bold uppercase text-[#FA0201] hover:bg-red-100 disabled:opacity-60">
                                   {deletingWorkoutId === workout.id ? 'Deleting...' : 'Delete'}
