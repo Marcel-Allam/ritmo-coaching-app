@@ -416,7 +416,12 @@ export default function CoachLibraryPage() {
 
       {!loading && !error && activeTab === 'equipment' && (
         <section>
-          <SectionHeader title="EQUIPMENT PROGRESSION DEFAULTS" accent />
+          <div className="mb-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <SectionHeader title="EQUIPMENT PROGRESSION DEFAULTS" accent />
+            <Link href="/coach/library/equipment">
+              <Button type="button" className="bg-[#FA0201] hover:bg-red-700">Edit Defaults</Button>
+            </Link>
+          </div>
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
             {equipmentTypes.map((equipment) => (
               <Card key={equipment.id}>
