@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { PageHeader } from '@/components/layout/page-header';
 import { Badge } from '@/components/ui/badge';
@@ -329,7 +328,7 @@ export default function ManageWorkoutLibraryPage() {
     <div className="space-y-8 p-6 md:p-8">
       <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
         <PageHeader title="MANAGE WORKOUT LIBRARY" subtitle="Create, edit and organise reusable workout templates for RITMO programmes." />
-        <Link href="/coach/library"><Button type="button" className="bg-[#FA0201] hover:bg-red-700">Back to Library</Button></Link>
+        <button type="button" onClick={() => window.history.back()} className="rounded-lg bg-[#FA0201] px-4 py-3 text-sm font-bold uppercase text-white hover:bg-red-700">Back to Library</button>
       </div>
 
       {message && <Card className="border-2 border-green-200 bg-green-50 text-sm font-semibold text-green-700">{message}</Card>}
