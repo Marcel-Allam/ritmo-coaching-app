@@ -197,12 +197,9 @@ const ProgrammeCard = ({
           <p className="text-sm text-gray-600">No workouts found inside this programme.</p>
         ) : program.workouts.map((workout) => (
           <div key={workout.id} className="rounded-lg border border-gray-200 bg-gray-50 p-3">
-            <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-              <div>
-                <p className="text-sm font-black uppercase text-[#000000]">Day {workout.workout_order || '-'} · {workout.title}</p>
-                <p className="mt-1 text-xs font-semibold uppercase text-gray-500">{formatDate(workout.scheduled_date)} · {workout.status}</p>
-              </div>
-              <Link href={`/coach/clients/${program.id}/current-workouts/${workout.id}/edit`} className="hidden" />
+            <div>
+              <p className="text-sm font-black uppercase text-[#000000]">Day {workout.workout_order || '-'} · {workout.title}</p>
+              <p className="mt-1 text-xs font-semibold uppercase text-gray-500">{formatDate(workout.scheduled_date)} · {workout.status}</p>
             </div>
             <div className="mt-3 space-y-2">
               {workout.exercises.length === 0 ? (
