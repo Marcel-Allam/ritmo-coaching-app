@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { SectionHeader } from '@/components/ui/section-header';
 import { TaskCard } from '@/components/ui/task-card';
 import { Input } from '@/components/ui/input';
+import { AssignFromLibraryPanel } from '@/components/coach/assign-from-library-panel';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
 
 interface ClientRecord {
@@ -199,7 +200,7 @@ const ProgrammeCard = ({
           </p>
         </button>
         <Link href={editHref} className="rounded-lg bg-[#FA0201] px-5 py-3 text-center text-sm font-bold uppercase text-white hover:bg-red-700">
-          Edit programme
+          Edit client plan
         </Link>
       </div>
 
@@ -536,11 +537,11 @@ export default function ClientProfilePage() {
               <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                 <div>
                   <p className="text-lg font-black uppercase text-[#000000]">No programme assigned</p>
-                  <p className="mt-1 text-sm text-gray-600">Assign a programme from the Library to create client-specific workouts.</p>
+                  <p className="mt-1 text-sm text-gray-600">Assign a programme from the Library to create editable client-specific workouts.</p>
                 </div>
-                <Link href={`/coach/clients/${clientId}/program`} className="rounded-lg bg-[#FA0201] px-5 py-3 text-center text-sm font-bold uppercase text-white hover:bg-red-700">
-                  Edit programme
-                </Link>
+                <a href="#assign-from-library" className="rounded-lg bg-[#FA0201] px-5 py-3 text-center text-sm font-bold uppercase text-white hover:bg-red-700">
+                  Create client plan
+                </a>
               </div>
             ) : (
               programmes.map((program) => (
@@ -554,6 +555,7 @@ export default function ClientProfilePage() {
               ))
             )}
           </Card>
+          <AssignFromLibraryPanel embedded />
         </div>
 
         <div>
@@ -618,87 +620,67 @@ export default function ClientProfilePage() {
               <FutureAnalyticsCard title="Exercise progress" description="Interactive lift-specific graphs for load, reps, estimated strength, and progression history." />
               <FutureAnalyticsCard title="Volume trend" description="Weekly hard sets, total load, and training density by muscle group or movement pattern." />
               <FutureAnalyticsCard title="Bodyweight trend" description="Client bodyweight, adherence, and nutrition trend overlays for coaching decisions." />
-              <FutureAnalyticsCard title="Performance timeline" description="Major PRs, missed sessions, pain reports, and coach feedback shown as a single timeline." />
+              <FutureAnalyticsCard title="Risk signals" description="Auto-flag missed sessions, low adherence, repeated difficulty notes, or stalled lifts." />
             </div>
           </Card>
         </div>
 
         <div>
-          <SectionHeader title="CLIENT DETAILS" accent />
-          <Card>
-            <div className="grid grid-cols-1 gap-6 text-sm md:grid-cols-3">
-              <div><p className="text-xs font-bold uppercase text-gray-500">Start Date</p><p className="mt-1 text-gray-800">{formatDate(client.start_date)}</p></div>
-              <div><p className="text-xs font-bold uppercase text-gray-500">Next Review</p><p className="mt-1 text-gray-800">{formatDate(client.next_review_date)}</p></div>
-              <div><p className="text-xs font-bold uppercase text-gray-500">Next Call</p><p className="mt-1 text-gray-800">{formatDate(client.next_call_date)}</p></div>
-            </div>
-          </Card>
-        </div>
-
-        <div>
-          <div className="flex items-start justify-between gap-4">
-            <SectionHeader title="ASSIGNED TASKS" accent />
-            <div className="mb-4 flex flex-col items-end gap-2">
-              <button type="button" onClick={() => setIsTaskFormOpen(true)} className="rounded-lg bg-[#FA0201] px-4 py-2 text-sm font-bold uppercase text-white hover:bg-red-700">Assign Task</button>
-              <Link href={`/coach/clients/${clientId}/current-workouts`} className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-bold uppercase text-[#000000] hover:bg-gray-100">Current Workouts</Link>
-            </div>
+          <SectionHeader title="ASSIGNED TASKS" accent />
+          <div className="mb-4 flex justify-end">
+            <button type="button" onClick={() => setIsTaskFormOpen((value) => !value)} className="rounded-lg bg-[#FA0201] px-4 py-2 text-sm font-bold uppercase text-white hover:bg-red-700">
+              {isTaskFormOpen ? 'Close Task Form' : 'Assign Task'}
+            </button>
           </div>
 
           {isTaskFormOpen && (
-            <Card className="mb-4 border-2 border-[#FA0201]">
-              <form onSubmit={handleCreateTask} className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <div>
-                  <label className="mb-2 block text-xs font-bold uppercase text-gray-600">Task</label>
-                  <select value={taskForm.taskType} onChange={(event) => setTaskForm((current) => ({ ...current, taskType: event.target.value }))} className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm text-[#000000]">
-                    {taskOptions.map((task) => (
-                      <option key={task.value} value={task.value}>{task.label}</option>
-                    ))}
-                  </select>
+            <Card className="mb-5 border-2 border-[#FA0201]">
+              <form onSubmit={handleCreateTask} className="space-y-4">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                  <label>
+                    <span className="mb-2 block text-sm font-semibold uppercase">Task type</span>
+                    <select value={taskForm.taskType} onChange={(event) => setTaskForm({ ...taskForm, taskType: event.target.value })} className="w-full rounded-lg border-2 border-gray-300 px-4 py-2 text-black">
+                      {taskOptions.map((task) => <option key={task.value} value={task.value}>{task.label}</option>)}
+                    </select>
+                  </label>
+                  <label>
+                    <span className="mb-2 block text-sm font-semibold uppercase">Frequency</span>
+                    <select value={taskForm.frequency} onChange={(event) => setTaskForm({ ...taskForm, frequency: event.target.value })} className="w-full rounded-lg border-2 border-gray-300 px-4 py-2 text-black">
+                      <option value="daily">Daily</option>
+                      <option value="weekly">Weekly</option>
+                      <option value="one_off">One-off</option>
+                    </select>
+                  </label>
+                  <Input label="End date" type="date" value={taskForm.endDate} onChange={(event) => setTaskForm({ ...taskForm, endDate: event.target.value })} />
                 </div>
-                <div>
-                  <label className="mb-2 block text-xs font-bold uppercase text-gray-600">Frequency</label>
-                  <select value={taskForm.frequency} onChange={(event) => setTaskForm((current) => ({ ...current, frequency: event.target.value }))} className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm text-[#000000]">
-                    <option value="daily">Daily</option>
-                    <option value="weekly">Weekly</option>
-                    <option value="per_workout">Per workout</option>
-                    <option value="one_off">One-off</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="mb-2 block text-xs font-bold uppercase text-gray-600">Due / End Date</label>
-                  <Input type="date" value={taskForm.endDate} onChange={(event) => setTaskForm((current) => ({ ...current, endDate: event.target.value }))} />
-                </div>
-                <div className="md:col-span-2">
-                  <label className="mb-2 block text-xs font-bold uppercase text-gray-600">Instructions</label>
-                  <textarea value={taskForm.instructions} onChange={(event) => setTaskForm((current) => ({ ...current, instructions: event.target.value }))} placeholder="Add the exact instruction the client should follow." className="min-h-24 w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm text-[#000000]" />
-                </div>
-                <div className="flex justify-end gap-3 md:col-span-2">
-                  <button type="button" onClick={() => setIsTaskFormOpen(false)} className="rounded-lg bg-gray-200 px-5 py-3 text-sm font-bold uppercase text-[#000000] hover:bg-gray-300">Cancel</button>
-                  <button type="submit" disabled={isSavingTask} className="rounded-lg bg-[#FA0201] px-5 py-3 text-sm font-bold uppercase text-white hover:bg-red-700 disabled:opacity-60">{isSavingTask ? 'Saving...' : 'Save Task'}</button>
-                </div>
+                <label>
+                  <span className="mb-2 block text-sm font-semibold uppercase">Instructions</span>
+                  <textarea value={taskForm.instructions} onChange={(event) => setTaskForm({ ...taskForm, instructions: event.target.value })} rows={3} className="w-full rounded-lg border-2 border-gray-300 px-4 py-2 text-black" placeholder="Tell the client what to submit and how often." />
+                </label>
+                <button type="submit" disabled={isSavingTask} className="rounded-lg bg-black px-5 py-3 text-sm font-bold uppercase text-white hover:bg-gray-900 disabled:opacity-60">
+                  {isSavingTask ? 'Assigning...' : 'Assign Task'}
+                </button>
               </form>
             </Card>
           )}
 
-          <div className="space-y-4">
-            {tasks.length === 0 ? <Card><p className="text-sm text-gray-600">No active tasks assigned.</p></Card> : tasks.map((task) => (
-              <TaskCard key={task.id} title={task.task_name} meta={`${getTaskLabel(task.task_type)} • ${task.frequency}`} status={isTaskComplete(task) ? 'Complete' : 'Pending'}>
-                <p className="text-sm text-gray-700">{task.instructions || 'No additional instructions.'}</p>
-                {task.end_date && <p className="mt-2 text-xs font-semibold text-gray-500">Ends: {formatDate(task.end_date)}</p>}
-              </TaskCard>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            {tasks.map((task) => (
+              <TaskCard key={task.id} title={task.task_name} description={`${task.frequency}${task.end_date ? ` until ${formatDate(task.end_date)}` : ''}`} completed={isTaskComplete(task)} href={`/coach/actions/tasks/${task.id}`} />
             ))}
           </div>
         </div>
 
         <div>
-          <SectionHeader title="LATEST SUBMISSIONS" accent />
-          <div className="space-y-4">
-            {submissions.length === 0 ? <Card><p className="text-sm text-gray-600">No recent submissions.</p></Card> : submissions.map((submission) => (
-              <Link key={submission.id} href={getSubmissionHref(submission)} className="block">
-                <Card className="transition hover:border-[#FA0201] hover:shadow-md">
-                  <div className="flex items-center justify-between gap-4">
+          <SectionHeader title="RECENT SUBMISSIONS" accent />
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            {submissions.map((submission) => (
+              <Link key={submission.id} href={getSubmissionHref(submission)}>
+                <Card className="hover:border-[#FA0201]">
+                  <div className="flex items-center justify-between gap-3">
                     <div>
-                      <p className="text-sm font-bold uppercase text-[#000000]">{getTaskLabel(submission.submission_type)}</p>
-                      <p className="text-xs text-gray-500">Submitted {formatDate(submission.submitted_at)}</p>
+                      <p className="font-bold uppercase text-[#000000]">{submission.submission_type.replaceAll('_', ' ')}</p>
+                      <p className="text-sm text-gray-600">Submitted {formatDate(submission.submitted_at)}</p>
                     </div>
                     <Badge variant={submission.review_status === 'reviewed' ? 'success' : 'warning'}>{submission.review_status}</Badge>
                   </div>
