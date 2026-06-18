@@ -29,7 +29,6 @@ type ProgrammeWorkout = {
   library_programme_id: string;
   library_workout_id: string;
   workout_order: number;
-  day_label: string | null;
   notes: string | null;
 };
 
@@ -42,7 +41,6 @@ type ProgrammeForm = {
 type ProgrammeWorkoutForm = {
   libraryWorkoutId: string;
   workoutOrder: string;
-  dayLabel: string;
   notes: string;
 };
 
@@ -55,7 +53,6 @@ const blankProgrammeForm: ProgrammeForm = {
 const blankProgrammeWorkoutForm: ProgrammeWorkoutForm = {
   libraryWorkoutId: '',
   workoutOrder: '1',
-  dayLabel: '',
   notes: '',
 };
 
@@ -74,7 +71,6 @@ const programmeToForm = (programme: Programme): ProgrammeForm => ({
 const programmeWorkoutToForm = (programmeWorkout: ProgrammeWorkout): ProgrammeWorkoutForm => ({
   libraryWorkoutId: programmeWorkout.library_workout_id,
   workoutOrder: String(programmeWorkout.workout_order),
-  dayLabel: programmeWorkout.day_label || '',
   notes: programmeWorkout.notes || '',
 });
 
@@ -124,7 +120,6 @@ export default function ProgrammeLibraryPage() {
         programme.category,
         getProgrammeDescription(programme),
         ...programmeItems.map((item) => workoutsById[item.library_workout_id]?.name || ''),
-        ...programmeItems.map((item) => item.day_label || ''),
       ]
         .filter(Boolean)
         .join(' ')
@@ -160,7 +155,7 @@ export default function ProgrammeLibraryPage() {
     const programmeWorkoutResult = programmeIds.length
       ? await supabase
           .from('library_programme_workouts')
-          .select('id, library_programme_id, library_workout_id, workout_order, day_label, notes')
+          .select('id, library_programme_id, library_workout_id, workout_order, notes')
           .in('library_programme_id', programmeIds)
           .order('workout_order')
       : { data: [], error: null };
@@ -189,7 +184,6 @@ export default function ProgrammeLibraryPage() {
     setNewProgrammeWorkoutForm({
       libraryWorkoutId: nextWorkouts.find((workout) => workout.is_active)?.id || '',
       workoutOrder: String(retainedProgrammeWorkouts.length + 1),
-      dayLabel: retainedProgrammeWorkouts.length === 0 ? 'Day 1' : '',
       notes: '',
     });
 
@@ -214,7 +208,6 @@ export default function ProgrammeLibraryPage() {
       ...current,
       libraryWorkoutId: current.libraryWorkoutId || libraryWorkouts.find((workout) => workout.is_active)?.id || '',
       workoutOrder: String(nextOrder),
-      dayLabel: `Day ${nextOrder}`,
     }));
     setMessage(null);
     setError(null);
@@ -229,7 +222,6 @@ export default function ProgrammeLibraryPage() {
       ...current,
       libraryWorkoutId: current.libraryWorkoutId || libraryWorkouts.find((workout) => workout.is_active)?.id || '',
       workoutOrder: '1',
-      dayLabel: 'Day 1',
       notes: '',
     }));
     setMessage(null);
@@ -365,7 +357,7 @@ export default function ProgrammeLibraryPage() {
       library_programme_id: selectedProgrammeId,
       library_workout_id: newProgrammeWorkoutForm.libraryWorkoutId,
       workout_order: toIntegerOrFallback(newProgrammeWorkoutForm.workoutOrder, selectedProgrammeWorkouts.length + 1),
-      day_label: newProgrammeWorkoutForm.dayLabel.trim() || null,
+      day_label: null,
       notes: newProgrammeWorkoutForm.notes.trim() || null,
       updated_at: new Date().toISOString(),
     });
@@ -400,7 +392,7 @@ export default function ProgrammeLibraryPage() {
       .update({
         library_workout_id: edit.libraryWorkoutId,
         workout_order: toIntegerOrFallback(edit.workoutOrder, programmeWorkout.workout_order),
-        day_label: edit.dayLabel.trim() || null,
+        day_label: null,
         notes: edit.notes.trim() || null,
         updated_at: new Date().toISOString(),
       })
@@ -490,11 +482,11 @@ export default function ProgrammeLibraryPage() {
       <Card className="space-y-5">
         <div>
           <h2 className="text-xl font-black uppercase text-[#000000]">Workouts in programme</h2>
-          <p className="mt-1 text-sm text-gray-600">Add reusable workout templates and order them as programme days.</p>
+          <p className="mt-1 text-sm text-gray-600">Add reusable workout templates and order them as programme sessions.</p>
         </div>
 
         <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_0.18fr_0.28fr] md:items-end">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_0.18fr] md:items-end">
             <label>
               <span className="text-xs font-black uppercase text-gray-500">Workout Library item</span>
               <select value={newProgrammeWorkoutForm.libraryWorkoutId} onChange={(event) => setNewProgrammeWorkoutForm((current) => ({ ...current, libraryWorkoutId: event.target.value }))} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm">
@@ -506,11 +498,7 @@ export default function ProgrammeLibraryPage() {
               <span className="text-xs font-black uppercase text-gray-500">Order</span>
               <input value={newProgrammeWorkoutForm.workoutOrder} onChange={(event) => setNewProgrammeWorkoutForm((current) => ({ ...current, workoutOrder: event.target.value }))} className="mt-1 w-full rounded-lg border border-gray-300 px-4 py-3 text-sm" />
             </label>
-            <label>
-              <span className="text-xs font-black uppercase text-gray-500">Day label</span>
-              <input value={newProgrammeWorkoutForm.dayLabel} onChange={(event) => setNewProgrammeWorkoutForm((current) => ({ ...current, dayLabel: event.target.value }))} placeholder="e.g. Day 1" className="mt-1 w-full rounded-lg border border-gray-300 px-4 py-3 text-sm" />
-            </label>
-            <label className="md:col-span-3">
+            <label className="md:col-span-2">
               <span className="text-xs font-black uppercase text-gray-500">Notes</span>
               <input value={newProgrammeWorkoutForm.notes} onChange={(event) => setNewProgrammeWorkoutForm((current) => ({ ...current, notes: event.target.value }))} className="mt-1 w-full rounded-lg border border-gray-300 px-4 py-3 text-sm" />
             </label>
@@ -532,7 +520,7 @@ export default function ProgrammeLibraryPage() {
                   <Badge variant="default">#{item.workout_order}</Badge>
                   <div>
                     <p className="text-sm font-black uppercase text-[#000000]">{workout?.name || 'Missing workout'}</p>
-                    <p className="mt-1 text-xs font-bold uppercase text-gray-500">{item.day_label || `Day ${item.workout_order}`}{workout?.category ? ` · ${workout.category}` : ''}</p>
+                    <p className="mt-1 text-xs font-bold uppercase text-gray-500">{workout?.category || 'Workout template'}</p>
                     {item.notes && <p className="mt-1 text-xs text-gray-600">{item.notes}</p>}
                   </div>
                   <button type="button" onClick={() => (isEditing ? saveProgrammeWorkout(item) : setEditingProgrammeWorkoutId(item.id))} className="rounded-lg bg-[#FA0201] px-4 py-2 text-xs font-bold uppercase text-white hover:bg-red-700 disabled:opacity-60" disabled={saving}>{isEditing ? 'Save workout' : 'Edit'}</button>
@@ -540,7 +528,7 @@ export default function ProgrammeLibraryPage() {
 
                 {isEditing && (
                   <div className="mt-4 space-y-4 rounded-xl border border-gray-200 bg-white p-4">
-                    <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_0.18fr_0.28fr] md:items-end">
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_0.18fr] md:items-end">
                       <label>
                         <span className="text-xs font-black uppercase text-gray-500">Workout</span>
                         <select value={edit.libraryWorkoutId} onChange={(event) => setProgrammeWorkoutEdits((current) => ({ ...current, [item.id]: { ...edit, libraryWorkoutId: event.target.value } }))} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm">
@@ -552,11 +540,7 @@ export default function ProgrammeLibraryPage() {
                         <span className="text-xs font-black uppercase text-gray-500">Order</span>
                         <input value={edit.workoutOrder} onChange={(event) => setProgrammeWorkoutEdits((current) => ({ ...current, [item.id]: { ...edit, workoutOrder: event.target.value } }))} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
                       </label>
-                      <label>
-                        <span className="text-xs font-black uppercase text-gray-500">Day label</span>
-                        <input value={edit.dayLabel} onChange={(event) => setProgrammeWorkoutEdits((current) => ({ ...current, [item.id]: { ...edit, dayLabel: event.target.value } }))} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
-                      </label>
-                      <label className="md:col-span-3">
+                      <label className="md:col-span-2">
                         <span className="text-xs font-black uppercase text-gray-500">Notes</span>
                         <input value={edit.notes} onChange={(event) => setProgrammeWorkoutEdits((current) => ({ ...current, [item.id]: { ...edit, notes: event.target.value } }))} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
                       </label>
@@ -585,9 +569,14 @@ export default function ProgrammeLibraryPage() {
               {selectedProgramme ? `${selectedProgramme.category} · ${selectedProgrammeWorkouts.length} workout${selectedProgrammeWorkouts.length === 1 ? '' : 's'}` : 'Set up the template details first, then add workouts after saving.'}
             </p>
           </div>
-          <button type="button" onClick={saveProgramme} disabled={saving} className="rounded-lg bg-[#FA0201] px-4 py-3 text-sm font-bold uppercase text-white hover:bg-red-700 disabled:opacity-60">
-            {saving ? 'Saving...' : isCreatingProgramme ? 'Create programme' : 'Save programme'}
-          </button>
+          <div className="flex flex-col gap-2 md:flex-row md:items-center">
+            <button type="button" onClick={resetProgrammeBuilder} disabled={saving} className="rounded-lg border border-white/30 bg-white/10 px-4 py-3 text-sm font-bold uppercase text-white hover:bg-white/20 disabled:opacity-60">
+              Close
+            </button>
+            <button type="button" onClick={saveProgramme} disabled={saving} className="rounded-lg bg-[#FA0201] px-4 py-3 text-sm font-bold uppercase text-white hover:bg-red-700 disabled:opacity-60">
+              {saving ? 'Saving...' : isCreatingProgramme ? 'Create programme' : 'Save programme'}
+            </button>
+          </div>
         </div>
         <div className="flex-1 space-y-5 overflow-y-auto bg-gray-100 p-4 md:p-6">
           {message && <Card className="border-2 border-green-200 bg-green-50 text-sm font-semibold text-green-700">{message}</Card>}
@@ -621,7 +610,7 @@ export default function ProgrammeLibraryPage() {
               <input
                 value={programmeSearch}
                 onChange={(event) => setProgrammeSearch(event.target.value)}
-                placeholder="Search by programme, category, description, day, or workout..."
+                placeholder="Search by programme, category, description, or workout..."
                 className="mt-1 w-full rounded-lg border border-gray-300 px-4 py-3 text-sm"
               />
             </label>
