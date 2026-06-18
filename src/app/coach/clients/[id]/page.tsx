@@ -58,6 +58,16 @@ interface ClientSnapshot {
   latestFeedback: LatestFeedbackRecord | null;
 }
 
+type ProgramRecord = { id: string; title: string; goal: string | null; status: string; created_at: string };
+type ProgramWorkoutRecord = { id: string; program_id: string; title: string; workout_order: number; scheduled_date: string | null; status: string };
+type ProgramExerciseRecord = { id: string; workout_id: string; exercise_order: number; exercise_name: string };
+type ProgramSetRecord = { id: string; exercise_id: string; set_order: number; target_reps: string | null; target_weight_kg: number | null; target_rpe: number | null };
+type ProgramOverview = ProgramRecord & {
+  workouts: Array<ProgramWorkoutRecord & {
+    exercises: Array<ProgramExerciseRecord & { sets: ProgramSetRecord[] }>;
+  }>;
+};
+
 const emptyTaskForm = {
   taskType: 'weekly_checkin',
   frequency: 'weekly',
@@ -117,6 +127,16 @@ const getCurrentWeekRange = () => {
   };
 };
 
+const getSetSummary = (sets: ProgramSetRecord[]) => {
+  if (sets.length === 0) return 'No prescribed sets';
+  const reps = sets.map((set) => set.target_reps || '?').join(' / ');
+  const hasLoads = sets.some((set) => set.target_weight_kg !== null && set.target_weight_kg !== undefined);
+  const loadLabel = hasLoads
+    ? ` • ${sets.map((set) => (set.target_weight_kg !== null && set.target_weight_kg !== undefined ? `${set.target_weight_kg}kg` : 'bodyweight')).join(' / ')}`
+    : '';
+  return `${sets.length} set${sets.length === 1 ? '' : 's'} × ${reps} reps${loadLabel}`;
+};
+
 const SnapshotMetric = ({ label, value, helper }: { label: string; value: string | number; helper: string }) => (
   <div className="rounded-xl border border-gray-200 bg-white p-4">
     <p className="text-xs font-bold uppercase text-gray-500">{label}</p>
@@ -143,6 +163,64 @@ const FutureAnalyticsCard = ({ title, description }: { title: string; descriptio
   </div>
 );
 
+const ProgrammeCard = ({
+  program,
+  isExpanded,
+  onToggle,
+  editHref,
+}: {
+  program: ProgramOverview;
+  isExpanded: boolean;
+  onToggle: () => void;
+  editHref: string;
+}) => (
+  <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+    <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+      <button type="button" onClick={onToggle} className="text-left">
+        <div className="flex items-center gap-2">
+          <p className="text-lg font-black uppercase tracking-tight text-[#000000]">{program.title || 'Untitled programme'}</p>
+          <span className="text-lg font-black text-[#FA0201]">{isExpanded ? '▴' : '▾'}</span>
+        </div>
+        <p className="mt-1 text-xs font-bold uppercase text-gray-500">
+          {program.workouts.length} workout{program.workouts.length === 1 ? '' : 's'} assigned
+          {program.goal ? ` • ${program.goal}` : ''}
+        </p>
+      </button>
+      <Link href={editHref} className="rounded-lg bg-[#FA0201] px-5 py-3 text-center text-sm font-bold uppercase text-white hover:bg-red-700">
+        Edit programme
+      </Link>
+    </div>
+
+    {isExpanded && (
+      <div className="mt-4 space-y-3 border-t border-gray-200 pt-4">
+        {program.workouts.length === 0 ? (
+          <p className="text-sm text-gray-600">No workouts found inside this programme.</p>
+        ) : program.workouts.map((workout) => (
+          <div key={workout.id} className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+            <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+              <div>
+                <p className="text-sm font-black uppercase text-[#000000]">Day {workout.workout_order || '-'} · {workout.title}</p>
+                <p className="mt-1 text-xs font-semibold uppercase text-gray-500">{formatDate(workout.scheduled_date)} · {workout.status}</p>
+              </div>
+              <Link href={`/coach/clients/${program.id}/current-workouts/${workout.id}/edit`} className="hidden" />
+            </div>
+            <div className="mt-3 space-y-2">
+              {workout.exercises.length === 0 ? (
+                <p className="text-xs text-gray-600">No exercises added yet.</p>
+              ) : workout.exercises.map((exercise) => (
+                <div key={exercise.id} className="rounded bg-white px-3 py-2 text-xs text-gray-700">
+                  <span className="font-black uppercase text-[#000000]">{exercise.exercise_name}</span>
+                  <span className="ml-2 font-semibold text-gray-600">{getSetSummary(exercise.sets)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    )}
+  </div>
+);
+
 export default function ClientProfilePage() {
   const params = useParams();
   const clientId = params.id as string;
@@ -151,6 +229,8 @@ export default function ClientProfilePage() {
   const [tasks, setTasks] = useState<AssignedTaskRecord[]>([]);
   const [submissions, setSubmissions] = useState<SubmissionRecord[]>([]);
   const [snapshot, setSnapshot] = useState<ClientSnapshot>(emptySnapshot);
+  const [programmes, setProgrammes] = useState<ProgramOverview[]>([]);
+  const [expandedProgrammeIds, setExpandedProgrammeIds] = useState<Set<string>>(new Set());
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isTaskFormOpen, setIsTaskFormOpen] = useState(false);
@@ -159,6 +239,74 @@ export default function ClientProfilePage() {
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [isCreatingInvite, setIsCreatingInvite] = useState(false);
   const [inviteMessage, setInviteMessage] = useState<string | null>(null);
+
+  const loadProgrammeOverview = async (supabase: ReturnType<typeof createClient>) => {
+    const programResult = await supabase
+      .from('training_programs')
+      .select('id, title, goal, status, created_at')
+      .eq('client_id', clientId)
+      .neq('status', 'archived')
+      .order('created_at', { ascending: false });
+
+    if (programResult.error) throw programResult.error;
+
+    const loadedPrograms = (programResult.data ?? []) as ProgramRecord[];
+    const programIds = loadedPrograms.map((program) => program.id);
+    if (programIds.length === 0) return [];
+
+    const workoutResult = await supabase
+      .from('program_workouts')
+      .select('id, program_id, title, workout_order, scheduled_date, status')
+      .in('program_id', programIds)
+      .neq('status', 'archived')
+      .order('workout_order', { ascending: true })
+      .order('created_at', { ascending: true });
+
+    if (workoutResult.error) throw workoutResult.error;
+
+    const loadedWorkouts = (workoutResult.data ?? []) as ProgramWorkoutRecord[];
+    const workoutIds = loadedWorkouts.map((workout) => workout.id);
+    if (workoutIds.length === 0) {
+      return loadedPrograms.map((program) => ({ ...program, workouts: [] }));
+    }
+
+    const exerciseResult = await supabase
+      .from('program_exercises')
+      .select('id, workout_id, exercise_order, exercise_name')
+      .in('workout_id', workoutIds)
+      .order('exercise_order', { ascending: true });
+
+    if (exerciseResult.error) throw exerciseResult.error;
+
+    const loadedExercises = (exerciseResult.data ?? []) as ProgramExerciseRecord[];
+    const exerciseIds = loadedExercises.map((exercise) => exercise.id);
+    const setResult = exerciseIds.length > 0
+      ? await supabase
+          .from('program_sets')
+          .select('id, exercise_id, set_order, target_reps, target_weight_kg, target_rpe')
+          .in('exercise_id', exerciseIds)
+          .order('set_order', { ascending: true })
+      : { data: [], error: null };
+
+    if (setResult.error) throw setResult.error;
+
+    const loadedSets = (setResult.data ?? []) as ProgramSetRecord[];
+
+    return loadedPrograms.map((program) => ({
+      ...program,
+      workouts: loadedWorkouts
+        .filter((workout) => workout.program_id === program.id)
+        .map((workout) => ({
+          ...workout,
+          exercises: loadedExercises
+            .filter((exercise) => exercise.workout_id === workout.id)
+            .map((exercise) => ({
+              ...exercise,
+              sets: loadedSets.filter((set) => set.exercise_id === exercise.id),
+            })),
+        })),
+    }));
+  };
 
   const loadClientProfile = async () => {
     if (!isSupabaseConfigured) {
@@ -187,6 +335,16 @@ export default function ClientProfilePage() {
       return;
     }
 
+    try {
+      const programmeOverview = await loadProgrammeOverview(supabase);
+      setProgrammes(programmeOverview);
+      if (programmeOverview[0]) setExpandedProgrammeIds(new Set([programmeOverview[0].id]));
+    } catch (programmeError) {
+      setError(programmeError instanceof Error ? programmeError.message : 'Could not load programme summary.');
+      setIsLoading(false);
+      return;
+    }
+
     const workoutsScheduledThisWeek = scheduledWorkoutsResult.data?.length ?? 0;
     const workoutsCompletedThisWeek = completedWorkoutsResult.data?.length ?? 0;
 
@@ -208,6 +366,15 @@ export default function ClientProfilePage() {
   useEffect(() => {
     loadClientProfile();
   }, [clientId]);
+
+  const toggleProgramme = (programId: string) => {
+    setExpandedProgrammeIds((current) => {
+      const next = new Set(current);
+      if (next.has(programId)) next.delete(programId);
+      else next.add(programId);
+      return next;
+    });
+  };
 
   const handleCreateInvite = async () => {
     if (!isSupabaseConfigured || !client) return;
@@ -320,7 +487,6 @@ export default function ClientProfilePage() {
                 {isCreatingInvite ? 'Creating invite...' : 'Invite Client'}
               </button>
             )}
-            <Link href={`/coach/clients/${clientId}/program`} className="rounded-lg bg-[#FA0201] px-4 py-2 text-sm font-bold uppercase text-white hover:bg-red-700">Programme</Link>
             <Link href={`/coach/clients/${clientId}/settings`} className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-bold uppercase text-[#000000] hover:bg-gray-100">Client Settings</Link>
             <Link href="/coach/clients" className="text-sm font-semibold uppercase text-[#FA0201] hover:underline">Back to Clients</Link>
           </div>
@@ -342,6 +508,33 @@ export default function ClientProfilePage() {
       </div>
 
       <div className="space-y-8">
+        <div>
+          <SectionHeader title="PROGRAMME" accent />
+          <Card className="space-y-4">
+            {programmes.length === 0 ? (
+              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <p className="text-lg font-black uppercase text-[#000000]">No programme assigned</p>
+                  <p className="mt-1 text-sm text-gray-600">Assign a programme from the Library to create client-specific workouts.</p>
+                </div>
+                <Link href={`/coach/clients/${clientId}/program`} className="rounded-lg bg-[#FA0201] px-5 py-3 text-center text-sm font-bold uppercase text-white hover:bg-red-700">
+                  Edit programme
+                </Link>
+              </div>
+            ) : (
+              programmes.map((program) => (
+                <ProgrammeCard
+                  key={program.id}
+                  program={program}
+                  isExpanded={expandedProgrammeIds.has(program.id)}
+                  onToggle={() => toggleProgramme(program.id)}
+                  editHref={`/coach/clients/${clientId}/program`}
+                />
+              ))
+            )}
+          </Card>
+        </div>
+
         <div>
           <SectionHeader title="CLIENT SNAPSHOT" accent />
           <Card>
