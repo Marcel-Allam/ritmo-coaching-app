@@ -29,12 +29,28 @@ const setToForm = (set: WorkoutSet): SetForm => ({
 
 const emptySetForm = (order: number): SetForm => ({ setOrder: String(order), targetReps: '', targetWeightKg: '', targetRpe: '', notes: '' });
 
+const summariseSets = (sets: WorkoutSet[]) => {
+  if (sets.length === 0) return 'No prescribed sets yet';
+
+  const reps = Array.from(new Set(sets.map((set) => set.target_reps).filter(Boolean))).join('/');
+  const rpe = Array.from(new Set(sets.map((set) => set.target_rpe).filter((value) => value !== null && value !== undefined))).join('/');
+  const kg = Array.from(new Set(sets.map((set) => set.target_weight_kg).filter((value) => value !== null && value !== undefined))).join('/');
+
+  return [
+    `${sets.length} set${sets.length === 1 ? '' : 's'}`,
+    reps ? `${reps} reps` : null,
+    kg ? `${kg}kg` : null,
+    rpe ? `RPE ${rpe}` : null,
+  ].filter(Boolean).join(' · ');
+};
+
 export default function ManageWorkoutLibraryPage() {
   const [workouts, setWorkouts] = useState<Workout[]>([]);
   const [catalogue, setCatalogue] = useState<CatalogueExercise[]>([]);
   const [exercises, setExercises] = useState<WorkoutExercise[]>([]);
   const [sets, setSets] = useState<WorkoutSet[]>([]);
   const [selectedWorkoutId, setSelectedWorkoutId] = useState<string | null>(null);
+  const [editingExerciseId, setEditingExerciseId] = useState<string | null>(null);
   const [isCreatingWorkout, setIsCreatingWorkout] = useState(false);
   const [workoutForm, setWorkoutForm] = useState<WorkoutForm>(blankWorkoutForm);
   const [selectedExerciseId, setSelectedExerciseId] = useState('');
@@ -52,7 +68,9 @@ export default function ManageWorkoutLibraryPage() {
 
   const selectedWorkoutExercises = useMemo(() => {
     if (!selectedWorkoutId) return [];
-    return exercises.filter((exercise) => exercise.library_workout_id === selectedWorkoutId).sort((a, b) => a.exercise_order - b.exercise_order);
+    return exercises
+      .filter((exercise) => exercise.library_workout_id === selectedWorkoutId)
+      .sort((a, b) => a.exercise_order - b.exercise_order);
   }, [exercises, selectedWorkoutId]);
 
   const setsByExercise = useMemo(() => {
@@ -134,6 +152,7 @@ export default function ManageWorkoutLibraryPage() {
 
   const chooseWorkout = (workout: Workout) => {
     setIsCreatingWorkout(false);
+    setEditingExerciseId(null);
     setSelectedWorkoutId(workout.id);
     setWorkoutForm({ name: workout.name, category: workout.category, goal: workout.goal || '', instructions: workout.instructions || '' });
     setExerciseOrder(String(exercises.filter((exercise) => exercise.library_workout_id === workout.id).length + 1));
@@ -143,6 +162,7 @@ export default function ManageWorkoutLibraryPage() {
 
   const startNewWorkout = () => {
     setIsCreatingWorkout(true);
+    setEditingExerciseId(null);
     setSelectedWorkoutId(null);
     setWorkoutForm(blankWorkoutForm);
     setMessage(null);
@@ -202,6 +222,7 @@ export default function ManageWorkoutLibraryPage() {
     setMessage('Workout template archived.');
     setSaving(false);
     setSelectedWorkoutId(null);
+    setEditingExerciseId(null);
     await loadManager(null);
   };
 
@@ -365,7 +386,7 @@ export default function ManageWorkoutLibraryPage() {
                   <div className="space-y-5">
                     {renderWorkoutEditor()}
                     <Card className="space-y-5">
-                      <div><h2 className="text-xl font-black uppercase text-[#000000]">Exercises and prescribed sets</h2><p className="mt-1 text-sm text-gray-600">Add exercises from the Exercise Library, reorder them, and edit their prescribed sets.</p></div>
+                      <div><h2 className="text-xl font-black uppercase text-[#000000]">Exercises and prescribed sets</h2><p className="mt-1 text-sm text-gray-600">Exercises stay compact by default. Open only the one you want to edit.</p></div>
                       <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
                         <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_0.18fr] md:items-end">
                           <label><span className="text-xs font-black uppercase text-gray-500">Exercise Library item</span><select value={selectedExerciseId} onChange={(event) => setSelectedExerciseId(event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm">{catalogue.map((exercise) => <option key={exercise.id} value={exercise.id}>{exercise.name}</option>)}</select></label>
@@ -375,32 +396,50 @@ export default function ManageWorkoutLibraryPage() {
                         <div className="mt-3 flex justify-end"><Button type="button" disabled={saving || catalogue.length === 0} onClick={addExercise} className="bg-[#FA0201] hover:bg-red-700">Add exercise</Button></div>
                       </div>
 
-                      <div className="space-y-4">
+                      <div className="space-y-3">
                         {selectedWorkoutExercises.length === 0 ? <p className="rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-600">No exercises in this workout yet.</p> : selectedWorkoutExercises.map((exercise) => {
                           const edit = exerciseEdits[exercise.id] || { name: exercise.exercise_name, order: String(exercise.exercise_order), notes: exercise.notes || '' };
                           const exerciseSets = (setsByExercise[exercise.id] || []).sort((a, b) => a.set_order - b.set_order);
                           const newSetForm = newSetForms[exercise.id] || emptySetForm(exerciseSets.length + 1);
+                          const isEditingExercise = editingExerciseId === exercise.id;
+
                           return (
-                            <div key={exercise.id} className="rounded-2xl border-2 border-gray-200 bg-gray-50 p-4">
-                              <div className="grid grid-cols-1 gap-3 md:grid-cols-[0.16fr_1fr] md:items-end">
-                                <label><span className="text-xs font-black uppercase text-gray-500">Order</span><input value={edit.order} onChange={(event) => setExerciseEdits((current) => ({ ...current, [exercise.id]: { ...edit, order: event.target.value } }))} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" /></label>
-                                <label><span className="text-xs font-black uppercase text-gray-500">Exercise</span><input value={edit.name} onChange={(event) => setExerciseEdits((current) => ({ ...current, [exercise.id]: { ...edit, name: event.target.value } }))} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" /></label>
-                                <label className="md:col-span-2"><span className="text-xs font-black uppercase text-gray-500">Notes</span><input value={edit.notes} onChange={(event) => setExerciseEdits((current) => ({ ...current, [exercise.id]: { ...edit, notes: event.target.value } }))} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" /></label>
+                            <div key={exercise.id} className="rounded-xl border border-gray-200 bg-gray-50 p-3">
+                              <div className="grid grid-cols-1 gap-3 md:grid-cols-[0.12fr_1fr_0.22fr] md:items-center">
+                                <Badge variant="default">#{exercise.exercise_order}</Badge>
+                                <div>
+                                  <p className="text-sm font-black uppercase text-[#000000]">{exercise.exercise_name}</p>
+                                  <p className="mt-1 text-xs font-bold uppercase text-gray-500">{summariseSets(exerciseSets)}</p>
+                                  {exercise.notes && <p className="mt-1 text-xs text-gray-600">{exercise.notes}</p>}
+                                </div>
+                                <button type="button" onClick={() => setEditingExerciseId(isEditingExercise ? null : exercise.id)} className="rounded-lg bg-[#FA0201] px-4 py-2 text-xs font-bold uppercase text-white hover:bg-red-700">
+                                  {isEditingExercise ? 'Close' : 'Edit'}
+                                </button>
                               </div>
-                              <div className="mt-3 flex justify-end"><button type="button" disabled={saving} onClick={() => saveExercise(exercise)} className="rounded-lg bg-black px-3 py-2 text-xs font-bold uppercase text-white hover:bg-gray-900 disabled:opacity-60">Save exercise</button></div>
-                              <div className="mt-5 space-y-3">
-                                <p className="text-sm font-black uppercase text-[#000000]">Sets</p>
-                                {[...exerciseSets.map((set) => ({ id: set.id, form: setEdits[set.id] || setToForm(set), isNew: false })), { id: 'new', form: newSetForm, isNew: true }].map((item) => (
-                                  <div key={item.id} className="grid grid-cols-1 gap-2 rounded-lg border border-gray-200 bg-white p-3 md:grid-cols-6 md:items-end">
-                                    <label><span className="text-[10px] font-black uppercase text-gray-500">Set</span><input value={item.form.setOrder} onChange={(event) => item.isNew ? setNewSetForms((current) => ({ ...current, [exercise.id]: { ...item.form, setOrder: event.target.value } })) : setSetEdits((current) => ({ ...current, [item.id]: { ...item.form, setOrder: event.target.value } }))} className="mt-1 w-full rounded border border-gray-300 px-2 py-2 text-sm" /></label>
-                                    <label><span className="text-[10px] font-black uppercase text-gray-500">Reps</span><input value={item.form.targetReps} onChange={(event) => item.isNew ? setNewSetForms((current) => ({ ...current, [exercise.id]: { ...item.form, targetReps: event.target.value } })) : setSetEdits((current) => ({ ...current, [item.id]: { ...item.form, targetReps: event.target.value } }))} className="mt-1 w-full rounded border border-gray-300 px-2 py-2 text-sm" /></label>
-                                    <label><span className="text-[10px] font-black uppercase text-gray-500">Kg</span><input value={item.form.targetWeightKg} onChange={(event) => item.isNew ? setNewSetForms((current) => ({ ...current, [exercise.id]: { ...item.form, targetWeightKg: event.target.value } })) : setSetEdits((current) => ({ ...current, [item.id]: { ...item.form, targetWeightKg: event.target.value } }))} className="mt-1 w-full rounded border border-gray-300 px-2 py-2 text-sm" /></label>
-                                    <label><span className="text-[10px] font-black uppercase text-gray-500">RPE</span><input value={item.form.targetRpe} onChange={(event) => item.isNew ? setNewSetForms((current) => ({ ...current, [exercise.id]: { ...item.form, targetRpe: event.target.value } })) : setSetEdits((current) => ({ ...current, [item.id]: { ...item.form, targetRpe: event.target.value } }))} className="mt-1 w-full rounded border border-gray-300 px-2 py-2 text-sm" /></label>
-                                    <label className="md:col-span-2"><span className="text-[10px] font-black uppercase text-gray-500">Notes</span><input value={item.form.notes} onChange={(event) => item.isNew ? setNewSetForms((current) => ({ ...current, [exercise.id]: { ...item.form, notes: event.target.value } })) : setSetEdits((current) => ({ ...current, [item.id]: { ...item.form, notes: event.target.value } }))} className="mt-1 w-full rounded border border-gray-300 px-2 py-2 text-sm" /></label>
-                                    <div className="md:col-span-6 flex justify-end"><button type="button" disabled={saving} onClick={() => saveSet(exercise.id, item.isNew ? null : item.id, item.form)} className={`rounded-lg px-3 py-2 text-xs font-bold uppercase text-white disabled:opacity-60 ${item.isNew ? 'bg-[#FA0201] hover:bg-red-700' : 'bg-black hover:bg-gray-900'}`}>{item.isNew ? 'Add set' : 'Save set'}</button></div>
+
+                              {isEditingExercise && (
+                                <div className="mt-4 space-y-4 rounded-xl border border-gray-200 bg-white p-4">
+                                  <div className="grid grid-cols-1 gap-3 md:grid-cols-[0.16fr_1fr] md:items-end">
+                                    <label><span className="text-xs font-black uppercase text-gray-500">Order</span><input value={edit.order} onChange={(event) => setExerciseEdits((current) => ({ ...current, [exercise.id]: { ...edit, order: event.target.value } }))} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" /></label>
+                                    <label><span className="text-xs font-black uppercase text-gray-500">Exercise</span><input value={edit.name} onChange={(event) => setExerciseEdits((current) => ({ ...current, [exercise.id]: { ...edit, name: event.target.value } }))} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" /></label>
+                                    <label className="md:col-span-2"><span className="text-xs font-black uppercase text-gray-500">Notes</span><input value={edit.notes} onChange={(event) => setExerciseEdits((current) => ({ ...current, [exercise.id]: { ...edit, notes: event.target.value } }))} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" /></label>
                                   </div>
-                                ))}
-                              </div>
+                                  <div className="flex justify-end"><button type="button" disabled={saving} onClick={() => saveExercise(exercise)} className="rounded-lg bg-black px-3 py-2 text-xs font-bold uppercase text-white hover:bg-gray-900 disabled:opacity-60">Save exercise</button></div>
+                                  <div className="space-y-3">
+                                    <p className="text-sm font-black uppercase text-[#000000]">Sets</p>
+                                    {[...exerciseSets.map((set) => ({ id: set.id, form: setEdits[set.id] || setToForm(set), isNew: false })), { id: 'new', form: newSetForm, isNew: true }].map((item) => (
+                                      <div key={item.id} className="grid grid-cols-1 gap-2 rounded-lg border border-gray-200 bg-gray-50 p-3 md:grid-cols-6 md:items-end">
+                                        <label><span className="text-[10px] font-black uppercase text-gray-500">Set</span><input value={item.form.setOrder} onChange={(event) => item.isNew ? setNewSetForms((current) => ({ ...current, [exercise.id]: { ...item.form, setOrder: event.target.value } })) : setSetEdits((current) => ({ ...current, [item.id]: { ...item.form, setOrder: event.target.value } }))} className="mt-1 w-full rounded border border-gray-300 px-2 py-2 text-sm" /></label>
+                                        <label><span className="text-[10px] font-black uppercase text-gray-500">Reps</span><input value={item.form.targetReps} onChange={(event) => item.isNew ? setNewSetForms((current) => ({ ...current, [exercise.id]: { ...item.form, targetReps: event.target.value } })) : setSetEdits((current) => ({ ...current, [item.id]: { ...item.form, targetReps: event.target.value } }))} className="mt-1 w-full rounded border border-gray-300 px-2 py-2 text-sm" /></label>
+                                        <label><span className="text-[10px] font-black uppercase text-gray-500">Kg</span><input value={item.form.targetWeightKg} onChange={(event) => item.isNew ? setNewSetForms((current) => ({ ...current, [exercise.id]: { ...item.form, targetWeightKg: event.target.value } })) : setSetEdits((current) => ({ ...current, [item.id]: { ...item.form, targetWeightKg: event.target.value } }))} className="mt-1 w-full rounded border border-gray-300 px-2 py-2 text-sm" /></label>
+                                        <label><span className="text-[10px] font-black uppercase text-gray-500">RPE</span><input value={item.form.targetRpe} onChange={(event) => item.isNew ? setNewSetForms((current) => ({ ...current, [exercise.id]: { ...item.form, targetRpe: event.target.value } })) : setSetEdits((current) => ({ ...current, [item.id]: { ...item.form, targetRpe: event.target.value } }))} className="mt-1 w-full rounded border border-gray-300 px-2 py-2 text-sm" /></label>
+                                        <label className="md:col-span-2"><span className="text-[10px] font-black uppercase text-gray-500">Notes</span><input value={item.form.notes} onChange={(event) => item.isNew ? setNewSetForms((current) => ({ ...current, [exercise.id]: { ...item.form, notes: event.target.value } })) : setSetEdits((current) => ({ ...current, [item.id]: { ...item.form, notes: event.target.value } }))} className="mt-1 w-full rounded border border-gray-300 px-2 py-2 text-sm" /></label>
+                                        <div className="md:col-span-6 flex justify-end"><button type="button" disabled={saving} onClick={() => saveSet(exercise.id, item.isNew ? null : item.id, item.form)} className={`rounded-lg px-3 py-2 text-xs font-bold uppercase text-white disabled:opacity-60 ${item.isNew ? 'bg-[#FA0201] hover:bg-red-700' : 'bg-black hover:bg-gray-900'}`}>{item.isNew ? 'Add set' : 'Save set'}</button></div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           );
                         })}
