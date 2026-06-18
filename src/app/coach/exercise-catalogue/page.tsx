@@ -1,9 +1,10 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { PageHeader } from '@/components/layout/page-header';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { SectionHeader } from '@/components/ui/section-header';
-import { Input } from '@/components/ui/input';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
 
 type ExerciseCatalogueRecord = {
@@ -55,6 +56,18 @@ const parseMuscles = (value: string) => {
     .filter(Boolean);
 };
 
+const exerciseToForm = (exercise: ExerciseCatalogueRecord): ExerciseFormState => ({
+  name: exercise.name,
+  category: exercise.category,
+  movementPattern: exercise.movement_pattern || '',
+  primaryMuscles: exercise.primary_muscles.join(', '),
+  equipment: exercise.equipment || '',
+});
+
+const summariseExercise = (exercise: ExerciseCatalogueRecord) => {
+  return [exercise.category, exercise.movement_pattern, exercise.equipment].filter(Boolean).join(' · ');
+};
+
 export default function ExerciseCataloguePage() {
   const [exercises, setExercises] = useState<ExerciseCatalogueRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -69,6 +82,8 @@ export default function ExerciseCataloguePage() {
   const [movementFilter, setMovementFilter] = useState('all');
   const [equipmentFilter, setEquipmentFilter] = useState('all');
   const [showArchived, setShowArchived] = useState(false);
+
+  const selectedExercise = exercises.find((exercise) => exercise.id === editingId) || null;
 
   const loadExercises = async () => {
     if (!isSupabaseConfigured) {
@@ -130,29 +145,29 @@ export default function ExerciseCataloguePage() {
     });
   }, [categoryFilter, equipmentFilter, exercises, movementFilter, search, showArchived]);
 
-  const resetForm = () => {
+  const resetExerciseBuilder = () => {
     setForm(emptyForm);
     setEditingId(null);
     setFormOpen(false);
   };
 
+  const startNewExercise = () => {
+    setFormOpen(true);
+    setEditingId(null);
+    setForm(emptyForm);
+    setMessage(null);
+    setError(null);
+  };
+
   const handleEdit = (exercise: ExerciseCatalogueRecord) => {
     setEditingId(exercise.id);
-    setForm({
-      name: exercise.name,
-      category: exercise.category,
-      movementPattern: exercise.movement_pattern || '',
-      primaryMuscles: exercise.primary_muscles.join(', '),
-      equipment: exercise.equipment || '',
-    });
+    setForm(exerciseToForm(exercise));
     setFormOpen(true);
     setMessage(null);
     setError(null);
   };
 
-  const handleSave = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-
+  const saveExercise = async () => {
     if (!isSupabaseConfigured) return;
 
     if (!form.name.trim()) {
@@ -205,7 +220,7 @@ export default function ExerciseCataloguePage() {
       setMessage('Exercise added.');
     }
 
-    resetForm();
+    resetExerciseBuilder();
     setSaving(false);
     setLoading(true);
     await loadExercises();
@@ -232,11 +247,127 @@ export default function ExerciseCataloguePage() {
     await loadExercises();
   };
 
+  const renderExerciseEditor = () => (
+    <Card className="space-y-5 border-2 border-gray-200 bg-gray-50">
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div>
+          <h2 className="text-xl font-black uppercase text-[#000000]">{editingId ? 'Edit exercise' : 'Create exercise'}</h2>
+          <p className="mt-1 text-sm text-gray-600">Exercise Library edits affect future workout building and exercise selection.</p>
+        </div>
+        {selectedExercise && (
+          <button
+            type="button"
+            onClick={() => handleSetActive(selectedExercise, !selectedExercise.is_active)}
+            disabled={saving}
+            className={`rounded-lg px-4 py-3 text-xs font-bold uppercase disabled:opacity-60 ${selectedExercise.is_active ? 'border border-red-300 bg-red-50 text-[#FA0201] hover:bg-red-100' : 'bg-black text-white hover:bg-gray-900'}`}
+          >
+            {selectedExercise.is_active ? 'Archive exercise' : 'Restore exercise'}
+          </button>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <label>
+          <span className="text-xs font-black uppercase text-gray-500">Exercise name</span>
+          <input
+            value={form.name}
+            onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
+            placeholder="e.g. Paused Bench Press"
+            className="mt-1 w-full rounded-lg border border-gray-300 px-4 py-3 text-sm"
+          />
+        </label>
+
+        <label>
+          <span className="text-xs font-black uppercase text-gray-500">Category</span>
+          <input
+            list="exercise-categories"
+            value={form.category}
+            onChange={(event) => setForm((current) => ({ ...current, category: event.target.value }))}
+            placeholder="e.g. Upper Body"
+            className="mt-1 w-full rounded-lg border border-gray-300 px-4 py-3 text-sm"
+          />
+          <datalist id="exercise-categories">
+            {categories.map((category) => (
+              <option key={category} value={category} />
+            ))}
+          </datalist>
+        </label>
+
+        <label>
+          <span className="text-xs font-black uppercase text-gray-500">Movement pattern</span>
+          <input
+            list="exercise-movement-patterns"
+            value={form.movementPattern}
+            onChange={(event) => setForm((current) => ({ ...current, movementPattern: event.target.value }))}
+            placeholder="e.g. Horizontal Push"
+            className="mt-1 w-full rounded-lg border border-gray-300 px-4 py-3 text-sm"
+          />
+          <datalist id="exercise-movement-patterns">
+            {movementPatterns.map((movement) => (
+              <option key={movement} value={movement} />
+            ))}
+          </datalist>
+        </label>
+
+        <label>
+          <span className="text-xs font-black uppercase text-gray-500">Equipment</span>
+          <input
+            list="exercise-equipment"
+            value={form.equipment}
+            onChange={(event) => setForm((current) => ({ ...current, equipment: event.target.value }))}
+            placeholder="e.g. Barbell"
+            className="mt-1 w-full rounded-lg border border-gray-300 px-4 py-3 text-sm"
+          />
+          <datalist id="exercise-equipment">
+            {equipmentOptions.map((equipment) => (
+              <option key={equipment} value={equipment} />
+            ))}
+          </datalist>
+        </label>
+
+        <label className="md:col-span-2">
+          <span className="text-xs font-black uppercase text-gray-500">Primary muscles</span>
+          <input
+            value={form.primaryMuscles}
+            onChange={(event) => setForm((current) => ({ ...current, primaryMuscles: event.target.value }))}
+            placeholder="e.g. Chest, Triceps, Front Delts"
+            className="mt-1 w-full rounded-lg border border-gray-300 px-4 py-3 text-sm"
+          />
+          <p className="mt-1 text-xs text-gray-500">Separate muscles with commas.</p>
+        </label>
+      </div>
+    </Card>
+  );
+
+  const renderExerciseBuilderModal = () => (
+    <div className="fixed inset-0 z-50 bg-black/75 p-3 md:p-6">
+      <div className="mx-auto flex h-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+        <div className="flex flex-col gap-4 border-b border-gray-800 bg-[#000000] px-5 py-4 text-white md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.24em] text-[#FA0201]">Exercise Builder</p>
+            <h2 className="mt-1 text-2xl font-black uppercase leading-tight">{editingId ? form.name || 'Edit exercise' : 'Create exercise'}</h2>
+            <p className="mt-1 text-sm font-semibold text-gray-300">
+              {editingId ? `${form.category || 'Uncategorised'} · ${form.equipment || 'No equipment set'}` : 'Add a reusable exercise for workout templates.'}
+            </p>
+          </div>
+          <button type="button" onClick={saveExercise} disabled={saving} className="rounded-lg bg-[#FA0201] px-4 py-3 text-sm font-bold uppercase text-white hover:bg-red-700 disabled:opacity-60">
+            {saving ? 'Saving...' : editingId ? 'Save exercise' : 'Create exercise'}
+          </button>
+        </div>
+        <div className="flex-1 space-y-5 overflow-y-auto bg-gray-100 p-4 md:p-6">
+          {message && <Card className="border-2 border-green-200 bg-green-50 text-sm font-semibold text-green-700">{message}</Card>}
+          {error && <Card className="border-2 border-red-200 bg-red-50 text-sm font-semibold text-red-700">{error}</Card>}
+          {renderExerciseEditor()}
+        </div>
+      </div>
+    </div>
+  );
+
   if (loading) {
     return (
       <div className="p-6 md:p-8">
         <Card>
-          <p className="text-sm font-semibold text-gray-700">Loading exercise catalogue...</p>
+          <p className="text-sm font-semibold text-gray-700">Loading Exercise Library...</p>
         </Card>
       </div>
     );
@@ -244,260 +375,95 @@ export default function ExerciseCataloguePage() {
 
   return (
     <div className="space-y-8 p-6 md:p-8">
-      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-        <div>
-          <h1 className="text-3xl font-bold uppercase tracking-tight text-[#000000]">Exercise Catalogue</h1>
-          <p className="mt-1 text-sm text-gray-700">
-            Manage the exercises that appear in the coach workout builder.
-          </p>
+      <PageHeader title="EXERCISE LIBRARY" subtitle="Create, edit and organise reusable exercises for RITMO workout templates." />
+
+      {!formOpen && message && <Card className="border-2 border-green-200 bg-green-50 text-sm font-semibold text-green-700">{message}</Card>}
+      {!formOpen && error && <Card className="border-2 border-red-200 bg-red-50 text-sm font-semibold text-red-700">{error}</Card>}
+
+      <section className="space-y-4">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-2xl font-black uppercase text-[#000000]">Exercise catalogue</h2>
+          <Button type="button" onClick={startNewExercise} className="bg-[#FA0201] hover:bg-red-700">Create Exercise</Button>
         </div>
-        <button
-          type="button"
-          onClick={() => {
-            setFormOpen(true);
-            setEditingId(null);
-            setForm(emptyForm);
-            setError(null);
-            setMessage(null);
-          }}
-          className="rounded-lg bg-[#FA0201] px-4 py-3 text-sm font-bold uppercase text-white hover:bg-red-700"
-        >
-          Add Exercise
-        </button>
-      </div>
 
-      {message && (
-        <Card className="border-2 border-green-200 bg-green-50">
-          <p className="text-sm font-semibold text-green-800">{message}</p>
-        </Card>
-      )}
-
-      {error && (
-        <Card className="border-2 border-red-200 bg-red-50">
-          <p className="text-sm font-semibold text-red-800">{error}</p>
-        </Card>
-      )}
-
-      {formOpen && (
-        <section>
-          <SectionHeader title={editingId ? 'EDIT EXERCISE' : 'ADD EXERCISE'} accent />
-          <Card className="border-2 border-[#FA0201]">
-            <form onSubmit={handleSave} className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <Input
-                label="Exercise name"
-                value={form.name}
-                onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
-                placeholder="e.g. Paused Bench Press"
-                required
+        <Card className="border-2 border-gray-200 bg-white">
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_0.28fr_0.28fr_0.28fr] lg:items-end">
+            <label>
+              <span className="text-xs font-black uppercase text-gray-500">Search exercises</span>
+              <input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search by exercise, muscle, movement, or equipment..."
+                className="mt-1 w-full rounded-lg border border-gray-300 px-4 py-3 text-sm"
               />
+            </label>
 
-              <div>
-                <label className="mb-2 block text-xs font-bold uppercase text-gray-600">Category</label>
-                <input
-                  list="exercise-categories"
-                  value={form.category}
-                  onChange={(event) => setForm((current) => ({ ...current, category: event.target.value }))}
-                  placeholder="e.g. Upper Body"
-                  required
-                  className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm text-[#000000]"
-                />
-                <datalist id="exercise-categories">
-                  {categories.map((category) => (
-                    <option key={category} value={category} />
-                  ))}
-                </datalist>
-              </div>
-
-              <div>
-                <label className="mb-2 block text-xs font-bold uppercase text-gray-600">Movement pattern</label>
-                <input
-                  list="exercise-movement-patterns"
-                  value={form.movementPattern}
-                  onChange={(event) => setForm((current) => ({ ...current, movementPattern: event.target.value }))}
-                  placeholder="e.g. Horizontal Push"
-                  className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm text-[#000000]"
-                />
-                <datalist id="exercise-movement-patterns">
-                  {movementPatterns.map((movement) => (
-                    <option key={movement} value={movement} />
-                  ))}
-                </datalist>
-              </div>
-
-              <div>
-                <label className="mb-2 block text-xs font-bold uppercase text-gray-600">Equipment</label>
-                <input
-                  list="exercise-equipment"
-                  value={form.equipment}
-                  onChange={(event) => setForm((current) => ({ ...current, equipment: event.target.value }))}
-                  placeholder="e.g. Barbell"
-                  className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm text-[#000000]"
-                />
-                <datalist id="exercise-equipment">
-                  {equipmentOptions.map((equipment) => (
-                    <option key={equipment} value={equipment} />
-                  ))}
-                </datalist>
-              </div>
-
-              <div className="md:col-span-2">
-                <label className="mb-2 block text-xs font-bold uppercase text-gray-600">Primary muscles</label>
-                <input
-                  value={form.primaryMuscles}
-                  onChange={(event) => setForm((current) => ({ ...current, primaryMuscles: event.target.value }))}
-                  placeholder="e.g. Chest, Triceps, Front Delts"
-                  className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm text-[#000000]"
-                />
-                <p className="mt-2 text-xs text-gray-500">Separate muscles with commas.</p>
-              </div>
-
-              <div className="md:col-span-2 flex flex-col gap-3 md:flex-row md:justify-end">
-                <button
-                  type="button"
-                  onClick={resetForm}
-                  className="rounded-lg bg-gray-200 px-5 py-3 text-sm font-bold uppercase text-[#000000] hover:bg-gray-300"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="rounded-lg bg-[#FA0201] px-5 py-3 text-sm font-bold uppercase text-white hover:bg-red-700 disabled:opacity-60"
-                >
-                  {saving ? 'Saving...' : editingId ? 'Save Changes' : 'Add Exercise'}
-                </button>
-              </div>
-            </form>
-          </Card>
-        </section>
-      )}
-
-      <section>
-        <SectionHeader title="CATALOGUE" accent />
-        <Card>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-            <Input
-              label="Search"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search name, muscle, equipment..."
-            />
-
-            <div>
-              <label className="mb-2 block text-xs font-bold uppercase text-gray-600">Category</label>
-              <select
-                value={categoryFilter}
-                onChange={(event) => setCategoryFilter(event.target.value)}
-                className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm text-[#000000]"
-              >
+            <label>
+              <span className="text-xs font-black uppercase text-gray-500">Category</span>
+              <select value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm">
                 <option value="all">All categories</option>
                 {categories.map((category) => (
                   <option key={category} value={category}>{category}</option>
                 ))}
               </select>
-            </div>
+            </label>
 
-            <div>
-              <label className="mb-2 block text-xs font-bold uppercase text-gray-600">Movement</label>
-              <select
-                value={movementFilter}
-                onChange={(event) => setMovementFilter(event.target.value)}
-                className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm text-[#000000]"
-              >
+            <label>
+              <span className="text-xs font-black uppercase text-gray-500">Movement</span>
+              <select value={movementFilter} onChange={(event) => setMovementFilter(event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm">
                 <option value="all">All movements</option>
                 {movementPatterns.map((movement) => (
                   <option key={movement} value={movement}>{movement}</option>
                 ))}
               </select>
-            </div>
+            </label>
 
-            <div>
-              <label className="mb-2 block text-xs font-bold uppercase text-gray-600">Equipment</label>
-              <select
-                value={equipmentFilter}
-                onChange={(event) => setEquipmentFilter(event.target.value)}
-                className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm text-[#000000]"
-              >
+            <label>
+              <span className="text-xs font-black uppercase text-gray-500">Equipment</span>
+              <select value={equipmentFilter} onChange={(event) => setEquipmentFilter(event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm">
                 <option value="all">All equipment</option>
                 {equipmentOptions.map((equipment) => (
                   <option key={equipment} value={equipment}>{equipment}</option>
                 ))}
               </select>
-            </div>
+            </label>
           </div>
 
-          <label className="mt-4 flex items-center gap-3 text-sm font-semibold uppercase text-[#000000]">
-            <input
-              type="checkbox"
-              checked={showArchived}
-              onChange={(event) => setShowArchived(event.target.checked)}
-              className="h-5 w-5 accent-[#FA0201]"
-            />
-            Show archived exercises
-          </label>
-
-          <div className="mt-6 space-y-3">
-            {filteredExercises.length === 0 ? (
-              <div className="rounded-lg border border-gray-200 bg-gray-50 p-6 text-center">
-                <p className="text-sm font-semibold text-gray-600">No exercises match the current filters.</p>
-              </div>
-            ) : (
-              filteredExercises.map((exercise) => (
-                <div
-                  key={exercise.id}
-                  className={`rounded-xl border p-4 ${exercise.is_active ? 'border-gray-200 bg-white' : 'border-gray-200 bg-gray-100 opacity-70'}`}
-                >
-                  <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-                    <div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="text-lg font-bold uppercase text-[#000000]">{exercise.name}</p>
-                        {!exercise.is_active && (
-                          <span className="rounded bg-gray-200 px-2 py-1 text-xs font-bold uppercase text-gray-700">Archived</span>
-                        )}
-                      </div>
-                      <p className="mt-1 text-sm text-gray-600">
-                        {exercise.category}
-                        {exercise.movement_pattern ? ` • ${exercise.movement_pattern}` : ''}
-                        {exercise.equipment ? ` • ${exercise.equipment}` : ''}
-                      </p>
-                      {exercise.primary_muscles.length > 0 && (
-                        <p className="mt-2 text-sm text-gray-700">Primary: {exercise.primary_muscles.join(', ')}</p>
-                      )}
-                    </div>
-
-                    <div className="flex flex-wrap gap-2 md:justify-end">
-                      <button
-                        type="button"
-                        onClick={() => handleEdit(exercise)}
-                        className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-bold uppercase text-[#000000] hover:bg-gray-100"
-                      >
-                        Edit
-                      </button>
-                      {exercise.is_active ? (
-                        <button
-                          type="button"
-                          onClick={() => handleSetActive(exercise, false)}
-                          className="rounded-lg bg-[#FA0201] px-3 py-2 text-xs font-bold uppercase text-white hover:bg-red-700"
-                        >
-                          Archive
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => handleSetActive(exercise, true)}
-                          className="rounded-lg bg-black px-3 py-2 text-xs font-bold uppercase text-white hover:bg-gray-900"
-                        >
-                          Restore
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              ))
-            )}
+          <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <label className="flex items-center gap-3 text-sm font-bold uppercase text-[#000000]">
+              <input type="checkbox" checked={showArchived} onChange={(event) => setShowArchived(event.target.checked)} className="h-5 w-5 accent-[#FA0201]" />
+              Show archived exercises
+            </label>
+            <p className="text-xs font-bold uppercase text-gray-500">
+              Showing {filteredExercises.length} of {exercises.length} exercises
+            </p>
           </div>
         </Card>
+
+        <div className="space-y-4">
+          {filteredExercises.length === 0 ? <Card><p className="text-sm text-gray-600">No exercises match your filters.</p></Card> : filteredExercises.map((exercise) => (
+            <Card key={exercise.id} className={`border-2 ${exercise.is_active ? 'border-gray-200 bg-white' : 'border-gray-200 bg-gray-100 opacity-75'}`}>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-[1fr_0.18fr] md:items-center">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-xs font-bold uppercase text-gray-500">{exercise.category}</p>
+                    {!exercise.is_active && <Badge variant="secondary">Archived</Badge>}
+                  </div>
+                  <h3 className="mt-1 text-xl font-black uppercase text-[#000000]">{exercise.name}</h3>
+                  <p className="mt-2 text-sm text-gray-600">{summariseExercise(exercise)}</p>
+                  {exercise.primary_muscles.length > 0 && <p className="mt-2 text-sm text-gray-700">Primary: {exercise.primary_muscles.join(', ')}</p>}
+                </div>
+                <div className="flex flex-col gap-3 md:items-end">
+                  <Badge variant="default">{exercise.equipment || 'No equipment'}</Badge>
+                  <button type="button" onClick={() => handleEdit(exercise)} className="rounded-lg bg-[#FA0201] px-6 py-3 text-sm font-bold uppercase text-white hover:bg-red-700">Edit</button>
+                </div>
+              </div>
+            </Card>
+          ))}
+        </div>
       </section>
+
+      {formOpen && renderExerciseBuilderModal()}
     </div>
   );
 }
