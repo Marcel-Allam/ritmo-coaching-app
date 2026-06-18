@@ -368,6 +368,30 @@ export default function WorkoutLibraryPage() {
     await refreshLibrary(null);
   };
 
+  const deleteWorkout = async () => {
+    if (!isSupabaseConfigured || !selectedWorkout) return;
+    if (!window.confirm(`Permanently delete ${selectedWorkout.name}? This cannot be undone. If this workout is used in a programme template, deletion may fail.`)) return;
+
+    setSaving(true);
+    setError(null);
+    setMessage(null);
+
+    const supabase = createClient();
+    const { error: deleteError } = await supabase.from('library_workouts').delete().eq('id', selectedWorkout.id);
+
+    if (deleteError) {
+      setError('Could not delete workout template. It may still be used in a programme template, so archive it instead.');
+      setSaving(false);
+      return;
+    }
+
+    setMessage('Workout template deleted.');
+    setSaving(false);
+    setSelectedWorkoutId(null);
+    setEditingExerciseId(null);
+    await refreshLibrary(null);
+  };
+
   const addExercise = async () => {
     if (!isSupabaseConfigured || !selectedWorkoutId) return;
     const selectedExercise = catalogue.find((exercise) => exercise.id === selectedExerciseId);
@@ -511,9 +535,14 @@ export default function WorkoutLibraryPage() {
           <p className="mt-1 text-sm text-gray-600">Save Workout returns you to the main library. Category is generated from the selected exercises.</p>
         </div>
         {selectedWorkout && (
-          <button type="button" onClick={archiveWorkout} disabled={saving} className="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-xs font-bold uppercase text-[#FA0201] hover:bg-red-100 disabled:opacity-60">
-            Archive template
-          </button>
+          <div className="flex flex-col gap-2 md:flex-row md:items-center">
+            <button type="button" onClick={archiveWorkout} disabled={saving} className="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-xs font-bold uppercase text-[#FA0201] hover:bg-red-100 disabled:opacity-60">
+              Archive template
+            </button>
+            <button type="button" onClick={deleteWorkout} disabled={saving} className="rounded-lg bg-[#FA0201] px-4 py-3 text-xs font-bold uppercase text-white hover:bg-red-700 disabled:opacity-60">
+              Delete
+            </button>
+          </div>
         )}
       </div>
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
