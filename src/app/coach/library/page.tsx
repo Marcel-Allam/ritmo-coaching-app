@@ -258,7 +258,7 @@ export default function CoachLibraryPage() {
       </Card>
 
       {loading && <Card>Loading library...</Card>}
-      {error && <Card className="border-2 border-red-200 bg-red-50"><p className="text-sm font-semibold text-red-700">{error}</p></Card>}
+      {error && <Card className="border-2 border-red-200 bg-red-50 text-sm font-semibold text-red-700">{error}</Card>}
 
       {!loading && !error && activeTab === 'exercises' && (
         <section>
@@ -335,7 +335,12 @@ export default function CoachLibraryPage() {
 
       {!loading && !error && activeTab === 'workouts' && (
         <section>
-          <SectionHeader title="WORKOUT LIBRARY" accent />
+          <div className="mb-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <SectionHeader title="WORKOUT LIBRARY" accent />
+            <Link href="/coach/library/workouts">
+              <Button type="button" className="bg-[#FA0201] hover:bg-red-700">Manage Workout Library</Button>
+            </Link>
+          </div>
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
             {workouts.map((workout) => {
               const workoutExercises = (exercisesByWorkout[workout.id] || []).sort((a, b) => a.exercise_order - b.exercise_order);
@@ -368,7 +373,12 @@ export default function CoachLibraryPage() {
 
       {!loading && !error && activeTab === 'programmes' && (
         <section>
-          <SectionHeader title="PROGRAMME LIBRARY" accent />
+          <div className="mb-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <SectionHeader title="PROGRAMME LIBRARY" accent />
+            <Link href="/coach/library/programmes">
+              <Button type="button" className="bg-[#FA0201] hover:bg-red-700">Manage Programme Library</Button>
+            </Link>
+          </div>
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
             {programmes.map((programme) => {
               const includedWorkouts = (programmeWorkoutsByProgramme[programme.id] || []).sort((a, b) => a.workout_order - b.workout_order);
@@ -429,7 +439,7 @@ export default function CoachLibraryPage() {
           <div>
             <h2 className="text-2xl font-black uppercase text-[#000000]">Assignment stays inside each client programme</h2>
             <p className="mt-2 text-sm text-gray-700">
-              This Library is the reusable master. When we wire the next step, assigning a programme to a client will copy these workouts into that client&apos;s own programme so their kg, reps, RPE, notes and exercise swaps can be edited independently.
+              This Library is the reusable master. Assigning a programme to a client copies these workouts into that client&apos;s own programme so their kg, reps, RPE, notes and exercise swaps can be edited independently.
             </p>
           </div>
           <Link href="/coach/clients">
