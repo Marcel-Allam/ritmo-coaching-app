@@ -454,6 +454,30 @@ export default function ManageWorkoutLibraryPage() {
     await loadManager(selectedWorkoutId);
   };
 
+  const deleteSet = async (setId: string) => {
+    if (!isSupabaseConfigured) return;
+    if (!window.confirm('Delete this prescribed set?')) return;
+
+    setSaving(true);
+    setError(null);
+    setMessage(null);
+
+    const supabase = createClient();
+    const { error: deleteError } = await supabase.rpc('delete_library_workout_set', {
+      p_set_id: setId,
+    });
+
+    if (deleteError) {
+      setError(deleteError.message);
+      setSaving(false);
+      return;
+    }
+
+    setMessage('Set deleted.');
+    setSaving(false);
+    await loadManager(selectedWorkoutId);
+  };
+
   const renderWorkoutEditor = () => (
     <Card className="space-y-5 border-2 border-gray-200 bg-gray-50">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
@@ -730,7 +754,7 @@ export default function ManageWorkoutLibraryPage() {
                                         ].map((item) => (
                                           <div
                                             key={item.id}
-                                            className={`grid grid-cols-1 gap-2 rounded-lg border p-3 md:grid-cols-6 md:items-end ${
+                                            className={`grid grid-cols-1 gap-2 rounded-lg border p-3 md:grid-cols-[0.7fr_1fr_1fr_1fr_1.5fr_0.9fr] md:items-end ${
                                               item.isNew ? 'border-dashed border-gray-300 bg-gray-50/40' : 'border-gray-200 bg-gray-50'
                                             }`}
                                           >
@@ -782,7 +806,7 @@ export default function ManageWorkoutLibraryPage() {
                                                 className="mt-1 w-full rounded border border-gray-300 px-2 py-2 text-sm"
                                               />
                                             </label>
-                                            <label className="md:col-span-2">
+                                            <label>
                                               <span className="text-[10px] font-black uppercase text-gray-500">Notes</span>
                                               <input
                                                 value={item.form.notes}
@@ -794,7 +818,19 @@ export default function ManageWorkoutLibraryPage() {
                                                 className="mt-1 w-full rounded border border-gray-300 px-2 py-2 text-sm"
                                               />
                                             </label>
-                                            <div className="flex justify-end md:col-span-6">
+                                            <div className="flex items-end justify-end gap-2">
+                                              {!item.isNew && (
+                                                <button
+                                                  type="button"
+                                                  aria-label="Delete set"
+                                                  title="Delete set"
+                                                  disabled={saving}
+                                                  onClick={() => deleteSet(item.id)}
+                                                  className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm font-black text-[#FA0201] hover:bg-red-100 disabled:opacity-60"
+                                                >
+                                                  🗑
+                                                </button>
+                                              )}
                                               <button
                                                 type="button"
                                                 disabled={saving}
