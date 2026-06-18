@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { SectionHeader } from '@/components/ui/section-header';
 import { Textarea } from '@/components/ui/textarea';
+import { ExerciseReviewDecisionPanel } from '@/components/coach/exercise-review-decision-panel';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
 
 type ReviewStatus = 'new' | 'reviewed' | 'needs_feedback' | 'needs_action' | 'flagged' | 'resolved';
@@ -23,7 +24,13 @@ type WorkoutSessionRecord = {
   coach_note: string | null;
 };
 type ProgramWorkoutRecord = { id: string; title: string; instructions: string | null };
-type ProgramExerciseRecord = { id: string; exercise_order: number; exercise_name: string; notes: string | null };
+type ProgramExerciseRecord = {
+  id: string;
+  exercise_order: number;
+  exercise_name: string;
+  notes: string | null;
+  exercise_catalogue_id: string | null;
+};
 type ProgramSetRecord = {
   id: string;
   exercise_id: string;
@@ -220,7 +227,7 @@ export default function CoachWorkoutReviewPage() {
 
     const { data: exerciseData, error: exerciseError } = await supabase
       .from('program_exercises')
-      .select('id, exercise_order, exercise_name, notes')
+      .select('id, exercise_order, exercise_name, notes, exercise_catalogue_id')
       .eq('workout_id', loadedSession.program_workout_id)
       .order('exercise_order', { ascending: true });
 
@@ -408,6 +415,14 @@ export default function CoachWorkoutReviewPage() {
                   );
                 })}
               </div>
+              {session?.program_workout_id && (
+                <ExerciseReviewDecisionPanel
+                  clientId={clientId}
+                  currentWorkoutId={session.program_workout_id}
+                  exerciseName={exercise.exercise_name}
+                  exerciseCatalogueId={exercise.exercise_catalogue_id}
+                />
+              )}
               <div className="mt-4 rounded-lg border border-gray-200 bg-white p-4">
                 <Textarea
                   label="Exercise note to client"
