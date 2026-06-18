@@ -44,9 +44,7 @@ type WorkoutSet = {
 
 type WorkoutForm = {
   name: string;
-  category: string;
-  goal: string;
-  instructions: string;
+  description: string;
 };
 
 type SetForm = {
@@ -59,9 +57,7 @@ type SetForm = {
 
 const blankWorkoutForm: WorkoutForm = {
   name: '',
-  category: 'Custom',
-  goal: '',
-  instructions: '',
+  description: '',
 };
 
 const toNumberOrNull = (value: string) => {
@@ -74,6 +70,22 @@ const toIntegerOrFallback = (value: string, fallback: number) => {
   if (!value.trim()) return fallback;
   const parsed = Number.parseInt(value, 10);
   return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const workoutToForm = (workout: Workout): WorkoutForm => ({
+  name: workout.name,
+  description: [workout.goal, workout.instructions].filter(Boolean).join('\n\n'),
+});
+
+const getWorkoutDescription = (workout: Workout) => workout.instructions || workout.goal || '';
+
+const deriveWorkoutCategory = (workoutExercises: WorkoutExercise[], catalogue: CatalogueExercise[]) => {
+  const categories = workoutExercises
+    .map((exercise) => catalogue.find((catalogueExercise) => catalogueExercise.id === exercise.exercise_catalogue_id)?.category?.trim())
+    .filter((category): category is string => Boolean(category));
+  const uniqueCategories = Array.from(new Set(categories));
+
+  return uniqueCategories.length > 0 ? uniqueCategories.join(' + ') : 'Custom';
 };
 
 const setToForm = (set: WorkoutSet): SetForm => ({
@@ -150,6 +162,8 @@ export default function ManageWorkoutLibraryPage() {
       .filter((exercise) => exercise.library_workout_id === selectedWorkoutId)
       .sort((a, b) => a.exercise_order - b.exercise_order);
   }, [exercises, selectedWorkoutId]);
+
+  const automaticWorkoutCategory = useMemo(() => deriveWorkoutCategory(selectedWorkoutExercises, catalogue), [selectedWorkoutExercises, catalogue]);
 
   const setsByExercise = useMemo(() => {
     return sets.reduce<Record<string, WorkoutSet[]>>((accumulator, set) => {
@@ -238,12 +252,7 @@ export default function ManageWorkoutLibraryPage() {
     setNewSetForms({});
 
     if (retainedWorkout) {
-      setWorkoutForm({
-        name: retainedWorkout.name,
-        category: retainedWorkout.category,
-        goal: retainedWorkout.goal || '',
-        instructions: retainedWorkout.instructions || '',
-      });
+      setWorkoutForm(workoutToForm(retainedWorkout));
     }
 
     setLoading(false);
@@ -257,7 +266,7 @@ export default function ManageWorkoutLibraryPage() {
     setIsCreatingWorkout(false);
     setEditingExerciseId(null);
     setSelectedWorkoutId(workout.id);
-    setWorkoutForm({ name: workout.name, category: workout.category, goal: workout.goal || '', instructions: workout.instructions || '' });
+    setWorkoutForm(workoutToForm(workout));
     setExerciseOrder(String(exercises.filter((exercise) => exercise.library_workout_id === workout.id).length + 1));
     setMessage(null);
     setError(null);
@@ -272,15 +281,13 @@ export default function ManageWorkoutLibraryPage() {
     setError(null);
   };
 
-  const closeWorkoutBuilder = () => {
+  const resetWorkoutBuilder = () => {
     setIsCreatingWorkout(false);
     setSelectedWorkoutId(null);
     setEditingExerciseId(null);
     setWorkoutForm(blankWorkoutForm);
     setExerciseNotes('');
     setNewSetForms({});
-    setMessage(null);
-    setError(null);
   };
 
   const saveWorkout = async () => {
@@ -298,9 +305,9 @@ export default function ManageWorkoutLibraryPage() {
     const { data, error: saveError } = await supabase.rpc('upsert_library_workout', {
       p_workout_id: selectedWorkoutId,
       p_name: workoutForm.name,
-      p_category: workoutForm.category,
-      p_goal: workoutForm.goal,
-      p_instructions: workoutForm.instructions,
+      p_category: automaticWorkoutCategory,
+      p_goal: null,
+      p_instructions: workoutForm.description,
     });
 
     if (saveError) {
@@ -310,10 +317,10 @@ export default function ManageWorkoutLibraryPage() {
     }
 
     const nextWorkoutId = (data as string) || selectedWorkoutId;
-    setIsCreatingWorkout(false);
     setMessage(selectedWorkoutId ? 'Workout template updated.' : 'Workout template created.');
     setSaving(false);
     await refreshLibrary(nextWorkoutId);
+    resetWorkoutBuilder();
   };
 
   const archiveWorkout = async () => {
@@ -480,7 +487,7 @@ export default function ManageWorkoutLibraryPage() {
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
           <h2 className="text-xl font-black uppercase text-[#000000]">{isCreatingWorkout ? 'Create workout template' : 'Edit workout template'}</h2>
-          <p className="mt-1 text-sm text-gray-600">Library edits affect future assignments only, not already-assigned client programmes.</p>
+          <p className="mt-1 text-sm text-gray-600">Save Workout returns you to the main library. Category is generated from the selected exercises.</p>
         </div>
         {selectedWorkout && (
           <button type="button" onClick={archiveWorkout} disabled={saving} className="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-xs font-bold uppercase text-[#FA0201] hover:bg-red-100 disabled:opacity-60">
@@ -490,11 +497,9 @@ export default function ManageWorkoutLibraryPage() {
       </div>
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <label><span className="text-xs font-black uppercase text-gray-500">Name</span><input value={workoutForm.name} onChange={(event) => setWorkoutForm((current) => ({ ...current, name: event.target.value }))} className="mt-1 w-full rounded-lg border border-gray-300 px-4 py-3 text-sm" /></label>
-        <label><span className="text-xs font-black uppercase text-gray-500">Category</span><input value={workoutForm.category} onChange={(event) => setWorkoutForm((current) => ({ ...current, category: event.target.value }))} className="mt-1 w-full rounded-lg border border-gray-300 px-4 py-3 text-sm" /></label>
-        <label className="md:col-span-2"><span className="text-xs font-black uppercase text-gray-500">Goal</span><input value={workoutForm.goal} onChange={(event) => setWorkoutForm((current) => ({ ...current, goal: event.target.value }))} className="mt-1 w-full rounded-lg border border-gray-300 px-4 py-3 text-sm" /></label>
-        <label className="md:col-span-2"><span className="text-xs font-black uppercase text-gray-500">Instructions</span><textarea value={workoutForm.instructions} onChange={(event) => setWorkoutForm((current) => ({ ...current, instructions: event.target.value }))} className="mt-1 min-h-20 w-full rounded-lg border border-gray-300 px-4 py-3 text-sm" /></label>
+        <div><span className="text-xs font-black uppercase text-gray-500">Automatic category</span><div className="mt-1 rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm font-bold text-gray-700">{automaticWorkoutCategory}</div><p className="mt-1 text-xs text-gray-500">Pulled from the muscle/category data on selected exercises.</p></div>
+        <label className="md:col-span-2"><span className="text-xs font-black uppercase text-gray-500">Description</span><textarea value={workoutForm.description} onChange={(event) => setWorkoutForm((current) => ({ ...current, description: event.target.value }))} className="mt-1 min-h-24 w-full rounded-lg border border-gray-300 px-4 py-3 text-sm" /></label>
       </div>
-      <div className="flex justify-end"><Button type="button" disabled={saving} onClick={saveWorkout} className="bg-[#FA0201] hover:bg-red-700">{saving ? 'Saving...' : isCreatingWorkout ? 'Create workout' : 'Save workout'}</Button></div>
     </Card>
   );
 
@@ -565,11 +570,11 @@ export default function ManageWorkoutLibraryPage() {
             <p className="text-xs font-black uppercase tracking-[0.24em] text-[#FA0201]">Workout Builder</p>
             <h2 className="mt-1 text-2xl font-black uppercase leading-tight">{isCreatingWorkout ? 'Create workout template' : selectedWorkout?.name}</h2>
             <p className="mt-1 text-sm font-semibold text-gray-300">
-              {selectedWorkout ? `${selectedWorkout.category} · ${selectedWorkoutExercises.length} exercise${selectedWorkoutExercises.length === 1 ? '' : 's'}` : 'Set up the template details first, then add exercises after saving.'}
+              {selectedWorkout ? `${automaticWorkoutCategory} · ${selectedWorkoutExercises.length} exercise${selectedWorkoutExercises.length === 1 ? '' : 's'}` : 'Set up the template details first, then add exercises after saving.'}
             </p>
           </div>
-          <button type="button" onClick={closeWorkoutBuilder} disabled={saving} className="rounded-lg border border-white/30 px-4 py-3 text-sm font-bold uppercase text-white hover:bg-white hover:text-black disabled:opacity-60">
-            Close
+          <button type="button" onClick={saveWorkout} disabled={saving} className="rounded-lg bg-[#FA0201] px-4 py-3 text-sm font-bold uppercase text-white hover:bg-red-700 disabled:opacity-60">
+            {saving ? 'Saving...' : isCreatingWorkout ? 'Create workout' : 'Save workout'}
           </button>
         </div>
         <div className="flex-1 space-y-5 overflow-y-auto bg-gray-100 p-4 md:p-6">
@@ -603,10 +608,11 @@ export default function ManageWorkoutLibraryPage() {
           {workouts.length === 0 ? <Card><p className="text-sm text-gray-600">No workout templates yet.</p></Card> : workouts.map((workout) => {
             const workoutExercises = exercises.filter((exercise) => exercise.library_workout_id === workout.id);
             const isSelected = selectedWorkoutId === workout.id && !isCreatingWorkout;
+            const workoutDescription = getWorkoutDescription(workout);
             return (
               <Card key={workout.id} className={`border-2 ${isSelected ? 'border-[#FA0201] bg-red-50' : 'border-gray-200 bg-white'}`}>
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-[1fr_0.18fr] md:items-center">
-                  <div><p className="text-xs font-bold uppercase text-gray-500">{workout.category}</p><h3 className="mt-1 text-xl font-black uppercase text-[#000000]">{workout.name}</h3>{workout.goal && <p className="mt-2 text-sm text-gray-600">{workout.goal}</p>}</div>
+                  <div><p className="text-xs font-bold uppercase text-gray-500">{workout.category}</p><h3 className="mt-1 text-xl font-black uppercase text-[#000000]">{workout.name}</h3>{workoutDescription && <p className="mt-2 text-sm text-gray-600">{workoutDescription}</p>}</div>
                   <div className="flex flex-col gap-3 md:items-end"><Badge variant="default">{workoutExercises.length} exercises</Badge><button type="button" onClick={() => chooseWorkout(workout)} className="rounded-lg bg-[#FA0201] px-6 py-3 text-sm font-bold uppercase text-white hover:bg-red-700">Edit</button></div>
                 </div>
               </Card>
