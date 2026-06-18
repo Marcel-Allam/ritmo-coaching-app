@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { SectionHeader } from '@/components/ui/section-header';
 import { TaskCard } from '@/components/ui/task-card';
 import { Input } from '@/components/ui/input';
+import { ClientMetricChartDashboard } from '@/components/coach/client-metric-chart-dashboard';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
 
 interface ClientRecord {
@@ -96,9 +97,7 @@ const taskOptions = [
   { value: 'habit_check', label: 'Habit check' },
 ];
 
-const getTaskLabel = (taskType: string) => {
-  return taskOptions.find((task) => task.value === taskType)?.label ?? taskType.replaceAll('_', ' ');
-};
+const getTaskLabel = (taskType: string) => taskOptions.find((task) => task.value === taskType)?.label ?? taskType.replaceAll('_', ' ');
 
 const formatDate = (value: string | null) => {
   if (!value) return 'Not set';
@@ -142,24 +141,6 @@ const SnapshotMetric = ({ label, value, helper }: { label: string; value: string
     <p className="text-xs font-bold uppercase text-gray-500">{label}</p>
     <p className="mt-2 text-3xl font-black text-[#000000]">{value}</p>
     <p className="mt-1 text-xs font-semibold text-gray-600">{helper}</p>
-  </div>
-);
-
-const FutureAnalyticsCard = ({ title, description }: { title: string; description: string }) => (
-  <div className="rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 p-4">
-    <div className="mb-3 h-24 rounded-lg bg-white/70 p-3">
-      <div className="h-2 w-2/3 rounded bg-gray-300" />
-      <div className="mt-4 flex h-12 items-end gap-2">
-        <div className="h-4 w-full rounded bg-gray-200" />
-        <div className="h-8 w-full rounded bg-gray-300" />
-        <div className="h-6 w-full rounded bg-gray-200" />
-        <div className="h-10 w-full rounded bg-gray-300" />
-        <div className="h-7 w-full rounded bg-gray-200" />
-      </div>
-    </div>
-    <p className="text-sm font-bold uppercase text-[#000000]">{title}</p>
-    <p className="mt-1 text-xs text-gray-600">{description}</p>
-    <p className="mt-3 inline-block rounded bg-black px-2 py-1 text-[10px] font-bold uppercase text-white">Future interactive graph</p>
   </div>
 );
 
@@ -287,9 +268,7 @@ export default function ClientProfilePage() {
 
     const loadedWorkouts = (workoutResult.data ?? []) as ProgramWorkoutRecord[];
     const workoutIds = loadedWorkouts.map((workout) => workout.id);
-    if (workoutIds.length === 0) {
-      return loadedPrograms.map((program) => ({ ...program, workouts: [] }));
-    }
+    if (workoutIds.length === 0) return loadedPrograms.map((program) => ({ ...program, workouts: [] }));
 
     const exerciseResult = await supabase
       .from('program_exercises')
@@ -464,9 +443,7 @@ export default function ClientProfilePage() {
   const isTaskComplete = (task: AssignedTaskRecord) => submissions.some((submission) => submission.assigned_task_id === task.id || submission.submission_type === task.task_type);
 
   const getSubmissionHref = (submission: SubmissionRecord) => {
-    if (submission.submission_type === 'workout_session' && submission.answer_text) {
-      return `/coach/clients/${clientId}/workout-review/${submission.answer_text}`;
-    }
+    if (submission.submission_type === 'workout_session' && submission.answer_text) return `/coach/clients/${clientId}/workout-review/${submission.answer_text}`;
     return `/coach/actions/submissions/${submission.id}`;
   };
 
@@ -542,17 +519,9 @@ export default function ClientProfilePage() {
                   Create client plan
                 </Link>
               </div>
-            ) : (
-              programmes.map((program) => (
-                <ProgrammeCard
-                  key={program.id}
-                  program={program}
-                  isExpanded={expandedProgrammeIds.has(program.id)}
-                  onToggle={() => toggleProgramme(program.id)}
-                  editHref={`/coach/clients/${clientId}/program`}
-                />
-              ))
-            )}
+            ) : programmes.map((program) => (
+              <ProgrammeCard key={program.id} program={program} isExpanded={expandedProgrammeIds.has(program.id)} onToggle={() => toggleProgramme(program.id)} editHref={`/coach/clients/${clientId}/program`} />
+            ))}
           </Card>
         </div>
 
@@ -586,9 +555,7 @@ export default function ClientProfilePage() {
                     <p className="text-sm text-gray-700"><span className="font-semibold">Main focus:</span> {snapshot.latestFeedback.main_focus || 'Not recorded'}</p>
                     <p className="text-sm text-gray-700"><span className="font-semibold">Agreed action:</span> {snapshot.latestFeedback.agreed_action || 'Not recorded'}</p>
                   </div>
-                ) : (
-                  <p className="mt-2 text-sm text-gray-600">No feedback sent yet.</p>
-                )}
+                ) : <p className="mt-2 text-sm text-gray-600">No feedback sent yet.</p>}
               </div>
 
               <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
@@ -603,23 +570,7 @@ export default function ClientProfilePage() {
         <div>
           <SectionHeader title="FUTURE PERFORMANCE TRACKING" accent />
           <Card>
-            <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <p className="text-sm text-gray-700">Exercise, bodyweight, nutrition, timeline, adherence and risk tracking are now live. More analytics will be layered in as the data set grows.</p>
-              <div className="flex flex-col gap-2 md:flex-row">
-                <Link href={`/coach/clients/${clientId}/progress`} className="rounded-lg bg-[#FA0201] px-4 py-3 text-sm font-bold uppercase text-white hover:bg-red-700">Open Exercise Progress</Link>
-                <Link href={`/coach/clients/${clientId}/bodyweight`} className="rounded-lg bg-black px-4 py-3 text-sm font-bold uppercase text-white hover:bg-gray-900">Open Bodyweight Trend</Link>
-                <Link href={`/coach/clients/${clientId}/nutrition`} className="rounded-lg bg-[#FA0201] px-4 py-3 text-sm font-bold uppercase text-white hover:bg-red-700">Open Nutrition</Link>
-                <Link href={`/coach/clients/${clientId}/timeline`} className="rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm font-bold uppercase text-[#000000] hover:bg-gray-100">Open Progress Timeline</Link>
-                <Link href={`/coach/clients/${clientId}/adherence`} className="rounded-lg bg-[#FA0201] px-4 py-3 text-sm font-bold uppercase text-white hover:bg-red-700">Open Adherence</Link>
-                <Link href={`/coach/clients/${clientId}/risk`} className="rounded-lg bg-black px-4 py-3 text-sm font-bold uppercase text-white hover:bg-gray-900">Open Risk Signals</Link>
-              </div>
-            </div>
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-              <FutureAnalyticsCard title="Exercise progress" description="Interactive lift-specific graphs for load, reps, estimated strength, and progression history." />
-              <FutureAnalyticsCard title="Volume trend" description="Weekly hard sets, total load, and training density by muscle group or movement pattern." />
-              <FutureAnalyticsCard title="Bodyweight trend" description="Client bodyweight, adherence, and nutrition trend overlays for coaching decisions." />
-              <FutureAnalyticsCard title="Risk signals" description="Auto-flag missed sessions, low adherence, repeated difficulty notes, or stalled lifts." />
-            </div>
+            <ClientMetricChartDashboard clientId={clientId} />
           </Card>
         </div>
 
