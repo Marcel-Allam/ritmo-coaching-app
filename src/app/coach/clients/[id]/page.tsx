@@ -575,68 +575,87 @@ export default function ClientProfilePage() {
         </div>
 
         <div>
-          <SectionHeader title="ASSIGNED TASKS" accent />
-          <div className="mb-4 flex justify-end">
-            <button type="button" onClick={() => setIsTaskFormOpen((value) => !value)} className="rounded-lg bg-[#FA0201] px-4 py-2 text-sm font-bold uppercase text-white hover:bg-red-700">
-              {isTaskFormOpen ? 'Close Task Form' : 'Assign Task'}
-            </button>
-          </div>
+          <SectionHeader title="TASKS" accent />
+          <Card className="space-y-6">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <p className="text-sm font-bold uppercase text-[#000000]">Tasks</p>
+                <p className="mt-1 text-xs font-semibold uppercase text-gray-500">Assigned tasks and recent submissions in one workflow.</p>
+              </div>
+              <button type="button" onClick={() => setIsTaskFormOpen((value) => !value)} className="rounded-lg bg-[#FA0201] px-4 py-2 text-sm font-bold uppercase text-white hover:bg-red-700">
+                {isTaskFormOpen ? 'Close Task Form' : 'Assign Task'}
+              </button>
+            </div>
 
-          {isTaskFormOpen && (
-            <Card className="mb-5 border-2 border-[#FA0201]">
-              <form onSubmit={handleCreateTask} className="space-y-4">
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                  <label>
-                    <span className="mb-2 block text-sm font-semibold uppercase">Task type</span>
-                    <select value={taskForm.taskType} onChange={(event) => setTaskForm({ ...taskForm, taskType: event.target.value })} className="w-full rounded-lg border-2 border-gray-300 px-4 py-2 text-black">
-                      {taskOptions.map((task) => <option key={task.value} value={task.value}>{task.label}</option>)}
-                    </select>
-                  </label>
-                  <label>
-                    <span className="mb-2 block text-sm font-semibold uppercase">Frequency</span>
-                    <select value={taskForm.frequency} onChange={(event) => setTaskForm({ ...taskForm, frequency: event.target.value })} className="w-full rounded-lg border-2 border-gray-300 px-4 py-2 text-black">
-                      <option value="daily">Daily</option>
-                      <option value="weekly">Weekly</option>
-                      <option value="one_off">One-off</option>
-                    </select>
-                  </label>
-                  <Input label="End date" type="date" value={taskForm.endDate} onChange={(event) => setTaskForm({ ...taskForm, endDate: event.target.value })} />
-                </div>
-                <label>
-                  <span className="mb-2 block text-sm font-semibold uppercase">Instructions</span>
-                  <textarea value={taskForm.instructions} onChange={(event) => setTaskForm({ ...taskForm, instructions: event.target.value })} rows={3} className="w-full rounded-lg border-2 border-gray-300 px-4 py-2 text-black" placeholder="Tell the client what to submit and how often." />
-                </label>
-                <button type="submit" disabled={isSavingTask} className="rounded-lg bg-black px-5 py-3 text-sm font-bold uppercase text-white hover:bg-gray-900 disabled:opacity-60">
-                  {isSavingTask ? 'Assigning...' : 'Assign Task'}
-                </button>
-              </form>
-            </Card>
-          )}
-
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            {tasks.map((task) => (
-              <TaskCard key={task.id} title={task.task_name} description={`${task.frequency}${task.end_date ? ` until ${formatDate(task.end_date)}` : ''}`} completed={isTaskComplete(task)} href={`/coach/actions/tasks/${task.id}`} />
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <SectionHeader title="RECENT SUBMISSIONS" accent />
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            {submissions.map((submission) => (
-              <Link key={submission.id} href={getSubmissionHref(submission)}>
-                <Card className="hover:border-[#FA0201]">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="font-bold uppercase text-[#000000]">{submission.submission_type.replaceAll('_', ' ')}</p>
-                      <p className="text-sm text-gray-600">Submitted {formatDate(submission.submitted_at)}</p>
-                    </div>
-                    <Badge variant={submission.review_status === 'reviewed' ? 'success' : 'warning'}>{submission.review_status}</Badge>
+            {isTaskFormOpen && (
+              <div className="rounded-xl border-2 border-[#FA0201] bg-white p-4">
+                <form onSubmit={handleCreateTask} className="space-y-4">
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                    <label>
+                      <span className="mb-2 block text-sm font-semibold uppercase">Task type</span>
+                      <select value={taskForm.taskType} onChange={(event) => setTaskForm({ ...taskForm, taskType: event.target.value })} className="w-full rounded-lg border-2 border-gray-300 px-4 py-2 text-black">
+                        {taskOptions.map((task) => <option key={task.value} value={task.value}>{task.label}</option>)}
+                      </select>
+                    </label>
+                    <label>
+                      <span className="mb-2 block text-sm font-semibold uppercase">Frequency</span>
+                      <select value={taskForm.frequency} onChange={(event) => setTaskForm({ ...taskForm, frequency: event.target.value })} className="w-full rounded-lg border-2 border-gray-300 px-4 py-2 text-black">
+                        <option value="daily">Daily</option>
+                        <option value="weekly">Weekly</option>
+                        <option value="one_off">One-off</option>
+                      </select>
+                    </label>
+                    <Input label="End date" type="date" value={taskForm.endDate} onChange={(event) => setTaskForm({ ...taskForm, endDate: event.target.value })} />
                   </div>
-                </Card>
-              </Link>
-            ))}
-          </div>
+                  <label>
+                    <span className="mb-2 block text-sm font-semibold uppercase">Instructions</span>
+                    <textarea value={taskForm.instructions} onChange={(event) => setTaskForm({ ...taskForm, instructions: event.target.value })} rows={3} className="w-full rounded-lg border-2 border-gray-300 px-4 py-2 text-black" placeholder="Tell the client what to submit and how often." />
+                  </label>
+                  <button type="submit" disabled={isSavingTask} className="rounded-lg bg-black px-5 py-3 text-sm font-bold uppercase text-white hover:bg-gray-900 disabled:opacity-60">
+                    {isSavingTask ? 'Assigning...' : 'Assign Task'}
+                  </button>
+                </form>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+              <div>
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <p className="text-xs font-black uppercase text-[#000000]">Assigned tasks</p>
+                  <Badge variant="default">{tasks.length}</Badge>
+                </div>
+                <div className="grid grid-cols-1 gap-4">
+                  {tasks.length === 0 ? (
+                    <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm text-gray-600">No active tasks assigned.</div>
+                  ) : tasks.map((task) => (
+                    <TaskCard key={task.id} title={task.task_name} description={`${task.frequency}${task.end_date ? ` until ${formatDate(task.end_date)}` : ''}`} completed={isTaskComplete(task)} href={`/coach/actions/tasks/${task.id}`} />
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <p className="text-xs font-black uppercase text-[#000000]">Recent submissions</p>
+                  <Badge variant="default">{submissions.length}</Badge>
+                </div>
+                <div className="grid grid-cols-1 gap-4">
+                  {submissions.length === 0 ? (
+                    <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm text-gray-600">No recent submissions yet.</div>
+                  ) : submissions.map((submission) => (
+                    <Link key={submission.id} href={getSubmissionHref(submission)} className="rounded-xl border border-gray-200 bg-white p-4 hover:border-[#FA0201]">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="font-bold uppercase text-[#000000]">{submission.submission_type.replaceAll('_', ' ')}</p>
+                          <p className="text-sm text-gray-600">Submitted {formatDate(submission.submitted_at)}</p>
+                        </div>
+                        <Badge variant={submission.review_status === 'reviewed' ? 'success' : 'warning'}>{submission.review_status}</Badge>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </Card>
         </div>
       </div>
     </div>
