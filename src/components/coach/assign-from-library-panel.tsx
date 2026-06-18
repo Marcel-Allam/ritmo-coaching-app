@@ -9,6 +9,10 @@ import { Input } from '@/components/ui/input';
 import { SectionHeader } from '@/components/ui/section-header';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
 
+type AssignFromLibraryPanelProps = {
+  embedded?: boolean;
+};
+
 type LibraryProgramme = {
   id: string;
   name: string;
@@ -58,7 +62,7 @@ const buildExerciseSummary = (exercise: LibraryExercise, sets: LibrarySet[]) => 
   return `${exercise.exercise_name} × ${sets.length || '?'} × ${getRepresentativeReps(sets)}`;
 };
 
-export function AssignFromLibraryPanel() {
+export function AssignFromLibraryPanel({ embedded = false }: AssignFromLibraryPanelProps) {
   const params = useParams();
   const clientId = params.id as string;
 
@@ -241,17 +245,20 @@ export function AssignFromLibraryPanel() {
       return;
     }
 
-    setMessage(`${selectedProgramme.name} assigned as the active programme. Previous active programme has been archived. Reloading programme delivery...`);
+    setMessage(`${selectedProgramme.name} assigned as the active client-specific programme. Reloading programme delivery...`);
     window.setTimeout(() => window.location.reload(), 600);
   };
 
+  const wrapperClassName = embedded ? 'mt-4' : 'p-6 pt-0 md:p-8 md:pt-0';
+  const sectionTitle = embedded ? 'CREATE CLIENT-SPECIFIC TRAINING PLAN' : 'ASSIGN FROM LIBRARY';
+
   if (loading) {
-    return <div id="assign-from-library" className="p-6 pt-0 md:p-8 md:pt-0"><Card>Loading Programme Library...</Card></div>;
+    return <div id="assign-from-library" className={wrapperClassName}><Card>Loading Programme Library...</Card></div>;
   }
 
   if (programmes.length === 0) {
     return (
-      <div id="assign-from-library" className="p-6 pt-0 md:p-8 md:pt-0">
+      <div id="assign-from-library" className={wrapperClassName}>
         <Card>
           <p className="text-sm text-gray-600">No active library programmes found. Build the Programme Library first.</p>
         </Card>
@@ -260,9 +267,9 @@ export function AssignFromLibraryPanel() {
   }
 
   return (
-    <div id="assign-from-library" className="p-6 pt-0 md:p-8 md:pt-0">
+    <div id="assign-from-library" className={wrapperClassName}>
       <section>
-        <SectionHeader title="ASSIGN FROM LIBRARY" accent />
+        <SectionHeader title={sectionTitle} accent />
         <Card className="space-y-6">
           {message && <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm font-semibold text-green-700">{message}</div>}
           {error && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700">{error}</div>}
@@ -291,7 +298,7 @@ export function AssignFromLibraryPanel() {
               </div>
               {selectedProgramme.description && <p className="text-sm text-gray-700">{selectedProgramme.description}</p>}
               <p className="mt-2 text-xs font-bold uppercase text-gray-500">
-                Creates {selectedProgrammeWorkouts.length} unscheduled workout{selectedProgrammeWorkouts.length === 1 ? '' : 's'} copied into this client only. This will become the only active programme.
+                Creates {selectedProgrammeWorkouts.length} unscheduled workout{selectedProgrammeWorkouts.length === 1 ? '' : 's'} copied into this client only. The copied plan can then be edited without changing the Library template.
               </p>
             </div>
           )}
@@ -327,10 +334,10 @@ export function AssignFromLibraryPanel() {
 
           <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <p className="text-xs font-semibold uppercase text-gray-500">
-              Assignment copies the library programme into client-specific tables and archives the previous active programme.
+              Assignment copies the Library programme into client-specific tables and archives the previous active programme.
             </p>
             <Button type="button" disabled={saving} onClick={assignProgramme} className="bg-[#FA0201] hover:bg-red-700">
-              {saving ? 'Assigning...' : 'Change active programme'}
+              {saving ? 'Creating plan...' : 'Create client-specific plan'}
             </Button>
           </div>
         </Card>
