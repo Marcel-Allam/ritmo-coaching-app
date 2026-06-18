@@ -591,7 +591,7 @@ export default function CoachLibraryPage() {
 
   return (
     <div className="space-y-8 p-6 md:p-8">
-      <PageHeader title="MANAGE WORKOUT LIBRARY" subtitle="Create, edit and organise reusable workout templates for RITMO programmes." />
+      <PageHeader title="WORKOUT LIBRARY" subtitle="Create, edit and organise reusable workout templates for RITMO programmes." />
 
       {!isWorkoutBuilderOpen && message && <Card className="border-2 border-green-200 bg-green-50 text-sm font-semibold text-green-700">{message}</Card>}
       {!isWorkoutBuilderOpen && error && <Card className="border-2 border-red-200 bg-red-50 text-sm font-semibold text-red-700">{error}</Card>}
