@@ -173,50 +173,74 @@ const ProgrammeCard = ({
   isExpanded: boolean;
   onToggle: () => void;
   editHref: string;
-}) => (
-  <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-    <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-      <button type="button" onClick={onToggle} className="text-left">
-        <div className="flex items-center gap-2">
-          <p className="text-lg font-black uppercase tracking-tight text-[#000000]">{program.title || 'Untitled programme'}</p>
-          <span className="text-lg font-black text-[#FA0201]">{isExpanded ? '▴' : '▾'}</span>
-        </div>
-        <p className="mt-1 text-xs font-bold uppercase text-gray-500">
-          {program.workouts.length} workout{program.workouts.length === 1 ? '' : 's'} assigned
-          {program.goal ? ` • ${program.goal}` : ''}
-        </p>
-      </button>
-      <Link href={editHref} className="rounded-lg bg-[#FA0201] px-5 py-3 text-center text-sm font-bold uppercase text-white hover:bg-red-700">
-        Edit programme
-      </Link>
-    </div>
+}) => {
+  const [expandedWorkoutIds, setExpandedWorkoutIds] = useState<Set<string>>(new Set());
 
-    {isExpanded && (
-      <div className="mt-4 space-y-3 border-t border-gray-200 pt-4">
-        {program.workouts.length === 0 ? (
-          <p className="text-sm text-gray-600">No workouts found inside this programme.</p>
-        ) : program.workouts.map((workout) => (
-          <div key={workout.id} className="rounded-lg border border-gray-200 bg-gray-50 p-3">
-            <div>
-              <p className="text-sm font-black uppercase text-[#000000]">Day {workout.workout_order || '-'} · {workout.title}</p>
-              <p className="mt-1 text-xs font-semibold uppercase text-gray-500">{formatDate(workout.scheduled_date)} · {workout.status}</p>
-            </div>
-            <div className="mt-3 space-y-2">
-              {workout.exercises.length === 0 ? (
-                <p className="text-xs text-gray-600">No exercises added yet.</p>
-              ) : workout.exercises.map((exercise) => (
-                <div key={exercise.id} className="rounded bg-white px-3 py-2 text-xs text-gray-700">
-                  <span className="font-black uppercase text-[#000000]">{exercise.exercise_name}</span>
-                  <span className="ml-2 font-semibold text-gray-600">{getSetSummary(exercise.sets)}</span>
-                </div>
-              ))}
-            </div>
+  const toggleWorkout = (workoutId: string) => {
+    setExpandedWorkoutIds((current) => {
+      const next = new Set(current);
+      if (next.has(workoutId)) next.delete(workoutId);
+      else next.add(workoutId);
+      return next;
+    });
+  };
+
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <button type="button" onClick={onToggle} className="text-left">
+          <div className="flex items-center gap-2">
+            <p className="text-lg font-black uppercase tracking-tight text-[#000000]">{program.title || 'Untitled programme'}</p>
+            <span className="text-lg font-black text-[#FA0201]">{isExpanded ? '▴' : '▾'}</span>
           </div>
-        ))}
+          <p className="mt-1 text-xs font-bold uppercase text-gray-500">
+            {program.workouts.length} workout{program.workouts.length === 1 ? '' : 's'} assigned
+            {program.goal ? ` • ${program.goal}` : ''}
+          </p>
+        </button>
+        <Link href={editHref} className="rounded-lg bg-[#FA0201] px-5 py-3 text-center text-sm font-bold uppercase text-white hover:bg-red-700">
+          Edit programme
+        </Link>
       </div>
-    )}
-  </div>
-);
+
+      {isExpanded && (
+        <div className="mt-4 space-y-3 border-t border-gray-200 pt-4">
+          {program.workouts.length === 0 ? (
+            <p className="text-sm text-gray-600">No workouts found inside this programme.</p>
+          ) : program.workouts.map((workout) => {
+            const workoutExpanded = expandedWorkoutIds.has(workout.id);
+            return (
+              <div key={workout.id} className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                <button type="button" onClick={() => toggleWorkout(workout.id)} className="flex w-full flex-col gap-2 text-left md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-black uppercase text-[#000000]">Day {workout.workout_order || '-'} · {workout.title}</p>
+                      <span className="text-sm font-black text-[#FA0201]">{workoutExpanded ? '▴' : '▾'}</span>
+                    </div>
+                    <p className="mt-1 text-xs font-semibold uppercase text-gray-500">{formatDate(workout.scheduled_date)} · {workout.status}</p>
+                  </div>
+                  <p className="text-xs font-bold uppercase text-gray-500">{workout.exercises.length} exercise{workout.exercises.length === 1 ? '' : 's'}</p>
+                </button>
+                {workoutExpanded && (
+                  <div className="mt-3 space-y-2">
+                    {workout.exercises.length === 0 ? (
+                      <p className="text-xs text-gray-600">No exercises added yet.</p>
+                    ) : workout.exercises.map((exercise) => (
+                      <div key={exercise.id} className="rounded bg-white px-3 py-2 text-xs text-gray-700">
+                        <span className="font-black uppercase text-[#000000]">{exercise.exercise_name}</span>
+                        <span className="ml-2 font-semibold text-gray-600">{getSetSummary(exercise.sets)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
 
 export default function ClientProfilePage() {
   const params = useParams();
@@ -242,7 +266,7 @@ export default function ClientProfilePage() {
       .from('training_programs')
       .select('id, title, goal, status, created_at')
       .eq('client_id', clientId)
-      .neq('status', 'archived')
+      .eq('status', 'active')
       .order('created_at', { ascending: false });
 
     if (programResult.error) throw programResult.error;
