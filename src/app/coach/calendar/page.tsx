@@ -8,6 +8,8 @@ import { Badge } from '@/components/ui/badge';
 import { SectionHeader } from '@/components/ui/section-header';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
 
+type CallTab = 'requested' | 'scheduled';
+
 type CoachCallBookingRecord = {
   id: string;
   client_id: string;
@@ -45,6 +47,7 @@ const CALENDAR_START_HOUR = 8;
 const CALENDAR_END_HOUR = 20;
 const SLOT_MINUTES = 30;
 const SLOT_HEIGHT_PX = 64;
+const REQUEST_PLACEHOLDER_MINUTES = 30;
 
 const calendarSlots = Array.from({ length: ((CALENDAR_END_HOUR - CALENDAR_START_HOUR) * 60) / SLOT_MINUTES + 1 }, (_, index) => {
   const totalMinutes = CALENDAR_START_HOUR * 60 + index * SLOT_MINUTES;
@@ -58,6 +61,8 @@ const addDays = (date: Date, days: number) => {
   nextDate.setDate(date.getDate() + days);
   return nextDate;
 };
+
+const addMinutes = (date: Date, minutes: number) => new Date(date.getTime() + minutes * 60_000);
 
 const toDateKey = (date: Date) => {
   const year = date.getFullYear();
@@ -108,6 +113,14 @@ const formatWeekRange = (weekStart: Date, weekEnd: Date) => {
 const formatLabel = (value: string) => value.replaceAll('_', ' ');
 
 const getBookingDisplayRange = (booking: CoachCallBookingRecord) => {
+  if (booking.status === 'requested' && booking.requested_starts_at) {
+    const startsAt = new Date(booking.requested_starts_at);
+    return {
+      startsAt,
+      endsAt: addMinutes(startsAt, REQUEST_PLACEHOLDER_MINUTES),
+    };
+  }
+
   if (booking.status === 'reschedule_pending' && booking.suggested_starts_at && booking.suggested_ends_at) {
     return {
       startsAt: new Date(booking.suggested_starts_at),
@@ -136,13 +149,14 @@ const formatStatus = (status: string) => {
 
 const getStatusBadgeVariant = (status: string) => {
   if (status === 'accepted' || status === 'completed') return 'success';
-  if (status === 'reschedule_pending') return 'warning';
+  if (status === 'requested' || status === 'reschedule_pending') return 'warning';
   if (status === 'declined' || status === 'cancelled') return 'danger';
   return 'default';
 };
 
 const getBlockClassName = (block: CalendarBlock) => {
   if (block.type === 'busy') return 'border border-gray-500 bg-gray-900 text-white';
+  if (block.status === 'requested') return 'border-2 border-amber-500 bg-yellow-300 text-black ring-2 ring-yellow-200';
   if (block.status === 'accepted' || block.status === 'completed') return 'border border-green-700 bg-green-600 text-white';
   if (block.status === 'reschedule_pending') return 'border border-amber-600 bg-amber-400 text-black';
   return 'border border-[#FA0201] bg-[#FA0201] text-white';
@@ -164,6 +178,7 @@ export default function CoachCalendarPage() {
   const [weekAnchor, setWeekAnchor] = useState(() => new Date());
   const [bookings, setBookings] = useState<CoachCallBookingRecord[]>([]);
   const [busySlots, setBusySlots] = useState<BusySlotRecord[]>([]);
+  const [activeCallTab, setActiveCallTab] = useState<CallTab>('requested');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -271,12 +286,32 @@ export default function CoachCalendarPage() {
   }, [bookings, busySlots, weekStart, weekEnd]);
 
   const requestedBookings = bookings.filter((booking) => booking.status === 'requested');
+  const scheduledBookings = bookings.filter((booking) => ['accepted', 'reschedule_pending', 'completed'].includes(booking.status));
   const acceptedThisWeek = calendarBlocks.filter((block) => block.type === 'call' && block.status === 'accepted').length;
   const reschedulesThisWeek = calendarBlocks.filter((block) => block.type === 'call' && block.status === 'reschedule_pending').length;
 
+  const renderBookingRow = (booking: CoachCallBookingRecord, highlighted = false) => {
+    const requestedLabel = booking.requested_starts_at ? `Requested slot ${formatDateTime(booking.requested_starts_at)}` : `Requested ${formatDateTime(booking.created_at)}`;
+    const acceptedLabel = booking.starts_at ? `${formatDateTime(booking.starts_at)}${booking.ends_at ? ` – ${formatDateTime(booking.ends_at)}` : ''}` : requestedLabel;
+    const rescheduleLabel = booking.suggested_starts_at ? `Suggested ${formatDateTime(booking.suggested_starts_at)}` : requestedLabel;
+    const detail = booking.status === 'accepted' || booking.status === 'completed' ? acceptedLabel : booking.status === 'reschedule_pending' ? rescheduleLabel : requestedLabel;
+
+    return (
+      <Link key={booking.id} href={`/coach/actions/bookings/${booking.id}`}>
+        <Card className={`flex items-center justify-between gap-4 hover:bg-gray-50 ${highlighted ? 'border-2 border-yellow-400 bg-yellow-50 shadow-sm' : ''}`}>
+          <div>
+            <p className="font-bold uppercase text-[#000000]">{booking.clients?.full_name || 'Client'}</p>
+            <p className="text-xs text-gray-500">{detail}</p>
+          </div>
+          <Badge variant={getStatusBadgeVariant(booking.status) as any}>{formatLabel(booking.status)}</Badge>
+        </Card>
+      </Link>
+    );
+  };
+
   return (
     <div className="p-6 md:p-8">
-      <PageHeader title="CALENDAR" subtitle="Coach call requests, accepted calls, busy time, and reschedule-pending calls." />
+      <PageHeader title="CALENDAR" subtitle="Call requests, scheduled calls, busy time, and bookable availability." />
 
       <div className="mt-8 space-y-8">
         {loading && <Card><p className="font-semibold text-gray-700">Loading calendar...</p></Card>}
@@ -284,20 +319,49 @@ export default function CoachCalendarPage() {
 
         {!loading && !error && (
           <>
-            <section className="grid grid-cols-1 gap-4 md:grid-cols-4">
-              <Card><p className="text-xs font-bold uppercase text-gray-500">Requested</p><p className="mt-2 text-3xl font-black text-[#FA0201]">{requestedBookings.length}</p></Card>
-              <Card><p className="text-xs font-bold uppercase text-gray-500">Accepted this week</p><p className="mt-2 text-3xl font-black text-green-600">{acceptedThisWeek}</p></Card>
-              <Card><p className="text-xs font-bold uppercase text-gray-500">Reschedule pending this week</p><p className="mt-2 text-3xl font-black text-amber-600">{reschedulesThisWeek}</p></Card>
-              <Card><p className="text-xs font-bold uppercase text-gray-500">Busy blocks</p><p className="mt-2 text-3xl font-black text-gray-700">{busySlots.length}</p></Card>
+            <section>
+              <Card className="space-y-4 border-2 border-yellow-300 bg-yellow-50">
+                <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-[0.18em] text-[#FA0201]">Priority</p>
+                    <h2 className="mt-1 text-2xl font-black uppercase text-[#000000]">Call requests</h2>
+                    <p className="mt-1 text-sm font-semibold text-gray-700">Requested calls are shown first and appear as yellow blocks on the weekly calendar.</p>
+                  </div>
+                  <div className="flex rounded-lg border border-yellow-300 bg-white p-1">
+                    <button type="button" onClick={() => setActiveCallTab('requested')} className={`rounded-md px-4 py-2 text-xs font-black uppercase ${activeCallTab === 'requested' ? 'bg-[#FA0201] text-white' : 'text-[#000000] hover:bg-yellow-100'}`}>Unscheduled</button>
+                    <button type="button" onClick={() => setActiveCallTab('scheduled')} className={`rounded-md px-4 py-2 text-xs font-black uppercase ${activeCallTab === 'scheduled' ? 'bg-[#FA0201] text-white' : 'text-[#000000] hover:bg-yellow-100'}`}>Scheduled</button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+                  <Card className="bg-white"><p className="text-xs font-bold uppercase text-gray-500">Requested</p><p className="mt-2 text-3xl font-black text-[#FA0201]">{requestedBookings.length}</p></Card>
+                  <Card className="bg-white"><p className="text-xs font-bold uppercase text-gray-500">Accepted this week</p><p className="mt-2 text-3xl font-black text-green-600">{acceptedThisWeek}</p></Card>
+                  <Card className="bg-white"><p className="text-xs font-bold uppercase text-gray-500">Reschedule pending</p><p className="mt-2 text-3xl font-black text-amber-600">{reschedulesThisWeek}</p></Card>
+                  <Card className="bg-white"><p className="text-xs font-bold uppercase text-gray-500">Busy blocks</p><p className="mt-2 text-3xl font-black text-gray-700">{busySlots.length}</p></Card>
+                </div>
+
+                <div className="space-y-3">
+                  {activeCallTab === 'requested' && (
+                    requestedBookings.length === 0 ? <Card className="bg-white"><p className="text-sm text-gray-600">No unscheduled call requests.</p></Card> : requestedBookings.map((booking) => renderBookingRow(booking, true))
+                  )}
+
+                  {activeCallTab === 'scheduled' && (
+                    scheduledBookings.length === 0 ? <Card className="bg-white"><p className="text-sm text-gray-600">No scheduled calls yet.</p></Card> : scheduledBookings.map((booking) => renderBookingRow(booking))
+                  )}
+                </div>
+              </Card>
             </section>
 
             <section>
               <Card className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                 <div>
                   <p className="text-xs font-bold uppercase text-gray-500">Coach availability</p>
-                  <p className="mt-1 font-bold uppercase text-[#000000]">Add busy time when calls should not be booked.</p>
+                  <p className="mt-1 font-bold uppercase text-[#000000]">Set bookable appointment hours and block days clients should not book.</p>
                 </div>
-                <Link href="/coach/calendar/busy" className="rounded-lg bg-black px-4 py-2 text-sm font-bold uppercase text-white hover:bg-gray-900">Manage busy time</Link>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <Link href="/coach/calendar/settings" className="rounded-lg bg-[#FA0201] px-4 py-2 text-sm font-bold uppercase text-white hover:bg-red-700">Calendar settings</Link>
+                  <Link href="/coach/calendar/busy" className="rounded-lg bg-black px-4 py-2 text-sm font-bold uppercase text-white hover:bg-gray-900">Manage busy time</Link>
+                </div>
               </Card>
             </section>
 
@@ -369,44 +433,6 @@ export default function CoachCalendarPage() {
                   </div>
                 </div>
               </Card>
-            </section>
-
-            <section>
-              <SectionHeader title="UNSCHEDULED CALL REQUESTS" accent />
-              <div className="space-y-3">
-                {requestedBookings.length === 0 ? (
-                  <Card><p className="text-sm text-gray-600">No unscheduled call requests.</p></Card>
-                ) : requestedBookings.map((booking) => (
-                  <Link key={booking.id} href={`/coach/actions/bookings/${booking.id}`}>
-                    <Card className="flex items-center justify-between gap-4 hover:bg-gray-50">
-                      <div>
-                        <p className="font-bold uppercase text-[#000000]">{booking.clients?.full_name || 'Client'}</p>
-                        <p className="text-xs text-gray-500">{booking.requested_starts_at ? `Client available ${formatDateTime(booking.requested_starts_at)}` : `Requested ${formatDateTime(booking.created_at)}`}</p>
-                      </div>
-                      <Badge variant={getStatusBadgeVariant(booking.status) as any}>{formatLabel(booking.status)}</Badge>
-                    </Card>
-                  </Link>
-                ))}
-              </div>
-            </section>
-
-            <section>
-              <SectionHeader title="SCHEDULED CALLS THIS WEEK" accent />
-              <div className="space-y-3">
-                {calendarBlocks.filter((block) => block.type === 'call').length === 0 ? (
-                  <Card><p className="text-sm text-gray-600">No accepted or reschedule-pending calls this week.</p></Card>
-                ) : calendarBlocks.filter((block) => block.type === 'call').map((block) => (
-                  <Link key={block.id} href={block.href || '#'}>
-                    <Card className="flex items-center justify-between gap-4 hover:bg-gray-50">
-                      <div>
-                        <p className="font-bold uppercase text-[#000000]">{block.title}</p>
-                        <p className="text-xs text-gray-500">{block.dateKey} • {block.subtitle}</p>
-                      </div>
-                      <Badge variant={getStatusBadgeVariant(block.status || '') as any}>{formatStatus(block.status || '')}</Badge>
-                    </Card>
-                  </Link>
-                ))}
-              </div>
             </section>
 
             <section>
