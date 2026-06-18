@@ -247,6 +247,30 @@ export default function ExerciseCataloguePage() {
     await loadExercises();
   };
 
+  const deleteExercise = async () => {
+    if (!isSupabaseConfigured || !selectedExercise) return;
+    if (!window.confirm(`Permanently delete ${selectedExercise.name}? This cannot be undone. Existing workout templates will keep their copied exercise name.`)) return;
+
+    setSaving(true);
+    setError(null);
+    setMessage(null);
+
+    const supabase = createClient();
+    const { error: deleteError } = await supabase.from('exercise_catalogue').delete().eq('id', selectedExercise.id);
+
+    if (deleteError) {
+      setError(deleteError.message);
+      setSaving(false);
+      return;
+    }
+
+    setMessage('Exercise deleted.');
+    resetExerciseBuilder();
+    setSaving(false);
+    setLoading(true);
+    await loadExercises();
+  };
+
   const renderExerciseEditor = () => (
     <Card className="space-y-5 border-2 border-gray-200 bg-gray-50">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
@@ -255,14 +279,19 @@ export default function ExerciseCataloguePage() {
           <p className="mt-1 text-sm text-gray-600">Exercise Library edits affect future workout building and exercise selection.</p>
         </div>
         {selectedExercise && (
-          <button
-            type="button"
-            onClick={() => handleSetActive(selectedExercise, !selectedExercise.is_active)}
-            disabled={saving}
-            className={`rounded-lg px-4 py-3 text-xs font-bold uppercase disabled:opacity-60 ${selectedExercise.is_active ? 'border border-red-300 bg-red-50 text-[#FA0201] hover:bg-red-100' : 'bg-black text-white hover:bg-gray-900'}`}
-          >
-            {selectedExercise.is_active ? 'Archive exercise' : 'Restore exercise'}
-          </button>
+          <div className="flex flex-col gap-2 md:flex-row md:items-center">
+            <button
+              type="button"
+              onClick={() => handleSetActive(selectedExercise, !selectedExercise.is_active)}
+              disabled={saving}
+              className={`rounded-lg px-4 py-3 text-xs font-bold uppercase disabled:opacity-60 ${selectedExercise.is_active ? 'border border-red-300 bg-red-50 text-[#FA0201] hover:bg-red-100' : 'bg-black text-white hover:bg-gray-900'}`}
+            >
+              {selectedExercise.is_active ? 'Archive exercise' : 'Restore exercise'}
+            </button>
+            <button type="button" onClick={deleteExercise} disabled={saving} className="rounded-lg bg-[#FA0201] px-4 py-3 text-xs font-bold uppercase text-white hover:bg-red-700 disabled:opacity-60">
+              Delete
+            </button>
+          </div>
         )}
       </div>
 
