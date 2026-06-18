@@ -425,7 +425,6 @@ export default function ClientProfilePage() {
             <SectionHeader title="ASSIGNED TASKS" accent />
             <div className="mb-4 flex flex-col items-end gap-2">
               <button type="button" onClick={() => setIsTaskFormOpen(true)} className="rounded-lg bg-[#FA0201] px-4 py-2 text-sm font-bold uppercase text-white hover:bg-red-700">Assign Task</button>
-              <Link href={`/coach/clients/${clientId}/program`} className="rounded-lg bg-black px-4 py-2 text-sm font-bold uppercase text-white hover:bg-gray-900">Open Programme</Link>
               <Link href={`/coach/clients/${clientId}/current-workouts`} className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-bold uppercase text-[#000000] hover:bg-gray-100">Current Workouts</Link>
             </div>
           </div>
@@ -468,32 +467,31 @@ export default function ClientProfilePage() {
 
           <div className="space-y-4">
             {tasks.length === 0 ? <Card><p className="text-sm text-gray-600">No active tasks assigned.</p></Card> : tasks.map((task) => (
-              <TaskCard key={task.id} title={task.task_name} description={task.instructions || `${task.frequency} ${task.task_type}`} status={isTaskComplete(task) ? 'completed' : 'pending'} dueDate={formatDate(task.end_date)} />
+              <TaskCard key={task.id} title={task.task_name} meta={`${getTaskLabel(task.task_type)} • ${task.frequency}`} status={isTaskComplete(task) ? 'Complete' : 'Pending'}>
+                <p className="text-sm text-gray-700">{task.instructions || 'No additional instructions.'}</p>
+                {task.end_date && <p className="mt-2 text-xs font-semibold text-gray-500">Ends: {formatDate(task.end_date)}</p>}
+              </TaskCard>
             ))}
           </div>
         </div>
 
         <div>
-          <SectionHeader title="RECENT SUBMISSIONS" accent />
-          <Card>
-            {submissions.length === 0 ? (
-              <p className="text-sm text-gray-600">No submissions yet.</p>
-            ) : (
-              <div className="space-y-4">
-                {submissions.map((submission) => (
-                  <Link key={submission.id} href={getSubmissionHref(submission)} className="block rounded-lg border-b border-gray-200 pb-4 hover:bg-gray-50 last:border-b-0 last:pb-0">
-                    <div className="flex items-center justify-between gap-4">
-                      <div>
-                        <p className="font-semibold uppercase text-[#000000]">{submission.submission_type.replaceAll('_', ' ')}</p>
-                        <p className="mt-1 text-xs text-gray-500">{formatDate(submission.submitted_at)}</p>
-                      </div>
-                      <Badge variant={submission.review_status === 'reviewed' ? 'success' : 'default'}>{submission.review_status}</Badge>
+          <SectionHeader title="LATEST SUBMISSIONS" accent />
+          <div className="space-y-4">
+            {submissions.length === 0 ? <Card><p className="text-sm text-gray-600">No recent submissions.</p></Card> : submissions.map((submission) => (
+              <Link key={submission.id} href={getSubmissionHref(submission)} className="block">
+                <Card className="transition hover:border-[#FA0201] hover:shadow-md">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <p className="text-sm font-bold uppercase text-[#000000]">{getTaskLabel(submission.submission_type)}</p>
+                      <p className="text-xs text-gray-500">Submitted {formatDate(submission.submitted_at)}</p>
                     </div>
-                  </Link>
-                ))}
-              </div>
-            )}
-          </Card>
+                    <Badge variant={submission.review_status === 'reviewed' ? 'success' : 'warning'}>{submission.review_status}</Badge>
+                  </div>
+                </Card>
+              </Link>
+            ))}
+          </div>
         </div>
       </div>
     </div>
