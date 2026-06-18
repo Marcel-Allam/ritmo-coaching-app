@@ -8,7 +8,6 @@ import { Badge } from '@/components/ui/badge';
 import { SectionHeader } from '@/components/ui/section-header';
 import { TaskCard } from '@/components/ui/task-card';
 import { Input } from '@/components/ui/input';
-import { AssignFromLibraryPanel } from '@/components/coach/assign-from-library-panel';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
 
 interface ClientRecord {
@@ -539,9 +538,9 @@ export default function ClientProfilePage() {
                   <p className="text-lg font-black uppercase text-[#000000]">No programme assigned</p>
                   <p className="mt-1 text-sm text-gray-600">Assign a programme from the Library to create editable client-specific workouts.</p>
                 </div>
-                <a href="#assign-from-library" className="rounded-lg bg-[#FA0201] px-5 py-3 text-center text-sm font-bold uppercase text-white hover:bg-red-700">
+                <Link href={`/coach/clients/${clientId}/program#assign-from-library`} className="rounded-lg bg-[#FA0201] px-5 py-3 text-center text-sm font-bold uppercase text-white hover:bg-red-700">
                   Create client plan
-                </a>
+                </Link>
               </div>
             ) : (
               programmes.map((program) => (
@@ -555,7 +554,6 @@ export default function ClientProfilePage() {
               ))
             )}
           </Card>
-          <AssignFromLibraryPanel embedded />
         </div>
 
         <div>
