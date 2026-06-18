@@ -319,7 +319,6 @@ export default function ClientProgramPage() {
                     </div>
                     <div className="flex flex-wrap gap-2 md:justify-end">
                       <Badge variant="default">{group.workouts.length} workout{group.workouts.length === 1 ? '' : 's'}</Badge>
-                      <Link href={`/coach/clients/${clientId}/current-workouts`} className="rounded-lg bg-[#FA0201] px-3 py-2 text-xs font-bold uppercase text-white hover:bg-red-700">Edit client programme</Link>
                       <Link href={`/coach/clients/${clientId}/schedule-workouts`} className="rounded-lg bg-[#000000] px-3 py-2 text-xs font-bold uppercase text-white hover:bg-gray-900">Schedule programme</Link>
                     </div>
                   </div>
