@@ -1,6 +1,7 @@
 'use client';
 
 import { AppShell } from '@/components/layout/app-shell';
+import { LibraryBuilderCloseButton } from '@/components/coach/library-builder-close-button';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
@@ -34,5 +35,10 @@ export default function CoachLayout({
     );
   }
 
-  return <AppShell role="coach">{children}</AppShell>;
+  return (
+    <AppShell role="coach">
+      <LibraryBuilderCloseButton />
+      {children}
+    </AppShell>
+  );
 }
