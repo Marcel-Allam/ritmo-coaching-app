@@ -38,12 +38,34 @@ type ExerciseSessionPoint = {
   estimatedOneRepMax: number | null;
   totalVolume: number;
   completedSets: number;
+  averageRepsPerSet: number;
 };
 
+type MetricKey = 'estimatedOneRepMax' | 'topWeight' | 'totalVolume' | 'topReps' | 'completedSets' | 'averageRepsPerSet';
+type TimeWindowKey = 'all' | '4w' | '12w' | '24w';
+
 type ChartPoint = {
+  date: string;
   label: string;
   value: number;
+  raw: ExerciseSessionPoint;
 };
+
+const metricOptions: Array<{ key: MetricKey; label: string; suffix: string; description: string }> = [
+  { key: 'estimatedOneRepMax', label: 'Estimated 1RM', suffix: 'kg', description: 'Best-set strength estimate session to session.' },
+  { key: 'topWeight', label: 'Top load', suffix: 'kg', description: 'Heaviest working set logged in each session.' },
+  { key: 'totalVolume', label: 'Session volume', suffix: 'kg', description: 'Total completed load: weight × reps across completed sets.' },
+  { key: 'topReps', label: 'Top-set reps', suffix: ' reps', description: 'Reps achieved on the heaviest set.' },
+  { key: 'completedSets', label: 'Completed sets', suffix: ' sets', description: 'Number of completed sets for the selected exercise.' },
+  { key: 'averageRepsPerSet', label: 'Avg reps/set', suffix: ' reps', description: 'Average completed reps per set in that session.' },
+];
+
+const timeWindowOptions: Array<{ key: TimeWindowKey; label: string; days: number | null }> = [
+  { key: 'all', label: 'All time', days: null },
+  { key: '4w', label: '4 weeks', days: 28 },
+  { key: '12w', label: '12 weeks', days: 84 },
+  { key: '24w', label: '24 weeks', days: 168 },
+];
 
 const formatDate = (value: string | null) => {
   if (!value) return 'Not set';
@@ -55,6 +77,12 @@ const formatDate = (value: string | null) => {
   }).format(new Date(value));
 };
 
+const formatShortDate = (value: string) =>
+  new Intl.DateTimeFormat('en-GB', {
+    day: 'numeric',
+    month: 'short',
+  }).format(new Date(value));
+
 const roundToOneDecimal = (value: number) => Math.round(value * 10) / 10;
 
 const estimateOneRepMax = (weight: number, reps: number) => {
@@ -63,6 +91,35 @@ const estimateOneRepMax = (weight: number, reps: number) => {
 
   // Epley estimate: simple, transparent, and useful enough for early trend tracking.
   return roundToOneDecimal(weight * (1 + reps / 30));
+};
+
+const getMetricValue = (point: ExerciseSessionPoint, metric: MetricKey) => {
+  const value = point[metric];
+  if (value === null || value === undefined) return null;
+  return Number(value);
+};
+
+const formatMetricValue = (value: number | null, suffix: string) => {
+  if (value === null || Number.isNaN(value)) return '—';
+  return `${roundToOneDecimal(value)}${suffix}`;
+};
+
+const formatPercent = (value: number | null) => {
+  if (value === null || Number.isNaN(value)) return '—';
+  if (value === 0) return '0%';
+  return `${value > 0 ? '+' : ''}${roundToOneDecimal(value)}%`;
+};
+
+const calculatePercentChange = (current: number | null, previous: number | null) => {
+  if (current === null || previous === null || previous === 0) return null;
+  return ((current - previous) / previous) * 100;
+};
+
+const getWindowStartPoint = (points: ChartPoint[], latestPoint: ChartPoint | null, days: number) => {
+  if (!latestPoint) return null;
+  const threshold = new Date(latestPoint.date).getTime() - days * 24 * 60 * 60 * 1000;
+  const candidates = points.filter((point) => new Date(point.date).getTime() >= threshold && point.date !== latestPoint.date);
+  return candidates[0] || null;
 };
 
 const groupSetsIntoSessionPoints = (sets: RawPerformedSet[]) => {
@@ -86,27 +143,30 @@ const groupSetsIntoSessionPoints = (sets: RawPerformedSet[]) => {
 
       if (!exerciseName || !completedAt) return null;
 
-      const completedSets = sessionSets.filter((set) => set.completed && set.actual_weight_kg && set.actual_reps);
+      const completedSets = sessionSets.filter((set) => set.completed && set.actual_weight_kg !== null && set.actual_reps !== null);
 
       if (completedSets.length === 0) return null;
 
-      const topSet = completedSets.reduce((best, current) => {
-        const bestWeight = best.actual_weight_kg ?? 0;
-        const bestReps = best.actual_reps ?? 0;
-        const currentWeight = current.actual_weight_kg ?? 0;
-        const currentReps = current.actual_reps ?? 0;
+      const bestSet = completedSets.reduce((best, current) => {
+        const bestWeight = Number(best.actual_weight_kg ?? 0);
+        const bestReps = Number(best.actual_reps ?? 0);
+        const bestEstimatedOneRepMax = estimateOneRepMax(bestWeight, bestReps) ?? 0;
+        const currentWeight = Number(current.actual_weight_kg ?? 0);
+        const currentReps = Number(current.actual_reps ?? 0);
+        const currentEstimatedOneRepMax = estimateOneRepMax(currentWeight, currentReps) ?? 0;
 
-        if (currentWeight > bestWeight) return current;
-        if (currentWeight === bestWeight && currentReps > bestReps) return current;
+        if (currentEstimatedOneRepMax > bestEstimatedOneRepMax) return current;
+        if (currentEstimatedOneRepMax === bestEstimatedOneRepMax && currentWeight > bestWeight) return current;
         return best;
       }, completedSets[0]);
 
-      const topWeight = Number(topSet.actual_weight_kg ?? 0);
-      const topReps = Number(topSet.actual_reps ?? 0);
-      const topRpe = topSet.actual_rpe === null ? null : Number(topSet.actual_rpe);
+      const topWeight = Number(bestSet.actual_weight_kg ?? 0);
+      const topReps = Number(bestSet.actual_reps ?? 0);
+      const topRpe = bestSet.actual_rpe === null ? null : Number(bestSet.actual_rpe);
       const totalVolume = completedSets.reduce((total, set) => {
         return total + Number(set.actual_weight_kg ?? 0) * Number(set.actual_reps ?? 0);
       }, 0);
+      const totalReps = completedSets.reduce((total, set) => total + Number(set.actual_reps ?? 0), 0);
 
       return {
         date: completedAt,
@@ -117,6 +177,7 @@ const groupSetsIntoSessionPoints = (sets: RawPerformedSet[]) => {
         estimatedOneRepMax: estimateOneRepMax(topWeight, topReps),
         totalVolume: roundToOneDecimal(totalVolume),
         completedSets: completedSets.length,
+        averageRepsPerSet: roundToOneDecimal(totalReps / completedSets.length),
       };
     })
     .filter((point): point is ExerciseSessionPoint => Boolean(point))
@@ -131,51 +192,79 @@ const MetricCard = ({ label, value, helper }: { label: string; value: string; he
   </div>
 );
 
-const TrendChart = ({ title, points, suffix = '' }: { title: string; points: ChartPoint[]; suffix?: string }) => {
-  const width = 640;
-  const height = 220;
-  const padding = 34;
-  const chartWidth = width - padding * 2;
-  const chartHeight = height - padding * 2;
+const InteractiveTrendChart = ({
+  title,
+  points,
+  suffix,
+}: {
+  title: string;
+  points: ChartPoint[];
+  suffix: string;
+}) => {
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+  const width = 760;
+  const height = 300;
+  const leftPadding = 70;
+  const rightPadding = 34;
+  const topPadding = 34;
+  const bottomPadding = 54;
+  const chartWidth = width - leftPadding - rightPadding;
+  const chartHeight = height - topPadding - bottomPadding;
   const values = points.map((point) => point.value);
-  const minValue = Math.min(...values);
-  const maxValue = Math.max(...values);
-  const valueRange = maxValue - minValue || 1;
+  const minValue = values.length ? Math.min(...values) : 0;
+  const maxValue = values.length ? Math.max(...values) : 0;
+  const paddedMin = minValue === maxValue ? Math.max(0, minValue - 1) : minValue;
+  const paddedMax = minValue === maxValue ? maxValue + 1 : maxValue;
+  const valueRange = paddedMax - paddedMin || 1;
+  const selectedPoint = selectedIndex === null ? points[points.length - 1] : points[selectedIndex];
 
   const coordinates = points.map((point, index) => {
-    const x = points.length === 1 ? width / 2 : padding + (index / (points.length - 1)) * chartWidth;
-    const y = padding + chartHeight - ((point.value - minValue) / valueRange) * chartHeight;
+    const x = points.length === 1 ? leftPadding + chartWidth / 2 : leftPadding + (index / (points.length - 1)) * chartWidth;
+    const y = topPadding + chartHeight - ((point.value - paddedMin) / valueRange) * chartHeight;
     return { ...point, x, y };
   });
 
   const linePath = coordinates.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ');
+  const yTicks = [paddedMax, paddedMin + valueRange * 0.5, paddedMin];
 
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-4">
-      <div className="mb-3 flex items-center justify-between gap-4">
-        <p className="text-sm font-bold uppercase text-[#000000]">{title}</p>
-        <p className="text-xs font-semibold text-gray-500">
-          {points.length} point{points.length === 1 ? '' : 's'}
-        </p>
+      <div className="mb-3 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div>
+          <p className="text-sm font-bold uppercase text-[#000000]">{title}</p>
+          <p className="mt-1 text-xs font-semibold uppercase text-gray-500">Click a point to inspect a session.</p>
+        </div>
+        <div className="rounded-lg bg-gray-50 px-3 py-2 text-right">
+          <p className="text-xs font-bold uppercase text-gray-500">Selected</p>
+          <p className="text-sm font-black text-[#000000]">{selectedPoint ? `${formatShortDate(selectedPoint.date)} · ${formatMetricValue(selectedPoint.value, suffix)}` : 'No point'}</p>
+        </div>
       </div>
 
       {points.length === 0 ? (
-        <div className="flex h-56 items-center justify-center rounded-lg bg-gray-50">
+        <div className="flex h-64 items-center justify-center rounded-lg bg-gray-50">
           <p className="text-sm font-semibold text-gray-500">Not enough data yet.</p>
         </div>
       ) : (
         <div className="overflow-x-auto">
-          <svg viewBox={`0 0 ${width} ${height}`} className="min-w-[520px] rounded-lg bg-gray-50">
-            <line x1={padding} y1={padding} x2={padding} y2={height - padding} stroke="#D1D5DB" strokeWidth="2" />
-            <line x1={padding} y1={height - padding} x2={width - padding} y2={height - padding} stroke="#D1D5DB" strokeWidth="2" />
+          <svg viewBox={`0 0 ${width} ${height}`} className="min-w-[680px] rounded-lg bg-gray-50">
+            {yTicks.map((tick) => {
+              const y = topPadding + chartHeight - ((tick - paddedMin) / valueRange) * chartHeight;
+              return (
+                <g key={tick}>
+                  <line x1={leftPadding} y1={y} x2={width - rightPadding} y2={y} stroke="#E5E7EB" strokeWidth="1" />
+                  <text x={leftPadding - 12} y={y + 4} textAnchor="end" className="fill-gray-500 text-[11px] font-semibold">
+                    {roundToOneDecimal(tick)}{suffix}
+                  </text>
+                </g>
+              );
+            })}
+            <line x1={leftPadding} y1={topPadding} x2={leftPadding} y2={height - bottomPadding} stroke="#D1D5DB" strokeWidth="2" />
+            <line x1={leftPadding} y1={height - bottomPadding} x2={width - rightPadding} y2={height - bottomPadding} stroke="#D1D5DB" strokeWidth="2" />
             <path d={linePath} fill="none" stroke="#FA0201" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
-            {coordinates.map((point) => (
-              <g key={`${point.label}-${point.x}`}>
-                <circle cx={point.x} cy={point.y} r="6" fill="#FA0201" />
-                <text x={point.x} y={point.y - 12} textAnchor="middle" className="fill-black text-[11px] font-bold">
-                  {point.value}{suffix}
-                </text>
-                <text x={point.x} y={height - 10} textAnchor="middle" className="fill-gray-600 text-[10px] font-semibold">
+            {coordinates.map((point, index) => (
+              <g key={`${point.label}-${point.x}`} className="cursor-pointer" onClick={() => setSelectedIndex(index)}>
+                <circle cx={point.x} cy={point.y} r={selectedIndex === index || (selectedIndex === null && index === points.length - 1) ? 8 : 6} fill="#FA0201" />
+                <text x={point.x} y={height - 22} textAnchor="middle" className="fill-gray-600 text-[10px] font-semibold">
                   {point.label}
                 </text>
               </g>
@@ -187,14 +276,6 @@ const TrendChart = ({ title, points, suffix = '' }: { title: string; points: Cha
   );
 };
 
-const FutureTrackingCard = ({ title, description }: { title: string; description: string }) => (
-  <div className="rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 p-4">
-    <p className="text-sm font-bold uppercase text-[#000000]">{title}</p>
-    <p className="mt-1 text-xs text-gray-600">{description}</p>
-    <p className="mt-3 inline-block rounded bg-black px-2 py-1 text-[10px] font-bold uppercase text-white">Future upgrade</p>
-  </div>
-);
-
 export default function ClientExerciseProgressPage() {
   const params = useParams();
   const clientId = params.id as string;
@@ -202,6 +283,8 @@ export default function ClientExerciseProgressPage() {
   const [client, setClient] = useState<ClientRecord | null>(null);
   const [sessionPoints, setSessionPoints] = useState<ExerciseSessionPoint[]>([]);
   const [selectedExercise, setSelectedExercise] = useState('');
+  const [selectedMetric, setSelectedMetric] = useState<MetricKey>('estimatedOneRepMax');
+  const [selectedWindow, setSelectedWindow] = useState<TimeWindowKey>('12w');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -270,41 +353,38 @@ export default function ClientExerciseProgressPage() {
     return sessionPoints.filter((point) => point.exerciseName === selectedExercise);
   }, [selectedExercise, sessionPoints]);
 
-  const latestPoint = selectedPoints[selectedPoints.length - 1] ?? null;
-  const previousPoint = selectedPoints[selectedPoints.length - 2] ?? null;
-  const bestWeight = selectedPoints.length ? Math.max(...selectedPoints.map((point) => point.topWeight)) : 0;
-  const bestEstimatedOneRepMax = selectedPoints.length
-    ? Math.max(...selectedPoints.map((point) => point.estimatedOneRepMax ?? 0))
-    : 0;
-  const latestEstimatedOneRepMax = latestPoint?.estimatedOneRepMax ?? null;
-  const previousEstimatedOneRepMax = previousPoint?.estimatedOneRepMax ?? null;
-  const estimatedOneRepMaxChange = latestEstimatedOneRepMax !== null && previousEstimatedOneRepMax !== null
-    ? roundToOneDecimal(latestEstimatedOneRepMax - previousEstimatedOneRepMax)
-    : null;
+  const activeMetric = metricOptions.find((metric) => metric.key === selectedMetric) || metricOptions[0];
+  const activeWindow = timeWindowOptions.find((windowOption) => windowOption.key === selectedWindow) || timeWindowOptions[0];
 
-  const topWeightChartPoints = selectedPoints.map((point) => ({
-    label: formatDate(point.date).replace(' 2026', ''),
-    value: point.topWeight,
-  }));
+  const filteredPoints = useMemo(() => {
+    if (!activeWindow.days || selectedPoints.length === 0) return selectedPoints;
+    const latestDate = new Date(selectedPoints[selectedPoints.length - 1].date).getTime();
+    const threshold = latestDate - activeWindow.days * 24 * 60 * 60 * 1000;
+    return selectedPoints.filter((point) => new Date(point.date).getTime() >= threshold);
+  }, [activeWindow.days, selectedPoints]);
 
-  const estimatedOneRepMaxChartPoints = selectedPoints
-    .filter((point) => point.estimatedOneRepMax !== null)
-    .map((point) => ({
-      label: formatDate(point.date).replace(' 2026', ''),
-      value: point.estimatedOneRepMax as number,
-    }));
+  const chartPoints = filteredPoints
+    .map((point) => {
+      const value = getMetricValue(point, selectedMetric);
+      if (value === null) return null;
+      return {
+        date: point.date,
+        label: formatShortDate(point.date),
+        value,
+        raw: point,
+      };
+    })
+    .filter((point): point is ChartPoint => Boolean(point));
 
-  const volumeChartPoints = selectedPoints.map((point) => ({
-    label: formatDate(point.date).replace(' 2026', ''),
-    value: point.totalVolume,
-  }));
-
-  const rpeChartPoints = selectedPoints
-    .filter((point) => point.topRpe !== null)
-    .map((point) => ({
-      label: formatDate(point.date).replace(' 2026', ''),
-      value: point.topRpe as number,
-    }));
+  const latestChartPoint = chartPoints[chartPoints.length - 1] || null;
+  const previousChartPoint = chartPoints[chartPoints.length - 2] || null;
+  const oneWeekStartPoint = getWindowStartPoint(chartPoints, latestChartPoint, 7);
+  const fourWeekStartPoint = getWindowStartPoint(chartPoints, latestChartPoint, 28);
+  const latestValue = latestChartPoint?.value ?? null;
+  const bestValue = chartPoints.length ? Math.max(...chartPoints.map((point) => point.value)) : null;
+  const sessionChangePercent = calculatePercentChange(latestValue, previousChartPoint?.value ?? null);
+  const oneWeekChangePercent = calculatePercentChange(latestValue, oneWeekStartPoint?.value ?? null);
+  const fourWeekChangePercent = calculatePercentChange(latestValue, fourWeekStartPoint?.value ?? null);
 
   if (loading) {
     return <div className="p-6 md:p-8"><Card>Loading exercise progress...</Card></div>;
@@ -346,7 +426,7 @@ export default function ClientExerciseProgressPage() {
           ) : (
             <div className="space-y-6">
               <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                <div className="md:col-span-1">
+                <div>
                   <label className="mb-2 block text-xs font-bold uppercase text-gray-600">Exercise</label>
                   <select
                     value={selectedExercise}
@@ -358,34 +438,49 @@ export default function ClientExerciseProgressPage() {
                     ))}
                   </select>
                 </div>
-                <div className="rounded-xl bg-black p-4 text-white md:col-span-2">
-                  <p className="text-xs font-bold uppercase text-gray-400">Selected exercise</p>
-                  <p className="mt-1 text-xl font-black uppercase">{selectedExercise}</p>
-                  <p className="mt-2 text-xs text-gray-300">Built from completed workout session set data.</p>
+                <div>
+                  <label className="mb-2 block text-xs font-bold uppercase text-gray-600">Metric</label>
+                  <select
+                    value={selectedMetric}
+                    onChange={(event) => setSelectedMetric(event.target.value as MetricKey)}
+                    className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm text-[#000000]"
+                  >
+                    {metricOptions.map((metric) => (
+                      <option key={metric.key} value={metric.key}>{metric.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-2 block text-xs font-bold uppercase text-gray-600">Window</label>
+                  <select
+                    value={selectedWindow}
+                    onChange={(event) => setSelectedWindow(event.target.value as TimeWindowKey)}
+                    className="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm text-[#000000]"
+                  >
+                    {timeWindowOptions.map((windowOption) => (
+                      <option key={windowOption.key} value={windowOption.key}>{windowOption.label}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
 
+              <div className="rounded-xl bg-black p-4 text-white">
+                <p className="text-xs font-bold uppercase text-gray-400">Tracking view</p>
+                <p className="mt-1 text-xl font-black uppercase">{selectedExercise} · {activeMetric.label}</p>
+                <p className="mt-2 text-xs text-gray-300">{activeMetric.description}</p>
+              </div>
+
               <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-                <MetricCard
-                  label="Logged sessions"
-                  value={`${selectedPoints.length}`}
-                  helper="Completed sessions"
-                />
-                <MetricCard
-                  label="Best top set"
-                  value={`${roundToOneDecimal(bestWeight)}kg`}
-                  helper="Heaviest logged set"
-                />
-                <MetricCard
-                  label="Best est. 1RM"
-                  value={bestEstimatedOneRepMax ? `${roundToOneDecimal(bestEstimatedOneRepMax)}kg` : '—'}
-                  helper="Epley estimate"
-                />
-                <MetricCard
-                  label="Latest change"
-                  value={estimatedOneRepMaxChange === null ? '—' : `${estimatedOneRepMaxChange > 0 ? '+' : ''}${estimatedOneRepMaxChange}kg`}
-                  helper="Latest est. 1RM vs previous"
-                />
+                <MetricCard label="Latest" value={formatMetricValue(latestValue, activeMetric.suffix)} helper="Most recent completed session" />
+                <MetricCard label="Session change" value={formatPercent(sessionChangePercent)} helper="Latest vs previous session" />
+                <MetricCard label="1-week change" value={formatPercent(oneWeekChangePercent)} helper="Latest vs first point in last 7 days" />
+                <MetricCard label="4-week change" value={formatPercent(fourWeekChangePercent)} helper="Latest vs first point in last 28 days" />
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                <MetricCard label="Best in window" value={formatMetricValue(bestValue, activeMetric.suffix)} helper={activeWindow.label} />
+                <MetricCard label="Data points" value={`${chartPoints.length}`} helper="Completed exercise sessions" />
+                <MetricCard label="All logged sessions" value={`${selectedPoints.length}`} helper="For selected exercise" />
               </div>
             </div>
           )}
@@ -394,35 +489,10 @@ export default function ClientExerciseProgressPage() {
 
       {exerciseNames.length > 0 && (
         <section>
-          <SectionHeader title="INTERACTIVE TREND CARDS" accent />
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-            <TrendChart title="Top set load" points={topWeightChartPoints} suffix="kg" />
-            <TrendChart title="Estimated 1RM" points={estimatedOneRepMaxChartPoints} suffix="kg" />
-            <TrendChart title="Session volume" points={volumeChartPoints} suffix="kg" />
-            <TrendChart title="Top set RPE" points={rpeChartPoints} />
-          </div>
+          <SectionHeader title="INTERACTIVE TREND GRAPH" accent />
+          <InteractiveTrendChart title={`${activeMetric.label} over time`} points={chartPoints} suffix={activeMetric.suffix} />
         </section>
       )}
-
-      <section>
-        <SectionHeader title="FUTURE ANALYTICS ROADMAP" accent />
-        <Card>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-            <FutureTrackingCard
-              title="Muscle group volume"
-              description="Use exercise catalogue tags to group completed sets by chest, back, quads, hamstrings, glutes, delts, and arms."
-            />
-            <FutureTrackingCard
-              title="Progress alerts"
-              description="Automatic flags for stalled lifts, repeated high RPE, missed volume, and sudden performance drops."
-            />
-            <FutureTrackingCard
-              title="Client-facing graphs"
-              description="A simplified client dashboard showing progress without overwhelming them with coach-level analytics."
-            />
-          </div>
-        </Card>
-      </section>
     </div>
   );
 }
