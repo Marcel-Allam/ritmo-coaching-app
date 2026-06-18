@@ -5,7 +5,7 @@ import { Badge } from './badge';
 interface TaskCardProps extends React.HTMLAttributes<HTMLDivElement> {
   title: string;
   description?: string;
-  status: 'pending' | 'in-progress' | 'completed';
+  status: string;
   dueDate?: string;
 }
 
@@ -15,9 +15,19 @@ const statusConfig = {
   completed: { badge: 'success', label: 'Completed' },
 };
 
+const normaliseStatus = (status: string) => {
+  const normalised = status.trim().toLowerCase().replaceAll(' ', '-');
+  if (normalised === 'complete') return 'completed';
+  if (normalised === 'done') return 'completed';
+  if (normalised === 'in-progress') return 'in-progress';
+  if (normalised === 'pending') return 'pending';
+  return 'pending';
+};
+
 const TaskCard = React.forwardRef<HTMLDivElement, TaskCardProps>(
   ({ className, title, description, status, dueDate, ...props }, ref) => {
-    const statusInfo = statusConfig[status];
+    const statusKey = normaliseStatus(status);
+    const statusInfo = statusConfig[statusKey];
 
     return (
       <div
