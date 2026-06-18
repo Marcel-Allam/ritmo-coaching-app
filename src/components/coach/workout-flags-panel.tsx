@@ -8,6 +8,8 @@ type PerformedSetRecord = { id: string; program_exercise_id: string; program_set
 
 type WorkoutFlag = { id: string; tone: FlagTone; label: string; exerciseName?: string; detail: string; impact: string };
 
+type GroupedWorkoutFlag = WorkoutFlag & { details: string[]; exerciseNames: string[] };
+
 type WorkoutFlagsPanelProps = {
   exercises: ProgramExerciseRecord[];
   setsByExercise: Record<string, ProgramSetRecord[]>;
@@ -61,24 +63,34 @@ const hasNoteAlertLanguage = (value: string | null | undefined) => {
 };
 
 const groupWorkoutFlags = (flags: WorkoutFlag[]) => {
-  const grouped = new Map<string, WorkoutFlag & { details: string[] }>();
+  const grouped = new Map<string, GroupedWorkoutFlag>();
 
   flags.forEach((flag) => {
-    const key = [flag.tone, flag.label, flag.exerciseName || 'workout-level', flag.impact].join('|');
+    const key = [flag.tone, flag.label, flag.impact].join('|');
+    const detail = flag.exerciseName ? `${flag.exerciseName} - ${flag.detail}` : flag.detail;
     const existing = grouped.get(key);
 
     if (existing) {
-      existing.details.push(flag.detail);
+      existing.details.push(detail);
+      if (flag.exerciseName && !existing.exerciseNames.includes(flag.exerciseName)) {
+        existing.exerciseNames.push(flag.exerciseName);
+      }
       existing.id = `${existing.id}-${flag.id}`;
       return;
     }
 
-    grouped.set(key, { ...flag, details: [flag.detail] });
+    grouped.set(key, {
+      ...flag,
+      exerciseName: flag.exerciseName,
+      details: [detail],
+      exerciseNames: flag.exerciseName ? [flag.exerciseName] : [],
+    });
   });
 
   return Array.from(grouped.values()).map((flag) => ({
     ...flag,
-    detail: flag.details.length === 1 ? flag.details[0] : `${flag.details.length} related flags: ${flag.details.join(' • ')}`,
+    exerciseName: flag.exerciseNames.length === 1 ? flag.exerciseNames[0] : undefined,
+    detail: flag.details.length === 1 ? flag.details[0] : flag.details.join('\n'),
   }));
 };
 
@@ -222,7 +234,7 @@ export function WorkoutFlagsPanel(props: WorkoutFlagsPanelProps) {
                   </div>
                   <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${flagLabelClasses[flag.tone]}`}>{flag.tone}</span>
                 </div>
-                <p className="mt-2 text-xs font-semibold">{flag.detail}</p>
+                <p className="mt-2 whitespace-pre-line text-xs font-semibold">{flag.detail}</p>
                 <p className="mt-1 text-[11px] opacity-80"><span className="font-bold">Impact:</span> {flag.impact}</p>
               </div>
             ))}
