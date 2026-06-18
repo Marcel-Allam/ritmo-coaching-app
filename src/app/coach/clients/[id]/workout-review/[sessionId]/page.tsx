@@ -7,7 +7,6 @@ import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { SectionHeader } from '@/components/ui/section-header';
 import { Textarea } from '@/components/ui/textarea';
-import { ExerciseReviewDecisionPanel } from '@/components/coach/exercise-review-decision-panel';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
 
 type ReviewStatus = 'new' | 'reviewed' | 'needs_feedback' | 'needs_action' | 'flagged' | 'resolved';
@@ -415,14 +414,6 @@ export default function CoachWorkoutReviewPage() {
                   );
                 })}
               </div>
-              {session?.program_workout_id && (
-                <ExerciseReviewDecisionPanel
-                  clientId={clientId}
-                  currentWorkoutId={session.program_workout_id}
-                  exerciseName={exercise.exercise_name}
-                  exerciseCatalogueId={exercise.exercise_catalogue_id}
-                />
-              )}
               <div className="mt-4 rounded-lg border border-gray-200 bg-white p-4">
                 <Textarea
                   label="Exercise note to client"
