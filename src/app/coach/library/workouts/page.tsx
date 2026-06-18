@@ -7,14 +7,62 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
 
-type Workout = { id: string; name: string; category: string; goal: string | null; instructions: string | null };
-type CatalogueExercise = { id: string; name: string; category: string; equipment: string | null; default_notes: string | null };
-type WorkoutExercise = { id: string; library_workout_id: string; exercise_catalogue_id: string | null; exercise_name: string; exercise_order: number; notes: string | null };
-type WorkoutSet = { id: string; library_workout_exercise_id: string; set_order: number; target_reps: string | null; target_weight_kg: number | null; target_rpe: number | null; notes: string | null };
-type WorkoutForm = { name: string; category: string; goal: string; instructions: string };
-type SetForm = { setOrder: string; targetReps: string; targetWeightKg: string; targetRpe: string; notes: string };
+type Workout = {
+  id: string;
+  name: string;
+  category: string;
+  goal: string | null;
+  instructions: string | null;
+};
 
-const blankWorkoutForm: WorkoutForm = { name: '', category: 'Custom', goal: '', instructions: '' };
+type CatalogueExercise = {
+  id: string;
+  name: string;
+  category: string;
+  equipment: string | null;
+  default_notes: string | null;
+};
+
+type WorkoutExercise = {
+  id: string;
+  library_workout_id: string;
+  exercise_catalogue_id: string | null;
+  exercise_name: string;
+  exercise_order: number;
+  notes: string | null;
+};
+
+type WorkoutSet = {
+  id: string;
+  library_workout_exercise_id: string;
+  set_order: number;
+  target_reps: string | null;
+  target_weight_kg: number | null;
+  target_rpe: number | null;
+  notes: string | null;
+};
+
+type WorkoutForm = {
+  name: string;
+  category: string;
+  goal: string;
+  instructions: string;
+};
+
+type SetForm = {
+  setOrder: string;
+  targetReps: string;
+  targetWeightKg: string;
+  targetRpe: string;
+  notes: string;
+};
+
+const blankWorkoutForm: WorkoutForm = {
+  name: '',
+  category: 'Custom',
+  goal: '',
+  instructions: '',
+};
 
 const toNumberOrNull = (value: string) => {
   if (!value.trim()) return null;
@@ -47,15 +95,28 @@ const emptySetForm = (order: number): SetForm => ({
 const newSetFormFromPrevious = (sets: WorkoutSet[]): SetForm => {
   const nextOrder = sets.length + 1;
   const previousSet = sets[sets.length - 1];
-  return previousSet ? { ...setToForm(previousSet), setOrder: String(nextOrder) } : emptySetForm(nextOrder);
+
+  if (!previousSet) return emptySetForm(nextOrder);
+
+  return {
+    ...setToForm(previousSet),
+    setOrder: String(nextOrder),
+  };
 };
 
 const summariseSets = (sets: WorkoutSet[]) => {
   if (sets.length === 0) return 'No prescribed sets yet';
+
   const reps = Array.from(new Set(sets.map((set) => set.target_reps).filter(Boolean))).join('/');
   const kg = Array.from(new Set(sets.map((set) => set.target_weight_kg).filter((value) => value !== null && value !== undefined))).join('/');
   const rpe = Array.from(new Set(sets.map((set) => set.target_rpe).filter((value) => value !== null && value !== undefined))).join('/');
-  return [`${sets.length} set${sets.length === 1 ? '' : 's'}`, reps ? `${reps} reps` : null, kg ? `${kg}kg` : null, rpe ? `RPE ${rpe}` : null]
+
+  return [
+    `${sets.length} set${sets.length === 1 ? '' : 's'}`,
+    reps ? `${reps} reps` : null,
+    kg ? `${kg}kg` : null,
+    rpe ? `RPE ${rpe}` : null,
+  ]
     .filter(Boolean)
     .join(' · ');
 };
@@ -118,6 +179,7 @@ export default function ManageWorkoutLibraryPage() {
     const nextWorkouts = (workoutResult.data ?? []) as Workout[];
     const nextCatalogue = (catalogueResult.data ?? []) as CatalogueExercise[];
     const workoutIds = nextWorkouts.map((workout) => workout.id);
+
     const exerciseResult = workoutIds.length
       ? await supabase
           .from('library_workout_exercises')
@@ -345,9 +407,9 @@ export default function ManageWorkoutLibraryPage() {
     const existingSets = setsByExercise[exercise.id] || [];
     for (const set of existingSets) {
       const form = setEdits[set.id] || setToForm(set);
-      const { error: setError } = await saveSetRecord(exercise.id, set.id, form);
-      if (setError) {
-        setError(setError.message);
+      const { error: setSaveError } = await saveSetRecord(exercise.id, set.id, form);
+      if (setSaveError) {
+        setError(setSaveError.message);
         setSaving(false);
         return;
       }
@@ -355,6 +417,7 @@ export default function ManageWorkoutLibraryPage() {
 
     setMessage('Exercise and sets updated.');
     setSaving(false);
+    setEditingExerciseId(null);
     await refreshLibrary(selectedWorkoutId);
   };
 
@@ -474,7 +537,7 @@ export default function ManageWorkoutLibraryPage() {
                           const isEditingExercise = editingExerciseId === exercise.id;
                           return (
                             <div key={exercise.id} className="rounded-xl border border-gray-200 bg-gray-50 p-3">
-                              <div className="grid grid-cols-1 gap-3 md:grid-cols-[0.12fr_1fr_0.22fr] md:items-center"><Badge variant="default">#{exercise.exercise_order}</Badge><div><p className="text-sm font-black uppercase text-[#000000]">{exercise.exercise_name}</p><p className="mt-1 text-xs font-bold uppercase text-gray-500">{summariseSets(exerciseSets)}</p>{exercise.notes && <p className="mt-1 text-xs text-gray-600">{exercise.notes}</p>}</div><button type="button" onClick={() => setEditingExerciseId(isEditingExercise ? null : exercise.id)} className="rounded-lg bg-[#FA0201] px-4 py-2 text-xs font-bold uppercase text-white hover:bg-red-700">{isEditingExercise ? 'Close' : 'Edit'}</button></div>
+                              <div className="grid grid-cols-1 gap-3 md:grid-cols-[0.12fr_1fr_0.22fr] md:items-center"><Badge variant="default">#{exercise.exercise_order}</Badge><div><p className="text-sm font-black uppercase text-[#000000]">{exercise.exercise_name}</p><p className="mt-1 text-xs font-bold uppercase text-gray-500">{summariseSets(exerciseSets)}</p>{exercise.notes && <p className="mt-1 text-xs text-gray-600">{exercise.notes}</p>}</div><button type="button" onClick={() => (isEditingExercise ? saveExerciseAndSets(exercise) : setEditingExerciseId(exercise.id))} className="rounded-lg bg-[#FA0201] px-4 py-2 text-xs font-bold uppercase text-white hover:bg-red-700 disabled:opacity-60" disabled={saving}>{isEditingExercise ? 'Save exercise' : 'Edit'}</button></div>
                               {isEditingExercise && (
                                 <div className="mt-4 space-y-4 rounded-xl border border-gray-200 bg-white p-4">
                                   <div className="grid grid-cols-1 gap-3 md:grid-cols-[0.16fr_1fr] md:items-end">
@@ -482,7 +545,6 @@ export default function ManageWorkoutLibraryPage() {
                                     <label><span className="text-xs font-black uppercase text-gray-500">Exercise</span><input value={edit.name} onChange={(event) => setExerciseEdits((current) => ({ ...current, [exercise.id]: { ...edit, name: event.target.value } }))} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" /></label>
                                     <label className="md:col-span-2"><span className="text-xs font-black uppercase text-gray-500">Notes</span><input value={edit.notes} onChange={(event) => setExerciseEdits((current) => ({ ...current, [exercise.id]: { ...edit, notes: event.target.value } }))} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" /></label>
                                   </div>
-                                  <div className="flex justify-end"><button type="button" disabled={saving} onClick={() => saveExerciseAndSets(exercise)} className="rounded-lg bg-[#FA0201] px-3 py-2 text-xs font-bold uppercase text-white hover:bg-red-700 disabled:opacity-60">Save exercise</button></div>
                                   <div className="space-y-3">
                                     <p className="text-sm font-black uppercase text-[#000000]">Sets</p>
                                     {[...exerciseSets.map((set) => ({ id: set.id, form: setEdits[set.id] || setToForm(set), isNew: false })), { id: 'new', form: newSetForm, isNew: true }].map((item) => (
