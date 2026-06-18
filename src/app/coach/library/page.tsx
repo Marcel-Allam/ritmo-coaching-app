@@ -148,6 +148,7 @@ export default function CoachLibraryPage() {
   const [exerciseEdits, setExerciseEdits] = useState<Record<string, { name: string; order: string; notes: string }>>({});
   const [setEdits, setSetEdits] = useState<Record<string, SetForm>>({});
   const [newSetForms, setNewSetForms] = useState<Record<string, SetForm>>({});
+  const [workoutSearch, setWorkoutSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -164,6 +165,26 @@ export default function CoachLibraryPage() {
   }, [exercises, selectedWorkoutId]);
 
   const automaticWorkoutCategory = useMemo(() => deriveWorkoutCategory(selectedWorkoutExercises, catalogue), [selectedWorkoutExercises, catalogue]);
+
+  const filteredWorkouts = useMemo(() => {
+    const query = workoutSearch.trim().toLowerCase();
+    if (!query) return workouts;
+
+    return workouts.filter((workout) => {
+      const workoutExercises = exercises.filter((exercise) => exercise.library_workout_id === workout.id);
+      const searchableText = [
+        workout.name,
+        workout.category,
+        getWorkoutDescription(workout),
+        ...workoutExercises.map((exercise) => exercise.exercise_name),
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+
+      return searchableText.includes(query);
+    });
+  }, [workouts, exercises, workoutSearch]);
 
   const setsByExercise = useMemo(() => {
     return sets.reduce<Record<string, WorkoutSet[]>>((accumulator, set) => {
@@ -601,8 +622,24 @@ export default function CoachLibraryPage() {
           <h2 className="text-2xl font-black uppercase text-[#000000]">Workout templates</h2>
           <Button type="button" onClick={startNewWorkout} className="bg-[#FA0201] hover:bg-red-700">Create Workout</Button>
         </div>
+        <Card className="border-2 border-gray-200 bg-white">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_0.28fr] md:items-end">
+            <label>
+              <span className="text-xs font-black uppercase text-gray-500">Search workouts</span>
+              <input
+                value={workoutSearch}
+                onChange={(event) => setWorkoutSearch(event.target.value)}
+                placeholder="Search by workout, category, description, or exercise..."
+                className="mt-1 w-full rounded-lg border border-gray-300 px-4 py-3 text-sm"
+              />
+            </label>
+            <p className="text-xs font-bold uppercase text-gray-500 md:text-right">
+              Showing {filteredWorkouts.length} of {workouts.length} workouts
+            </p>
+          </div>
+        </Card>
         <div className="space-y-4">
-          {workouts.length === 0 ? <Card><p className="text-sm text-gray-600">No workout templates yet.</p></Card> : workouts.map((workout) => {
+          {workouts.length === 0 ? <Card><p className="text-sm text-gray-600">No workout templates yet.</p></Card> : filteredWorkouts.length === 0 ? <Card><p className="text-sm text-gray-600">No workouts match your search.</p></Card> : filteredWorkouts.map((workout) => {
             const workoutExercises = exercises.filter((exercise) => exercise.library_workout_id === workout.id);
             const isSelected = selectedWorkoutId === workout.id && !isCreatingWorkout;
             const workoutDescription = getWorkoutDescription(workout);
