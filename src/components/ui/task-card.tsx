@@ -5,8 +5,10 @@ import { Badge } from './badge';
 interface TaskCardProps extends React.HTMLAttributes<HTMLDivElement> {
   title: string;
   description?: string;
-  status: string;
+  status?: string;
+  completed?: boolean;
   dueDate?: string;
+  href?: string;
 }
 
 const statusConfig = {
@@ -15,8 +17,10 @@ const statusConfig = {
   completed: { badge: 'success', label: 'Completed' },
 };
 
-const normaliseStatus = (status: string) => {
-  const normalised = status.trim().toLowerCase().replaceAll(' ', '-');
+const normaliseStatus = (status?: string, completed?: boolean) => {
+  if (completed) return 'completed';
+
+  const normalised = String(status || 'pending').trim().toLowerCase().replaceAll(' ', '-');
   if (normalised === 'complete') return 'completed';
   if (normalised === 'done') return 'completed';
   if (normalised === 'in-progress') return 'in-progress';
@@ -25,11 +29,11 @@ const normaliseStatus = (status: string) => {
 };
 
 const TaskCard = React.forwardRef<HTMLDivElement, TaskCardProps>(
-  ({ className, title, description, status, dueDate, ...props }, ref) => {
-    const statusKey = normaliseStatus(status);
+  ({ className, title, description, status, completed, dueDate, href, ...props }, ref) => {
+    const statusKey = normaliseStatus(status, completed);
     const statusInfo = statusConfig[statusKey];
 
-    return (
+    const card = (
       <div
         ref={ref}
         className={cn(
@@ -69,6 +73,12 @@ const TaskCard = React.forwardRef<HTMLDivElement, TaskCardProps>(
         )}
       </div>
     );
+
+    if (href) {
+      return <a href={href} className="block">{card}</a>;
+    }
+
+    return card;
   }
 );
 
