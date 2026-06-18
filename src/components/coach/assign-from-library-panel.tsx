@@ -259,12 +259,12 @@ export function AssignFromLibraryPanel({ embedded = false }: AssignFromLibraryPa
     }
 
     const assignedProgrammeName = cleanText(selectedProgramme.name, 'Programme');
-    setMessage(`${assignedProgrammeName} assigned as the active client-specific programme. Reloading programme delivery...`);
+    setMessage(`${assignedProgrammeName} is now the active client-specific programme. Reloading programme delivery...`);
     window.setTimeout(() => window.location.reload(), 600);
   };
 
   const wrapperClassName = embedded ? 'mt-4' : 'p-6 pt-0 md:p-8 md:pt-0';
-  const sectionTitle = embedded ? 'CREATE CLIENT-SPECIFIC TRAINING PLAN' : 'ASSIGN FROM LIBRARY';
+  const sectionTitle = embedded ? 'CREATE CLIENT-SPECIFIC TRAINING PLAN' : 'REPLACE ACTIVE PROGRAMME';
 
   if (loading) {
     return <div id="assign-from-library" className={wrapperClassName}><Card>Loading Programme Library...</Card></div>;
@@ -313,7 +313,7 @@ export function AssignFromLibraryPanel({ embedded = false }: AssignFromLibraryPa
               </div>
               {cleanText(selectedProgramme.description) && <p className="text-sm text-gray-700">{cleanText(selectedProgramme.description)}</p>}
               <p className="mt-2 text-xs font-bold uppercase text-gray-500">
-                Creates {selectedProgrammeWorkouts.length} unscheduled workout{selectedProgrammeWorkouts.length === 1 ? '' : 's'} copied into this client only. The copied plan can then be edited without changing the Library template.
+                Replaces the active client programme with {selectedProgrammeWorkouts.length} unscheduled workout{selectedProgrammeWorkouts.length === 1 ? '' : 's'} copied from the Library. The copied plan can then be edited without changing the Library template.
               </p>
             </div>
           )}
@@ -351,10 +351,10 @@ export function AssignFromLibraryPanel({ embedded = false }: AssignFromLibraryPa
 
           <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <p className="text-xs font-semibold uppercase text-gray-500">
-              Assignment copies the Library programme into client-specific tables and archives the previous active programme.
+              Replacement copies the selected Library programme into client-specific tables and archives the previous active programme.
             </p>
             <Button type="button" disabled={saving} onClick={assignProgramme} className="bg-[#FA0201] hover:bg-red-700">
-              {saving ? 'Creating plan...' : 'Create client-specific plan'}
+              {saving ? 'Replacing programme...' : 'Replace active programme'}
             </Button>
           </div>
         </Card>
