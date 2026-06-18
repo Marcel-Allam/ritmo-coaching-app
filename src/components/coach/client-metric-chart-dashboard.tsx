@@ -1,3 +1,3 @@
 'use client';
 
-export { ClientMetricChartDashboardAuto as ClientMetricChartDashboard } from './client-metric-chart-dashboard-auto';
+export { ClientMetricChartDashboardCardConfig as ClientMetricChartDashboard } from './client-metric-chart-dashboard-card-config';
