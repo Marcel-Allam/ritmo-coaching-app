@@ -11,6 +11,10 @@ import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
 
 type AssignFromLibraryPanelProps = {
   embedded?: boolean;
+  hideHeader?: boolean;
+  actionLabel?: string;
+  savingLabel?: string;
+  helperText?: string;
 };
 
 type LibraryProgramme = {
@@ -70,7 +74,13 @@ const buildExerciseSummary = (exercise: LibraryExercise, sets: LibrarySet[]) => 
   return `${exerciseName} × ${sets.length || '?'} × ${getRepresentativeReps(sets)}`;
 };
 
-export function AssignFromLibraryPanel({ embedded = false }: AssignFromLibraryPanelProps) {
+export function AssignFromLibraryPanel({
+  embedded = false,
+  hideHeader = false,
+  actionLabel = 'Replace active programme',
+  savingLabel = 'Replacing programme...',
+  helperText = 'Replacement copies the selected Library programme into client-specific tables and archives the previous active programme.',
+}: AssignFromLibraryPanelProps) {
   const params = useParams();
   const clientId = params.id as string;
 
@@ -263,8 +273,7 @@ export function AssignFromLibraryPanel({ embedded = false }: AssignFromLibraryPa
     window.setTimeout(() => window.location.reload(), 600);
   };
 
-  const wrapperClassName = embedded ? 'mt-4' : 'p-6 pt-0 md:p-8 md:pt-0';
-  const sectionTitle = embedded ? 'CREATE CLIENT-SPECIFIC TRAINING PLAN' : 'REPLACE ACTIVE PROGRAMME';
+  const wrapperClassName = embedded ? 'mt-0' : 'p-6 pt-0 md:p-8 md:pt-0';
 
   if (loading) {
     return <div id="assign-from-library" className={wrapperClassName}><Card>Loading Programme Library...</Card></div>;
@@ -283,7 +292,7 @@ export function AssignFromLibraryPanel({ embedded = false }: AssignFromLibraryPa
   return (
     <div id="assign-from-library" className={wrapperClassName}>
       <section>
-        <SectionHeader title={sectionTitle} accent />
+        {!hideHeader && <SectionHeader title="REPLACE ACTIVE PROGRAMME" accent />}
         <Card className="space-y-6">
           {message && <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm font-semibold text-green-700">{message}</div>}
           {error && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700">{error}</div>}
@@ -350,11 +359,9 @@ export function AssignFromLibraryPanel({ embedded = false }: AssignFromLibraryPa
           </div>
 
           <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-            <p className="text-xs font-semibold uppercase text-gray-500">
-              Replacement copies the selected Library programme into client-specific tables and archives the previous active programme.
-            </p>
+            <p className="text-xs font-semibold uppercase text-gray-500">{helperText}</p>
             <Button type="button" disabled={saving} onClick={assignProgramme} className="bg-[#FA0201] hover:bg-red-700">
-              {saving ? 'Replacing programme...' : 'Replace active programme'}
+              {saving ? savingLabel : actionLabel}
             </Button>
           </div>
         </Card>
