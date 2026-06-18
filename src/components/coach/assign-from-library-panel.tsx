@@ -53,19 +53,20 @@ type LibrarySet = {
   target_rpe: number | null;
 };
 
-const safeText = (value: unknown) => {
-  if (typeof value === 'string') return value;
-  if (value === null || value === undefined) return '';
-  return String(value);
+const cleanText = (value: unknown, fallback = '') => {
+  if (value === null || value === undefined) return fallback;
+  const text = typeof value === 'string' ? value : String(value);
+  const cleaned = text.replace(/^\s+|\s+$/g, '');
+  return cleaned || fallback;
 };
 
 const getRepresentativeReps = (sets: LibrarySet[]) => {
-  const firstSet = sets.find((set) => safeText(set.target_reps).trim().length > 0);
-  return safeText(firstSet?.target_reps).trim() || '?';
+  const firstSet = sets.find((set) => cleanText(set.target_reps).length > 0);
+  return cleanText(firstSet?.target_reps, '?');
 };
 
 const buildExerciseSummary = (exercise: LibraryExercise, sets: LibrarySet[]) => {
-  const exerciseName = safeText(exercise.exercise_name).trim() || 'Unnamed exercise';
+  const exerciseName = cleanText(exercise.exercise_name, 'Unnamed exercise');
   return `${exerciseName} × ${sets.length || '?'} × ${getRepresentativeReps(sets)}`;
 };
 
@@ -175,7 +176,7 @@ export function AssignFromLibraryPanel({ embedded = false }: AssignFromLibraryPa
         return;
       }
 
-      const firstProgrammeName = safeText(loadedProgrammes[0]?.name).trim();
+      const firstProgrammeName = cleanText(loadedProgrammes[0]?.name, 'Client programme');
 
       setProgrammes(loadedProgrammes);
       setProgrammeWorkouts(loadedProgrammeWorkouts);
@@ -183,7 +184,7 @@ export function AssignFromLibraryPanel({ embedded = false }: AssignFromLibraryPa
       setExercises(loadedExercises);
       setSets((setData ?? []) as LibrarySet[]);
       setSelectedProgrammeId(loadedProgrammes[0].id);
-      setProgrammeTitle(firstProgrammeName || 'Client programme');
+      setProgrammeTitle(firstProgrammeName);
       setLoading(false);
     };
 
@@ -224,9 +225,9 @@ export function AssignFromLibraryPanel({ embedded = false }: AssignFromLibraryPa
 
   const chooseProgramme = (programmeId: string) => {
     const programme = programmes.find((item) => item.id === programmeId);
-    const nextTitle = safeText(programme?.name).trim();
+    const nextTitle = cleanText(programme?.name, 'Client programme');
     setSelectedProgrammeId(programmeId);
-    setProgrammeTitle(nextTitle || 'Client programme');
+    setProgrammeTitle(nextTitle);
     setError(null);
     setMessage(null);
   };
@@ -234,7 +235,7 @@ export function AssignFromLibraryPanel({ embedded = false }: AssignFromLibraryPa
   const assignProgramme = async () => {
     if (!isSupabaseConfigured || !selectedProgramme) return;
 
-    const safeProgrammeTitle = safeText(programmeTitle).trim();
+    const safeProgrammeTitle = cleanText(programmeTitle);
     if (!safeProgrammeTitle) {
       setError('Programme title is required.');
       return;
@@ -257,7 +258,7 @@ export function AssignFromLibraryPanel({ embedded = false }: AssignFromLibraryPa
       return;
     }
 
-    const assignedProgrammeName = safeText(selectedProgramme.name).trim() || 'Programme';
+    const assignedProgrammeName = cleanText(selectedProgramme.name, 'Programme');
     setMessage(`${assignedProgrammeName} assigned as the active client-specific programme. Reloading programme delivery...`);
     window.setTimeout(() => window.location.reload(), 600);
   };
@@ -296,21 +297,21 @@ export function AssignFromLibraryPanel({ embedded = false }: AssignFromLibraryPa
                 className="w-full rounded-lg border-2 border-gray-300 bg-white px-4 py-2 text-black"
               >
                 {programmes.map((programme) => {
-                  const programmeName = safeText(programme.name).trim() || 'Untitled programme';
+                  const programmeName = cleanText(programme.name, 'Untitled programme');
                   return <option key={programme.id} value={programme.id}>{programmeName}</option>;
                 })}
               </select>
             </div>
-            <Input label="Client programme title" value={safeText(programmeTitle)} onChange={(event) => setProgrammeTitle(event.target.value ?? '')} required />
+            <Input label="Client programme title" value={cleanText(programmeTitle)} onChange={(event) => setProgrammeTitle(event.target.value ?? '')} required />
           </div>
 
           {selectedProgramme && (
             <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
               <div className="mb-3 flex flex-wrap items-center gap-2">
-                <Badge variant="default">{safeText(selectedProgramme.category).trim() || 'Programme'}</Badge>
-                <p className="text-sm font-bold uppercase text-[#000000]">{safeText(selectedProgramme.name).trim() || 'Untitled programme'}</p>
+                <Badge variant="default">{cleanText(selectedProgramme.category, 'Programme')}</Badge>
+                <p className="text-sm font-bold uppercase text-[#000000]">{cleanText(selectedProgramme.name, 'Untitled programme')}</p>
               </div>
-              {safeText(selectedProgramme.description).trim() && <p className="text-sm text-gray-700">{safeText(selectedProgramme.description).trim()}</p>}
+              {cleanText(selectedProgramme.description) && <p className="text-sm text-gray-700">{cleanText(selectedProgramme.description)}</p>}
               <p className="mt-2 text-xs font-bold uppercase text-gray-500">
                 Creates {selectedProgrammeWorkouts.length} unscheduled workout{selectedProgrammeWorkouts.length === 1 ? '' : 's'} copied into this client only. The copied plan can then be edited without changing the Library template.
               </p>
@@ -322,8 +323,8 @@ export function AssignFromLibraryPanel({ embedded = false }: AssignFromLibraryPa
               const workout = workoutsById[item.library_workout_id];
               if (!workout) return null;
               const workoutExercises = (exercisesByWorkout[workout.id] || []).sort((a, b) => a.exercise_order - b.exercise_order);
-              const workoutName = safeText(workout.name).trim() || 'Untitled workout';
-              const workoutCategory = safeText(workout.category).trim() || 'Workout';
+              const workoutName = cleanText(workout.name, 'Untitled workout');
+              const workoutCategory = cleanText(workout.category, 'Workout');
 
               return (
                 <div key={item.id} className="rounded-xl border border-gray-200 bg-white p-4">
@@ -332,7 +333,7 @@ export function AssignFromLibraryPanel({ embedded = false }: AssignFromLibraryPa
                     <Badge variant="warning">{workoutCategory}</Badge>
                   </div>
                   <p className="mt-3 text-lg font-black uppercase text-[#000000]">{workoutName}</p>
-                  {safeText(workout.goal).trim() && <p className="mt-1 text-xs font-semibold text-gray-600">{safeText(workout.goal).trim()}</p>}
+                  {cleanText(workout.goal) && <p className="mt-1 text-xs font-semibold text-gray-600">{cleanText(workout.goal)}</p>}
                   <details className="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-3">
                     <summary className="cursor-pointer text-xs font-black uppercase text-[#000000]">Show exercises ({workoutExercises.length})</summary>
                     <div className="mt-3 space-y-2">
