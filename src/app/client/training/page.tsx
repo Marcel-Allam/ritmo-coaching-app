@@ -24,7 +24,6 @@ interface ProgramWorkoutRecord {
   id: string;
   program_id: string;
   title: string;
-  scheduled_date: string | null;
   workout_order: number;
 }
 
@@ -37,6 +36,7 @@ interface CompletedSessionRecord {
   program_workout_id: string;
   completed_at: string | null;
   review_status: string;
+  client_notes: string | null;
 }
 
 interface WorkoutTitleRecord {
@@ -44,18 +44,28 @@ interface WorkoutTitleRecord {
   title: string;
 }
 
-interface CompletedWorkoutIdRecord {
-  program_workout_id: string;
+interface PerformedSetRecord {
+  session_id: string;
+  set_order: number;
+  actual_weight_kg: number | null;
+  actual_reps: number | null;
+  actual_rpe: number | null;
+  completed: boolean;
 }
 
 const formatDate = (value: string | null) => {
-  if (!value) return 'Not scheduled';
+  if (!value) return 'Not logged';
 
   return new Intl.DateTimeFormat('en-GB', {
     day: 'numeric',
     month: 'short',
     year: 'numeric',
   }).format(new Date(value));
+};
+
+const getSetValue = (value: number | null) => {
+  if (value === null || value === undefined) return '-';
+  return value;
 };
 
 export default function ClientTrainingPage() {
@@ -69,6 +79,8 @@ export default function ClientTrainingPage() {
   const [completedSessions, setCompletedSessions] = useState<CompletedSessionRecord[]>([]);
   const [workoutTitles, setWorkoutTitles] = useState<Record<string, string>>({});
   const [exerciseCounts, setExerciseCounts] = useState<Record<string, number>>({});
+  const [setsBySession, setSetsBySession] = useState<Record<string, PerformedSetRecord[]>>({});
+  const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -97,26 +109,21 @@ export default function ClientTrainingPage() {
       const linkedClient = clientData as ClientRecord;
       setClient(linkedClient);
 
-      const [workoutResult, completedResult, completedIdsResult] = await Promise.all([
+      const [workoutResult, completedResult] = await Promise.all([
         supabase
           .from('program_workouts')
-          .select('id, program_id, title, scheduled_date, workout_order')
+          .select('id, program_id, title, workout_order')
           .eq('client_id', linkedClient.id)
           .eq('status', 'active')
-          .order('scheduled_date', { ascending: true, nullsFirst: false })
-          .order('workout_order', { ascending: true }),
+          .order('workout_order', { ascending: true })
+          .order('created_at', { ascending: true }),
         supabase
           .from('workout_sessions')
-          .select('id, program_workout_id, completed_at, review_status')
+          .select('id, program_workout_id, completed_at, review_status, client_notes')
           .eq('client_id', linkedClient.id)
           .eq('status', 'completed')
           .order('completed_at', { ascending: false })
-          .limit(3),
-        supabase
-          .from('workout_sessions')
-          .select('program_workout_id')
-          .eq('client_id', linkedClient.id)
-          .eq('status', 'completed'),
+          .limit(5),
       ]);
 
       if (workoutResult.error) {
@@ -131,33 +138,12 @@ export default function ClientTrainingPage() {
         return;
       }
 
-      if (completedIdsResult.error) {
-        setMessage(completedIdsResult.error.message);
-        setIsLoading(false);
-        return;
-      }
-
-      const completedWorkoutIds = new Set(((completedIdsResult.data ?? []) as CompletedWorkoutIdRecord[]).map((session) => session.program_workout_id));
-      const upcomingWorkouts = ((workoutResult.data ?? []) as ProgramWorkoutRecord[]).filter((workout) => !completedWorkoutIds.has(workout.id));
+      const loadedWorkouts = (workoutResult.data ?? []) as ProgramWorkoutRecord[];
       const recentSessions = (completedResult.data ?? []) as CompletedSessionRecord[];
-      setWorkouts(upcomingWorkouts);
+      setWorkouts(loadedWorkouts);
       setCompletedSessions(recentSessions);
 
-      const completedWorkoutIdsForTitles = [...new Set(recentSessions.map((session) => session.program_workout_id))];
-      if (completedWorkoutIdsForTitles.length > 0) {
-        const { data: titleData } = await supabase
-          .from('program_workouts')
-          .select('id, title')
-          .in('id', completedWorkoutIdsForTitles);
-
-        const titleMap = ((titleData ?? []) as WorkoutTitleRecord[]).reduce<Record<string, string>>((acc, item) => {
-          acc[item.id] = item.title;
-          return acc;
-        }, {});
-        setWorkoutTitles(titleMap);
-      }
-
-      const programIds = [...new Set(upcomingWorkouts.map((workout) => workout.program_id))];
+      const programIds = [...new Set(loadedWorkouts.map((workout) => workout.program_id))];
       if (programIds.length > 0) {
         const { data: programData, error: programError } = await supabase
           .from('training_programs')
@@ -177,7 +163,7 @@ export default function ClientTrainingPage() {
         setPrograms(programMap);
       }
 
-      const workoutIds = upcomingWorkouts.map((workout) => workout.id);
+      const workoutIds = loadedWorkouts.map((workout) => workout.id);
       if (workoutIds.length > 0) {
         const { data: exerciseData, error: exerciseError } = await supabase
           .from('program_exercises')
@@ -197,11 +183,52 @@ export default function ClientTrainingPage() {
         setExerciseCounts(counts);
       }
 
+      const completedWorkoutIdsForTitles = [...new Set(recentSessions.map((session) => session.program_workout_id))];
+      if (completedWorkoutIdsForTitles.length > 0) {
+        const { data: titleData } = await supabase
+          .from('program_workouts')
+          .select('id, title')
+          .in('id', completedWorkoutIdsForTitles);
+
+        const titleMap = ((titleData ?? []) as WorkoutTitleRecord[]).reduce<Record<string, string>>((acc, item) => {
+          acc[item.id] = item.title;
+          return acc;
+        }, {});
+        setWorkoutTitles(titleMap);
+      }
+
+      const sessionIds = recentSessions.map((session) => session.id);
+      if (sessionIds.length > 0) {
+        const { data: setData, error: setError } = await supabase
+          .from('performed_sets')
+          .select('session_id, set_order, actual_weight_kg, actual_reps, actual_rpe, completed')
+          .in('session_id', sessionIds)
+          .order('set_order', { ascending: true });
+
+        if (setError) {
+          setMessage(setError.message);
+          setIsLoading(false);
+          return;
+        }
+
+        const groupedSets = ((setData ?? []) as PerformedSetRecord[]).reduce<Record<string, PerformedSetRecord[]>>((acc, set) => {
+          acc[set.session_id] = [...(acc[set.session_id] || []), set];
+          return acc;
+        }, {});
+        setSetsBySession(groupedSets);
+      }
+
       setIsLoading(false);
     };
 
     loadAssignedWorkouts();
   }, [user]);
+
+  const latestCompletedWorkoutId = completedSessions.find((session) => workouts.some((workout) => workout.id === session.program_workout_id))?.program_workout_id ?? null;
+  const latestCompletedWorkoutIndex = workouts.findIndex((workout) => workout.id === latestCompletedWorkoutId);
+  const nextWorkout = workouts.length > 0 ? workouts[(latestCompletedWorkoutIndex + 1) % workouts.length] : null;
+  const nextProgram = nextWorkout ? programs[nextWorkout.program_id] : null;
+  const programmeWorkouts = nextWorkout ? workouts.filter((workout) => workout.id !== nextWorkout.id) : workouts;
 
   const completedWorkoutsSection = (
     <section>
@@ -216,20 +243,58 @@ export default function ClientTrainingPage() {
           <p className="text-sm text-gray-600">No completed workouts yet.</p>
         ) : (
           <div className="space-y-4">
-            {completedSessions.map((session) => (
-              <Link
-                key={session.id}
-                href="/client/training/history"
-                className="block border-b border-gray-200 pb-4 last:border-b-0 last:pb-0 hover:bg-gray-50 rounded-lg"
-              >
-                <p className="font-bold uppercase text-[#000000]">
-                  {workoutTitles[session.program_workout_id] || 'Workout session'}
-                </p>
-                <p className="mt-1 text-xs text-gray-500">
-                  Completed: {formatDate(session.completed_at)} • Review: {session.review_status}
-                </p>
-              </Link>
-            ))}
+            {completedSessions.map((session) => {
+              const isExpanded = expandedSessionId === session.id;
+              const performedSets = setsBySession[session.id] || [];
+
+              return (
+                <div key={session.id} className="rounded-xl border border-gray-200 bg-white">
+                  <button
+                    type="button"
+                    onClick={() => setExpandedSessionId(isExpanded ? null : session.id)}
+                    className="w-full p-4 text-left hover:bg-gray-50"
+                  >
+                    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                      <div>
+                        <p className="font-bold uppercase text-[#000000]">
+                          {workoutTitles[session.program_workout_id] || 'Workout session'}
+                        </p>
+                        <p className="mt-1 text-xs text-gray-500">
+                          Completed: {formatDate(session.completed_at)} • Review: {session.review_status}
+                        </p>
+                      </div>
+                      <span className="text-xl font-bold text-[#FA0201]">{isExpanded ? '−' : '+'}</span>
+                    </div>
+                  </button>
+
+                  {isExpanded && (
+                    <div className="border-t border-gray-200 p-4">
+                      {performedSets.length === 0 ? (
+                        <p className="text-sm text-gray-600">No performed sets recorded for this session.</p>
+                      ) : (
+                        <div>
+                          <div className="grid grid-cols-4 gap-3 text-xs font-bold uppercase text-gray-500">
+                            <p>Set</p>
+                            <p>Kg</p>
+                            <p>Reps</p>
+                            <p>RPE</p>
+                          </div>
+                          {performedSets.map((set) => (
+                            <div key={`${session.id}-${set.set_order}`} className="mt-2 grid grid-cols-4 gap-3 rounded-lg bg-gray-50 p-3 text-sm text-gray-800">
+                              <p className="font-bold">Set {set.set_order}</p>
+                              <p>{getSetValue(set.actual_weight_kg)}</p>
+                              <p>{getSetValue(set.actual_reps)}</p>
+                              <p>{getSetValue(set.actual_rpe)}</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {session.client_notes && <p className="mt-3 text-sm text-gray-700">{session.client_notes}</p>}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </Card>
@@ -261,7 +326,7 @@ export default function ClientTrainingPage() {
     );
   }
 
-  if (workouts.length === 0) {
+  if (!nextWorkout) {
     return (
       <div>
         <PageHeader title="WORKOUT" subtitle={`Welcome, ${client.full_name}`} />
@@ -272,9 +337,9 @@ export default function ClientTrainingPage() {
             </Card>
           )}
           <Card>
-            <p className="font-bold uppercase text-[#000000]">No workouts scheduled yet.</p>
+            <p className="font-bold uppercase text-[#000000]">No workouts in programme yet.</p>
             <p className="mt-2 text-sm text-gray-600">
-              Your coach has not scheduled your next workout yet.
+              Your coach has not added programme workouts yet. Once your plan is ready, your next session will appear here.
             </p>
           </Card>
           {completedWorkoutsSection}
@@ -282,9 +347,6 @@ export default function ClientTrainingPage() {
       </div>
     );
   }
-
-  const nextWorkout = workouts[0];
-  const nextProgram = programs[nextWorkout.program_id];
 
   return (
     <div>
@@ -311,8 +373,8 @@ export default function ClientTrainingPage() {
                 <p className="mt-1">{exerciseCounts[nextWorkout.id] || 0}</p>
               </div>
               <div>
-                <p className="text-xs font-bold uppercase text-white/50">Scheduled</p>
-                <p className="mt-1">{formatDate(nextWorkout.scheduled_date)}</p>
+                <p className="text-xs font-bold uppercase text-white/50">Training flow</p>
+                <p className="mt-1">Complete this session when it fits your week.</p>
               </div>
             </div>
             <div className="mt-8">
@@ -325,25 +387,27 @@ export default function ClientTrainingPage() {
           </Card>
         </section>
 
-        {workouts.length > 1 && (
-          <section>
-            <SectionHeader title="UPCOMING WORKOUTS" accent />
-            <Card>
+        <section>
+          <SectionHeader title="WORKOUTS IN PROGRAMME" accent />
+          <Card>
+            {programmeWorkouts.length === 0 ? (
+              <p className="text-sm text-gray-600">This is the only workout currently in your programme.</p>
+            ) : (
               <div className="space-y-4">
-                {workouts.slice(1).map((workout) => {
+                {programmeWorkouts.map((workout) => {
                   const program = programs[workout.program_id];
                   return (
                     <Link key={workout.id} href={`/client/training/${workout.id}`} className="block rounded-lg border border-gray-200 p-4 hover:bg-gray-50">
                       <p className="text-xs font-bold uppercase text-gray-500">{program?.title || 'Training programme'}</p>
                       <p className="mt-1 text-lg font-bold uppercase text-[#000000]">{workout.title}</p>
-                      <p className="mt-1 text-sm text-gray-600">Scheduled: {formatDate(workout.scheduled_date)} • Exercises: {exerciseCounts[workout.id] || 0}</p>
+                      <p className="mt-1 text-sm text-gray-600">Day {workout.workout_order || '-'} • Exercises: {exerciseCounts[workout.id] || 0}</p>
                     </Link>
                   );
                 })}
               </div>
-            </Card>
-          </section>
-        )}
+            )}
+          </Card>
+        </section>
 
         {completedWorkoutsSection}
       </div>
