@@ -11,7 +11,7 @@ export default function ClientConfigurePage() {
             <p className="text-xs font-bold uppercase text-gray-500">Coming next</p>
             <h1 className="mt-1 text-2xl font-black uppercase text-[#000000]">Reminder timing controls</h1>
             <p className="mt-3 text-sm leading-relaxed text-gray-700">
-              This is where clients will choose when weekly bodyweight and training availability reminders appear. Coach toggles still decide which actions are active for each client.
+              This is where clients will choose when recurring check-ins appear. Coach toggles still decide which actions are active for each client.
             </p>
           </Card>
         </div>
