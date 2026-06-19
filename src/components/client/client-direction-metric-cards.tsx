@@ -160,7 +160,7 @@ const getDefaultConfigs = (clientId: string, exerciseNames: string[], hasBodywei
 
 const MiniTrend = ({ points }: { points: DirectionPoint[] }) => {
   if (points.length < 2) {
-    return <div className="mt-4 flex h-20 items-center justify-center rounded-lg bg-gray-100 text-xs font-bold uppercase text-gray-500">More data needed</div>;
+    return <div className="mt-4 flex h-16 items-center justify-center rounded-lg bg-gray-100 text-xs font-bold uppercase text-gray-500">More data needed</div>;
   }
 
   const values = points.map((point) => point.value);
@@ -176,7 +176,7 @@ const MiniTrend = ({ points }: { points: DirectionPoint[] }) => {
     .join(' ');
 
   return (
-    <svg className="mt-4 h-20 w-full rounded-lg bg-gray-100" viewBox="0 0 100 100" preserveAspectRatio="none">
+    <svg className="mt-4 h-16 w-full rounded-lg bg-gray-100" viewBox="0 0 100 100" preserveAspectRatio="none">
       <polyline points={trendPoints} fill="none" stroke="currentColor" strokeWidth="4" className="text-[#FA0201]" />
       <line x1="0" y1="82" x2="100" y2="82" stroke="currentColor" strokeWidth="1" className="text-gray-300" />
     </svg>
@@ -193,34 +193,35 @@ const DirectionMetricCard = ({ config, points }: { config: ChartConfig; points: 
   const fourWeekChange = calculatePercentChange(latestValue, fourWeekPoint?.value ?? null);
 
   return (
-    <Card>
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <p className="text-xs font-bold uppercase text-gray-500">Direction card</p>
-          <h2 className="mt-1 text-xl font-black uppercase text-[#000000]">{getGeneratedTitle(config)}</h2>
-          <p className="mt-1 text-xs font-bold uppercase text-gray-500">{metric.label}</p>
-        </div>
-        <Link href="/client/training/history" className="rounded-lg border border-black px-3 py-2 text-[10px] font-bold uppercase text-black hover:bg-black hover:text-white">
-          View log
-        </Link>
+    <Card className="flex h-full flex-col p-5">
+      <div className="min-h-[88px]">
+        <p className="text-[10px] font-black uppercase tracking-wide text-[#FA0201]">Direction Card</p>
+        <h2 className="mt-2 break-words text-lg font-black uppercase leading-tight tracking-tight text-[#000000]">
+          {getGeneratedTitle(config)}
+        </h2>
+        <p className="mt-2 text-[11px] font-bold uppercase tracking-wide text-gray-500">{metric.label}</p>
       </div>
 
       <MiniTrend points={points} />
 
-      <div className="mt-4 grid grid-cols-3 gap-2">
+      <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
         <div className="rounded-lg bg-gray-100 p-3">
-          <p className="text-xs font-bold uppercase text-gray-500">Latest</p>
-          <p className="mt-1 text-lg font-black text-[#000000]">{formatValue(latestValue, metric.suffix)}</p>
+          <p className="text-[10px] font-bold uppercase text-gray-500">Latest</p>
+          <p className="mt-1 break-words text-base font-black text-[#000000]">{formatValue(latestValue, metric.suffix)}</p>
         </div>
         <div className="rounded-lg bg-gray-100 p-3">
-          <p className="text-xs font-bold uppercase text-gray-500">1 session</p>
-          <p className="mt-1 text-lg font-black text-[#000000]">{formatPercent(sessionChange)}</p>
+          <p className="text-[10px] font-bold uppercase text-gray-500">1 session</p>
+          <p className="mt-1 break-words text-base font-black text-[#000000]">{formatPercent(sessionChange)}</p>
         </div>
         <div className="rounded-lg bg-gray-100 p-3">
-          <p className="text-xs font-bold uppercase text-gray-500">4 weeks</p>
-          <p className="mt-1 text-lg font-black text-[#000000]">{formatPercent(fourWeekChange)}</p>
+          <p className="text-[10px] font-bold uppercase text-gray-500">4 weeks</p>
+          <p className="mt-1 break-words text-base font-black text-[#000000]">{formatPercent(fourWeekChange)}</p>
         </div>
       </div>
+
+      <Link href="/client/training/history" className="mt-4 inline-flex w-fit rounded-lg border border-black px-3 py-2 text-[10px] font-bold uppercase text-black hover:bg-black hover:text-white">
+        View log
+      </Link>
     </Card>
   );
 };
@@ -315,7 +316,7 @@ export function ClientDirectionMetricCards({ clientId }: { clientId: string }) {
   }
 
   return (
-    <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+    <div className="grid grid-cols-1 gap-4 xl:grid-cols-2 2xl:grid-cols-3">
       {configs.map((config) => (
         <DirectionMetricCard key={`${config.client_id}-${config.slot}`} config={config} points={getDirectionPoints(config)} />
       ))}
