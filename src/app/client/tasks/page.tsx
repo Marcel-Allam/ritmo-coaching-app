@@ -38,7 +38,6 @@ const taskRoutes: Record<string, string> = {
   key_lift: '/client/submit/key-lift',
   nutrition: '/client/submit/nutrition-bodyweight',
   bodyweight: '/client/submit/nutrition-bodyweight',
-  training_availability: '/client/submit/training-availability',
 };
 
 const formatDate = (value: string | null) => {
@@ -108,7 +107,7 @@ export default function TasksPage() {
         return;
       }
 
-      setTasks((taskResult.data ?? []) as AssignedTaskRecord[]);
+      setTasks(((taskResult.data ?? []) as AssignedTaskRecord[]).filter((task) => task.task_type !== 'training_availability'));
       setSubmissions((submissionResult.data ?? []) as SubmissionRecord[]);
       setLoading(false);
     };
