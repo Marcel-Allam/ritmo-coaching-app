@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { PageHeader } from '@/components/layout/page-header';
 import { Card } from '@/components/ui/card';
 import { SectionHeader } from '@/components/ui/section-header';
+import { ClientDirectionMetricCards } from '@/components/client/client-direction-metric-cards';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
 import { useAuth } from '@/lib/auth-context';
 
@@ -16,10 +17,6 @@ interface ClientRecord {
 }
 
 interface ClientSettingsRecord {
-  show_calorie_target: boolean;
-  show_key_lift_card: boolean;
-  show_bodyweight_card: boolean;
-  show_calorie_guideline_card: boolean;
   show_today_actions_card: boolean;
   show_upcoming_actions_card: boolean;
   show_latest_feedback_card: boolean;
@@ -49,20 +46,6 @@ interface FeedbackRecord {
   next_review_date: string | null;
 }
 
-interface KeyLiftRecord {
-  id: string;
-  submitted_at: string;
-  lift_name: string;
-  weight_kg: number;
-  reps: number;
-}
-
-interface BodyweightRecord {
-  id: string;
-  entry_date: string;
-  bodyweight_kg: number;
-}
-
 type ActionState = 'active' | 'scheduled';
 
 interface ActionItem {
@@ -76,10 +59,6 @@ interface ActionItem {
 }
 
 const defaultSettings: ClientSettingsRecord = {
-  show_calorie_target: false,
-  show_key_lift_card: true,
-  show_bodyweight_card: true,
-  show_calorie_guideline_card: false,
   show_today_actions_card: true,
   show_upcoming_actions_card: true,
   show_latest_feedback_card: true,
@@ -110,16 +89,6 @@ const tomorrowIso = () => {
   return date.toISOString().slice(0, 10);
 };
 
-const estimateOneRepMax = (weightKg: number, reps: number) => {
-  return weightKg * (1 + reps / 30);
-};
-
-const formatPercent = (value: number | null) => {
-  if (value === null || Number.isNaN(value)) return '—';
-  const sign = value > 0 ? '+' : '';
-  return `${sign}${value.toFixed(1)}%`;
-};
-
 const getTaskHref = (taskType: string) => {
   const routes: Record<string, string> = {
     weekly_checkin: '/client/submit/weekly-checkin',
@@ -143,124 +112,6 @@ const getTaskStatusLabel = (task: AssignedTaskRecord, today: string) => {
   if (task.end_date && task.end_date === today) return 'Due today';
   return task.end_date ? `Due ${formatDate(task.end_date)}` : 'Assigned task';
 };
-
-const calculateWindowTrend = <T,>(
-  records: T[],
-  getDate: (record: T) => string,
-  getValue: (record: T) => number,
-  days: number
-) => {
-  const sorted = [...records]
-    .filter((record) => Number.isFinite(getValue(record)))
-    .sort((a, b) => new Date(getDate(a)).getTime() - new Date(getDate(b)).getTime());
-
-  if (sorted.length < 2) return null;
-
-  const latest = sorted[sorted.length - 1];
-  const latestDate = new Date(getDate(latest));
-  const cutoff = new Date(latestDate);
-  cutoff.setDate(latestDate.getDate() - days);
-
-  const windowRecords = sorted.filter((record) => new Date(getDate(record)) >= cutoff);
-  if (windowRecords.length < 2) return null;
-
-  const first = getValue(windowRecords[0]);
-  const last = getValue(windowRecords[windowRecords.length - 1]);
-
-  if (first === 0) return null;
-  return ((last - first) / first) * 100;
-};
-
-const getCalorieGuideline = (bodyweightTrend4Week: number | null) => {
-  if (bodyweightTrend4Week === null) {
-    return {
-      label: 'More data needed',
-      detail: 'Log at least two weigh-ins before the app can show a useful calorie direction.',
-    };
-  }
-
-  if (bodyweightTrend4Week <= -1) {
-    return {
-      label: 'Weight trending down',
-      detail: 'Trend is moving down. Coach should decide whether to hold calories or adjust based on the client goal and performance.',
-    };
-  }
-
-  if (bodyweightTrend4Week >= 1) {
-    return {
-      label: 'Weight trending up',
-      detail: 'Trend is moving up. Coach should decide whether this matches the client goal or needs a calorie adjustment.',
-    };
-  }
-
-  return {
-    label: 'Trend stable',
-    detail: 'Bodyweight is broadly stable. If the goal needs faster movement, coach review may be needed.',
-  };
-};
-
-const MiniTrend = ({ values }: { values: number[] }) => {
-  if (values.length < 2) {
-    return (
-      <div className="mt-4 flex h-24 items-center justify-center rounded-lg bg-gray-100 text-xs font-bold uppercase text-gray-500">
-        More data needed
-      </div>
-    );
-  }
-
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const range = max - min || 1;
-  const points = values
-    .map((value, index) => {
-      const x = (index / Math.max(values.length - 1, 1)) * 100;
-      const y = 80 - ((value - min) / range) * 60;
-      return `${x},${y}`;
-    })
-    .join(' ');
-
-  return (
-    <svg className="mt-4 h-24 w-full rounded-lg bg-gray-100" viewBox="0 0 100 100" preserveAspectRatio="none">
-      <polyline points={points} fill="none" stroke="currentColor" strokeWidth="4" className="text-[#000000]" />
-      <line x1="0" y1="82" x2="100" y2="82" stroke="currentColor" strokeWidth="1" className="text-gray-300" />
-    </svg>
-  );
-};
-
-const ProgressCard = ({
-  title,
-  oneWeek,
-  fourWeek,
-  helper,
-  values,
-}: {
-  title: string;
-  oneWeek: number | null;
-  fourWeek: number | null;
-  helper: string;
-  values: number[];
-}) => (
-  <Card>
-    <div className="mb-4 flex items-start justify-between gap-4">
-      <div>
-        <p className="text-xs font-bold uppercase text-gray-500">Progress Card</p>
-        <h2 className="mt-1 text-xl font-black uppercase text-[#000000]">{title}</h2>
-      </div>
-    </div>
-    <div className="grid grid-cols-2 gap-3">
-      <div className="rounded-lg bg-gray-100 p-3">
-        <p className="text-3xl font-black text-[#000000]">{formatPercent(oneWeek)}</p>
-        <p className="mt-1 text-xs font-bold uppercase text-gray-500">1 week</p>
-      </div>
-      <div className="rounded-lg bg-gray-100 p-3">
-        <p className="text-3xl font-black text-[#000000]">{formatPercent(fourWeek)}</p>
-        <p className="mt-1 text-xs font-bold uppercase text-gray-500">4 weeks</p>
-      </div>
-    </div>
-    <MiniTrend values={values} />
-    <p className="mt-3 text-sm text-gray-600">{helper}</p>
-  </Card>
-);
 
 const HubActionCard = ({ item }: { item: ActionItem }) => {
   const isDisabled = item.state === 'scheduled';
@@ -301,8 +152,6 @@ export default function ClientHub() {
   const [tasks, setTasks] = useState<AssignedTaskRecord[]>([]);
   const [submissions, setSubmissions] = useState<SubmissionRecord[]>([]);
   const [feedback, setFeedback] = useState<FeedbackRecord | null>(null);
-  const [keyLifts, setKeyLifts] = useState<KeyLiftRecord[]>([]);
-  const [bodyweightEntries, setBodyweightEntries] = useState<BodyweightRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -331,10 +180,10 @@ export default function ClientHub() {
       const linkedClient = clientData as ClientRecord;
       setClient(linkedClient);
 
-      const [settingsResult, taskResult, submissionResult, feedbackResult, keyLiftResult, bodyweightResult] = await Promise.all([
+      const [settingsResult, taskResult, submissionResult, feedbackResult] = await Promise.all([
         supabase
           .from('client_settings')
-          .select('show_calorie_target, show_key_lift_card, show_bodyweight_card, show_calorie_guideline_card, show_today_actions_card, show_upcoming_actions_card, show_latest_feedback_card')
+          .select('show_today_actions_card, show_upcoming_actions_card, show_latest_feedback_card')
           .eq('client_id', linkedClient.id)
           .maybeSingle(),
         supabase
@@ -355,18 +204,6 @@ export default function ClientHub() {
           .eq('client_visible', true)
           .order('feedback_date', { ascending: false })
           .limit(1),
-        supabase
-          .from('key_lift_entries')
-          .select('id, submitted_at, lift_name, weight_kg, reps')
-          .eq('client_id', linkedClient.id)
-          .order('submitted_at', { ascending: false })
-          .limit(30),
-        supabase
-          .from('bodyweight_entries')
-          .select('id, entry_date, bodyweight_kg')
-          .eq('client_id', linkedClient.id)
-          .order('entry_date', { ascending: false })
-          .limit(30),
       ]);
 
       if (settingsResult.error) {
@@ -393,18 +230,6 @@ export default function ClientHub() {
         return;
       }
 
-      if (keyLiftResult.error) {
-        setMessage(keyLiftResult.error.message);
-        setLoading(false);
-        return;
-      }
-
-      if (bodyweightResult.error) {
-        setMessage(bodyweightResult.error.message);
-        setLoading(false);
-        return;
-      }
-
       setSettings({
         ...defaultSettings,
         ...((settingsResult.data as Partial<ClientSettingsRecord> | null) ?? {}),
@@ -412,8 +237,6 @@ export default function ClientHub() {
       setTasks(((taskResult.data ?? []) as AssignedTaskRecord[]).filter((task) => task.task_type !== 'training_availability'));
       setSubmissions((submissionResult.data ?? []) as SubmissionRecord[]);
       setFeedback((feedbackResult.data?.[0] ?? null) as FeedbackRecord | null);
-      setKeyLifts((keyLiftResult.data ?? []) as KeyLiftRecord[]);
-      setBodyweightEntries((bodyweightResult.data ?? []) as BodyweightRecord[]);
       setLoading(false);
     };
 
@@ -425,23 +248,6 @@ export default function ClientHub() {
       return submission.assigned_task_id === task.id || submission.submission_type === task.task_type;
     });
   };
-
-  const latestLiftName = keyLifts[0]?.lift_name ?? 'Key Lift';
-  const selectedLiftEntries = keyLifts.filter((entry) => entry.lift_name === latestLiftName);
-  const keyLiftValues = selectedLiftEntries
-    .slice()
-    .reverse()
-    .map((entry) => estimateOneRepMax(entry.weight_kg, entry.reps));
-  const bodyweightValues = bodyweightEntries
-    .slice()
-    .reverse()
-    .map((entry) => entry.bodyweight_kg);
-
-  const keyLiftOneWeek = calculateWindowTrend(selectedLiftEntries, (entry) => entry.submitted_at, (entry) => estimateOneRepMax(entry.weight_kg, entry.reps), 7);
-  const keyLiftFourWeek = calculateWindowTrend(selectedLiftEntries, (entry) => entry.submitted_at, (entry) => estimateOneRepMax(entry.weight_kg, entry.reps), 28);
-  const bodyweightOneWeek = calculateWindowTrend(bodyweightEntries, (entry) => entry.entry_date, (entry) => entry.bodyweight_kg, 7);
-  const bodyweightFourWeek = calculateWindowTrend(bodyweightEntries, (entry) => entry.entry_date, (entry) => entry.bodyweight_kg, 28);
-  const calorieGuideline = getCalorieGuideline(bodyweightFourWeek);
 
   const todayActions = useMemo<ActionItem[]>(() => {
     const today = todayIso();
@@ -519,41 +325,7 @@ export default function ClientHub() {
       <div className="mx-auto max-w-6xl space-y-8 px-4 py-6 md:px-8">
         <section>
           <SectionHeader title="YOUR DIRECTION" accent />
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-            {settings.show_key_lift_card && (
-              <ProgressCard
-                title={latestLiftName === 'Key Lift' ? 'Key Lift Progress' : `${latestLiftName} Progress`}
-                oneWeek={keyLiftOneWeek}
-                fourWeek={keyLiftFourWeek}
-                helper="Strength trend uses estimated 1RM from your logged key lift/top-set entries."
-                values={keyLiftValues}
-              />
-            )}
-
-            {settings.show_bodyweight_card && (
-              <ProgressCard
-                title="Bodyweight Progress"
-                oneWeek={bodyweightOneWeek}
-                fourWeek={bodyweightFourWeek}
-                helper="Bodyweight is noisy day to day, so the 4-week trend matters most."
-                values={bodyweightValues}
-              />
-            )}
-
-            {settings.show_calorie_guideline_card && (
-              <Card>
-                <p className="text-xs font-bold uppercase text-gray-500">Guideline Card</p>
-                <h2 className="mt-1 text-xl font-black uppercase text-[#000000]">Calorie Guideline</h2>
-                <div className="mt-4 rounded-lg bg-gray-100 p-4">
-                  <p className="text-2xl font-black text-[#000000]">{calorieGuideline.label}</p>
-                  <p className="mt-2 text-sm text-gray-700">{calorieGuideline.detail}</p>
-                </div>
-                <p className="mt-3 text-xs font-semibold uppercase text-gray-500">
-                  {settings.show_calorie_target ? 'Calorie target visibility is enabled.' : 'No calorie target shown yet.'}
-                </p>
-              </Card>
-            )}
-          </div>
+          <ClientDirectionMetricCards clientId={client.id} />
         </section>
 
         <section>
