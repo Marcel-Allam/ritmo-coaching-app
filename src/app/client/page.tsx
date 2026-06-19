@@ -23,8 +23,6 @@ interface ClientSettingsRecord {
   show_today_actions_card: boolean;
   show_upcoming_actions_card: boolean;
   show_latest_feedback_card: boolean;
-  bodyweight_enabled: boolean;
-  training_availability_enabled: boolean;
 }
 
 interface AssignedTaskRecord {
@@ -65,14 +63,7 @@ interface BodyweightRecord {
   bodyweight_kg: number;
 }
 
-interface WorkoutRecord {
-  id: string;
-  title: string;
-  scheduled_date: string | null;
-  status: string;
-}
-
-type ActionState = 'active' | 'scheduled' | 'not_scheduled';
+type ActionState = 'active' | 'scheduled';
 
 interface ActionItem {
   id: string;
@@ -92,8 +83,6 @@ const defaultSettings: ClientSettingsRecord = {
   show_today_actions_card: true,
   show_upcoming_actions_card: true,
   show_latest_feedback_card: true,
-  bodyweight_enabled: true,
-  training_availability_enabled: true,
 };
 
 const formatDate = (value: string | null) => {
@@ -138,7 +127,6 @@ const getTaskHref = (taskType: string) => {
     key_lift: '/client/submit/key-lift',
     nutrition: '/client/submit/nutrition-bodyweight',
     bodyweight: '/client/submit/nutrition-bodyweight',
-    training_availability: '/client/submit/training-availability',
   };
 
   return routes[taskType] ?? '/client/check-in';
@@ -149,12 +137,11 @@ const getTaskActionState = (task: AssignedTaskRecord, today: string): ActionStat
   return 'active';
 };
 
-const getWeeklyTaskStatusLabel = (task: AssignedTaskRecord | undefined, today: string) => {
-  if (!task) return 'Not scheduled';
+const getTaskStatusLabel = (task: AssignedTaskRecord, today: string) => {
   if (task.start_date && task.start_date > today) return `Next due ${formatDate(task.start_date)}`;
   if (task.end_date && task.end_date < today) return `Overdue since ${formatDate(task.end_date)}`;
   if (task.end_date && task.end_date === today) return 'Due today';
-  return task.end_date ? `Due ${formatDate(task.end_date)}` : 'Due now';
+  return task.end_date ? `Due ${formatDate(task.end_date)}` : 'Assigned task';
 };
 
 const calculateWindowTrend = <T,>(
@@ -276,7 +263,7 @@ const ProgressCard = ({
 );
 
 const HubActionCard = ({ item }: { item: ActionItem }) => {
-  const isDisabled = item.state === 'scheduled' || item.state === 'not_scheduled';
+  const isDisabled = item.state === 'scheduled';
   const cardClassName = `block rounded-xl border p-4 ${
     isDisabled
       ? 'border-gray-200 bg-gray-100 opacity-70'
@@ -316,7 +303,6 @@ export default function ClientHub() {
   const [feedback, setFeedback] = useState<FeedbackRecord | null>(null);
   const [keyLifts, setKeyLifts] = useState<KeyLiftRecord[]>([]);
   const [bodyweightEntries, setBodyweightEntries] = useState<BodyweightRecord[]>([]);
-  const [scheduledWorkouts, setScheduledWorkouts] = useState<WorkoutRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -345,10 +331,10 @@ export default function ClientHub() {
       const linkedClient = clientData as ClientRecord;
       setClient(linkedClient);
 
-      const [settingsResult, taskResult, submissionResult, feedbackResult, keyLiftResult, bodyweightResult, workoutResult] = await Promise.all([
+      const [settingsResult, taskResult, submissionResult, feedbackResult, keyLiftResult, bodyweightResult] = await Promise.all([
         supabase
           .from('client_settings')
-          .select('show_calorie_target, show_key_lift_card, show_bodyweight_card, show_calorie_guideline_card, show_today_actions_card, show_upcoming_actions_card, show_latest_feedback_card, bodyweight_enabled, training_availability_enabled')
+          .select('show_calorie_target, show_key_lift_card, show_bodyweight_card, show_calorie_guideline_card, show_today_actions_card, show_upcoming_actions_card, show_latest_feedback_card')
           .eq('client_id', linkedClient.id)
           .maybeSingle(),
         supabase
@@ -381,14 +367,6 @@ export default function ClientHub() {
           .eq('client_id', linkedClient.id)
           .order('entry_date', { ascending: false })
           .limit(30),
-        supabase
-          .from('program_workouts')
-          .select('id, title, scheduled_date, status')
-          .eq('client_id', linkedClient.id)
-          .eq('status', 'active')
-          .not('scheduled_date', 'is', null)
-          .order('scheduled_date', { ascending: true })
-          .limit(20),
       ]);
 
       if (settingsResult.error) {
@@ -427,22 +405,15 @@ export default function ClientHub() {
         return;
       }
 
-      if (workoutResult.error) {
-        setMessage(workoutResult.error.message);
-        setLoading(false);
-        return;
-      }
-
       setSettings({
         ...defaultSettings,
         ...((settingsResult.data as Partial<ClientSettingsRecord> | null) ?? {}),
       });
-      setTasks((taskResult.data ?? []) as AssignedTaskRecord[]);
+      setTasks(((taskResult.data ?? []) as AssignedTaskRecord[]).filter((task) => task.task_type !== 'training_availability'));
       setSubmissions((submissionResult.data ?? []) as SubmissionRecord[]);
       setFeedback((feedbackResult.data?.[0] ?? null) as FeedbackRecord | null);
       setKeyLifts((keyLiftResult.data ?? []) as KeyLiftRecord[]);
       setBodyweightEntries((bodyweightResult.data ?? []) as BodyweightRecord[]);
-      setScheduledWorkouts((workoutResult.data ?? []) as WorkoutRecord[]);
       setLoading(false);
     };
 
@@ -472,124 +443,42 @@ export default function ClientHub() {
   const bodyweightFourWeek = calculateWindowTrend(bodyweightEntries, (entry) => entry.entry_date, (entry) => entry.bodyweight_kg, 28);
   const calorieGuideline = getCalorieGuideline(bodyweightFourWeek);
 
-  const weeklyCalendarActions = useMemo<ActionItem[]>(() => {
-    const today = todayIso();
-    const buildWeeklyAction = ({
-      taskType,
-      enabled,
-      fallbackTitle,
-      activeDescription,
-      scheduledDescription,
-      href,
-    }: {
-      taskType: 'training_availability' | 'bodyweight';
-      enabled: boolean;
-      fallbackTitle: string;
-      activeDescription: string;
-      scheduledDescription: string;
-      href: string;
-    }): ActionItem | null => {
-      if (!enabled) return null;
-
-      const task = tasks.find((item) => item.task_type === taskType);
-      if (!task) {
-        return {
-          id: `weekly-${taskType}-not-scheduled`,
-          title: fallbackTitle,
-          description: 'No active weekly item is scheduled yet. Your coach can enable this, or you can adjust reminder preferences in Configure.',
-          href: '/client/configure',
-          date: null,
-          state: 'not_scheduled',
-          statusLabel: 'Not scheduled',
-        };
-      }
-
-      const state = getTaskActionState(task, today);
-      return {
-        id: task.id,
-        title: task.task_name || fallbackTitle,
-        description: state === 'active'
-          ? (task.instructions || activeDescription)
-          : `${scheduledDescription} ${getWeeklyTaskStatusLabel(task, today)}.`,
-        href,
-        date: task.end_date || task.start_date,
-        state,
-        statusLabel: getWeeklyTaskStatusLabel(task, today),
-      };
-    };
-
-    return [
-      buildWeeklyAction({
-        taskType: 'training_availability',
-        enabled: settings.training_availability_enabled,
-        fallbackTitle: 'Training availability',
-        activeDescription: 'Confirm the days you can train next week.',
-        scheduledDescription: 'Your next training availability check-in is already scheduled.',
-        href: '/client/submit/training-availability',
-      }),
-      buildWeeklyAction({
-        taskType: 'bodyweight',
-        enabled: settings.bodyweight_enabled,
-        fallbackTitle: 'Bodyweight check-in',
-        activeDescription: 'Log your weekly bodyweight.',
-        scheduledDescription: 'Your next bodyweight check-in is already scheduled.',
-        href: '/client/submit/nutrition-bodyweight',
-      }),
-    ].filter(Boolean) as ActionItem[];
-  }, [settings.training_availability_enabled, settings.bodyweight_enabled, tasks]);
-
   const todayActions = useMemo<ActionItem[]>(() => {
     const today = todayIso();
-    const activeTaskActions = tasks
-      .filter((task) => !['training_availability', 'bodyweight'].includes(task.task_type))
+    return tasks
       .filter((task) => !isTaskComplete(task) && task.end_date && task.end_date <= today)
-      .map((task) => ({
-        id: task.id,
-        title: task.task_name,
-        description: task.instructions || task.task_type.replaceAll('_', ' '),
-        href: getTaskHref(task.task_type),
-        date: task.end_date,
-      }));
-
-    const workoutActions = scheduledWorkouts
-      .filter((workout) => workout.scheduled_date === today)
-      .map((workout) => ({
-        id: workout.id,
-        title: workout.title,
-        description: 'Scheduled workout for today',
-        href: `/client/training/${workout.id}`,
-        date: workout.scheduled_date,
-      }));
-
-    return [...workoutActions, ...activeTaskActions];
-  }, [scheduledWorkouts, submissions, tasks]);
+      .map((task) => {
+        const state = getTaskActionState(task, today);
+        return {
+          id: task.id,
+          title: task.task_name,
+          description: task.instructions || task.task_type.replaceAll('_', ' '),
+          href: getTaskHref(task.task_type),
+          date: task.end_date,
+          state,
+          statusLabel: getTaskStatusLabel(task, today),
+        };
+      });
+  }, [submissions, tasks]);
 
   const upcomingActions = useMemo<ActionItem[]>(() => {
     const today = todayIso();
-    const upcomingTaskActions = tasks
-      .filter((task) => !['training_availability', 'bodyweight'].includes(task.task_type))
+    return tasks
       .filter((task) => !isTaskComplete(task) && (!task.end_date || task.end_date > today))
-      .map((task) => ({
-        id: task.id,
-        title: task.task_name,
-        description: task.end_date
-          ? `${task.instructions || task.task_type.replaceAll('_', ' ')} • Due ${formatDate(task.end_date)}`
-          : `${task.instructions || task.task_type.replaceAll('_', ' ')} • Assigned task`,
-        href: getTaskHref(task.task_type),
-        date: task.end_date,
-      }));
-
-    const workoutActions = scheduledWorkouts
-      .filter((workout) => workout.scheduled_date && workout.scheduled_date > today)
-      .map((workout) => ({
-        id: workout.id,
-        title: workout.title,
-        description: `Scheduled for ${formatDate(workout.scheduled_date)}`,
-        href: `/client/training/${workout.id}`,
-        date: workout.scheduled_date,
-      }));
-
-    return [...workoutActions, ...upcomingTaskActions]
+      .map((task) => {
+        const state = getTaskActionState(task, today);
+        return {
+          id: task.id,
+          title: task.task_name,
+          description: task.end_date
+            ? `${task.instructions || task.task_type.replaceAll('_', ' ')} • Due ${formatDate(task.end_date)}`
+            : `${task.instructions || task.task_type.replaceAll('_', ' ')} • Assigned task`,
+          href: getTaskHref(task.task_type),
+          date: task.end_date,
+          state,
+          statusLabel: getTaskStatusLabel(task, today),
+        };
+      })
       .sort((a, b) => {
         if (!a.date && !b.date) return a.title.localeCompare(b.title);
         if (!a.date) return 1;
@@ -597,7 +486,7 @@ export default function ClientHub() {
         return new Date(a.date).getTime() - new Date(b.date).getTime();
       })
       .slice(0, 8);
-  }, [scheduledWorkouts, submissions, tasks]);
+  }, [submissions, tasks]);
 
   if (loading) {
     return (
@@ -679,20 +568,6 @@ export default function ClientHub() {
           </Card>
         </section>
 
-        {weeklyCalendarActions.length > 0 && (
-          <section>
-            <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-              <SectionHeader title="WEEKLY CALENDAR" accent />
-              <Link href="/client/configure" className="mb-4 text-xs font-bold uppercase text-[#FA0201] hover:underline">
-                Configure reminders
-              </Link>
-            </div>
-            <div className="space-y-3">
-              {weeklyCalendarActions.map((item) => <HubActionCard key={item.id} item={item} />)}
-            </div>
-          </section>
-        )}
-
         {settings.show_today_actions_card && (
           <section>
             <SectionHeader title={`TODAY - ${formatShortDate(todayIso())}`} accent />
@@ -711,7 +586,7 @@ export default function ClientHub() {
             <SectionHeader title={`UPCOMING - FROM ${formatShortDate(tomorrowIso())}`} accent />
             <div className="space-y-3">
               {upcomingActions.length === 0 ? (
-                <Card><p className="text-sm text-gray-600">No upcoming actions scheduled yet.</p></Card>
+                <Card><p className="text-sm text-gray-600">No upcoming actions assigned yet.</p></Card>
               ) : (
                 upcomingActions.map((item) => <HubActionCard key={item.id} item={item} />)
               )}
