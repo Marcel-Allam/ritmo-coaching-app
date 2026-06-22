@@ -7,7 +7,7 @@ import { Card } from '@/components/ui/card';
 import { SectionHeader } from '@/components/ui/section-header';
 import { BodyweightTrendCard } from '@/components/client/bodyweight-trend-card';
 import { CoachingStatusCard } from '@/components/client/coaching-status-card';
-import { ClientDirectionMetricCards } from '@/components/client/client-direction-metric-cards';
+import { ClientProgressGraphTiles } from '@/components/client/client-progress-graph-tiles';
 import { NextWorkoutCard } from '@/components/client/next-workout-card';
 import { ClientHubTargetSettings, TdeeSummaryCard } from '@/components/client/tdee-summary-card';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
@@ -202,7 +202,7 @@ export default function ClientHub() {
         {settings.show_progress_cards && (
           <section>
             <SectionHeader title="YOUR PROGRESS" accent />
-            <ClientDirectionMetricCards clientId={client.id} />
+            <ClientProgressGraphTiles clientId={client.id} />
           </section>
         )}
       </div>
