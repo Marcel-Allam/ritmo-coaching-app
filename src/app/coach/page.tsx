@@ -201,57 +201,29 @@ export default function CoachDashboard() {
               </div>
             </Card>
 
-            <div className="grid grid-cols-1 gap-8 xl:grid-cols-[minmax(0,1.3fr)_minmax(340px,0.9fr)]">
-              <section>
-                <SectionHeader title="WORKOUT REVIEW QUEUE" accent />
-                <Card>
-                  {workoutReviews.length === 0 ? (
-                    <p className="text-sm text-gray-600">No workout reviews waiting.</p>
-                  ) : (
-                    <div className="space-y-3">
-                      {workoutReviews.map((review) => (
-                        <Link key={review.id} href={getReviewHref(review)} className="block rounded-xl border border-gray-200 bg-gray-50 p-4 hover:bg-white">
-                          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                            <div>
-                              <p className="text-sm font-black uppercase text-[#000000]">{clientNameById[review.client_id] || 'Client'}</p>
-                              <p className="mt-1 text-xs font-semibold uppercase text-gray-500">{review.submission_type.replaceAll('_', ' ')} · {formatDateTime(review.submitted_at)}</p>
-                              {review.followup_required && <p className="mt-1 text-xs font-black uppercase text-[#FA0201]">Follow-up required</p>}
-                            </div>
-                            <Badge variant={getStatusBadgeVariant(review.review_status) as any}>Review workout</Badge>
+            <section>
+              <SectionHeader title="WORKOUT REVIEW QUEUE" accent />
+              <Card>
+                {workoutReviews.length === 0 ? (
+                  <p className="text-sm text-gray-600">No workout reviews waiting.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {workoutReviews.map((review) => (
+                      <Link key={review.id} href={getReviewHref(review)} className="block rounded-xl border border-gray-200 bg-gray-50 p-4 hover:bg-white">
+                        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                          <div>
+                            <p className="text-sm font-black uppercase text-[#000000]">{clientNameById[review.client_id] || 'Client'}</p>
+                            <p className="mt-1 text-xs font-semibold uppercase text-gray-500">{review.submission_type.replaceAll('_', ' ')} · {formatDateTime(review.submitted_at)}</p>
+                            {review.followup_required && <p className="mt-1 text-xs font-black uppercase text-[#FA0201]">Follow-up required</p>}
                           </div>
-                        </Link>
-                      ))}
-                    </div>
-                  )}
-                </Card>
-              </section>
-
-              <section>
-                <SectionHeader title="SETUP GAPS" accent />
-                <Card>
-                  {setupGapClients.length === 0 ? (
-                    <p className="text-sm text-gray-600">No active client setup gaps.</p>
-                  ) : (
-                    <div className="space-y-3">
-                      {setupGapClients.map((client) => (
-                        <div key={client.id} className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-                          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                            <div>
-                              <p className="text-sm font-black uppercase text-[#000000]">{client.full_name}</p>
-                              <div className="mt-2 flex flex-wrap gap-2">
-                                {!client.user_id && <Badge variant="warning">Account not linked</Badge>}
-                                {!programmeClientIds.has(client.id) && <Badge variant="danger">No active programme</Badge>}
-                              </div>
-                            </div>
-                            <Link href={`/coach/clients/${client.id}`} className="text-xs font-black uppercase text-[#FA0201] hover:underline">Open client</Link>
-                          </div>
+                          <Badge variant={getStatusBadgeVariant(review.review_status) as any}>Review workout</Badge>
                         </div>
-                      ))}
-                    </div>
-                  )}
-                </Card>
-              </section>
-            </div>
+                      </Link>
+                    ))}
+                  </div>
+                )}
+              </Card>
+            </section>
 
             <div className="grid grid-cols-1 gap-8 xl:grid-cols-2">
               <section>
@@ -299,6 +271,32 @@ export default function CoachDashboard() {
                 </Card>
               </section>
             </div>
+
+            <section>
+              <SectionHeader title="SETUP GAPS" accent />
+              <Card>
+                {setupGapClients.length === 0 ? (
+                  <p className="text-sm text-gray-600">No active client setup gaps.</p>
+                ) : (
+                  <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+                    {setupGapClients.map((client) => (
+                      <div key={client.id} className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                          <div>
+                            <p className="text-sm font-black uppercase text-[#000000]">{client.full_name}</p>
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              {!client.user_id && <Badge variant="warning">Account not linked</Badge>}
+                              {!programmeClientIds.has(client.id) && <Badge variant="danger">No active programme</Badge>}
+                            </div>
+                          </div>
+                          <Link href={`/coach/clients/${client.id}`} className="text-xs font-black uppercase text-[#FA0201] hover:underline">Open client</Link>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </Card>
+            </section>
           </>
         )}
       </div>
