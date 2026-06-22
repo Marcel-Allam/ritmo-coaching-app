@@ -72,7 +72,6 @@ const clientNavItems = [
   { label: 'Hub', href: '/client', icon: HomeIcon },
   { label: 'Workout', href: '/client/training', icon: DumbbellIcon },
   { label: 'Coach', href: '/client/coach', icon: PlusIcon },
-  { label: 'Diet', href: '/client/diet', icon: ClipboardIcon },
   { label: 'Configure', href: '/client/configure', icon: SettingsIcon },
   { label: 'Feedback', href: '/client/feedback', icon: MessageIcon },
 ];
