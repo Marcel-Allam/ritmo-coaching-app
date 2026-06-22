@@ -29,7 +29,6 @@ interface CoachCallBookingRecord {
 
 interface ClientRecord { id: string; full_name: string }
 
-const activeReviewTypes = ['workout_session', 'workout_checkin', 'weekly_checkin'];
 const workoutReviewTypes = ['workout_session', 'workout_checkin'];
 
 const formatDateTime = (value: string) => {
@@ -49,12 +48,6 @@ const getStatusBadgeVariant = (status: string) => {
   if (status === 'resolved' || status === 'flagged' || status === 'declined' || status === 'cancelled') return 'danger';
   if (status === 'needs_feedback' || status === 'needs_action' || status === 'reschedule_pending') return 'warning';
   return 'default';
-};
-
-const getSubmissionBadgeLabel = (submission: SubmissionRecord) => {
-  if (submission.submission_type === 'weekly_checkin') return 'Review check-in';
-  if (workoutReviewTypes.includes(submission.submission_type)) return 'Review workout';
-  return null;
 };
 
 export default function CoachActionsPage() {
@@ -77,7 +70,7 @@ export default function CoachActionsPage() {
       supabase
         .from('task_submissions')
         .select('id, client_id, submission_type, submitted_at, answer_value, answer_text, review_status, followup_required')
-        .in('submission_type', activeReviewTypes)
+        .in('submission_type', workoutReviewTypes)
         .order('submitted_at', { ascending: false })
         .limit(75),
       supabase
@@ -118,16 +111,12 @@ export default function CoachActionsPage() {
 
   const activeSubmissions = submissions.filter((submission) => submission.review_status !== 'reviewed' && submission.review_status !== 'resolved');
   const workoutReviews = activeSubmissions.filter((submission) => workoutReviewTypes.includes(submission.submission_type));
-  const weeklyCheckins = activeSubmissions.filter((submission) => submission.submission_type === 'weekly_checkin');
-  const highAttentionSubmissions = activeSubmissions.filter((submission) => submission.followup_required || submission.review_status === 'flagged' || submission.review_status === 'needs_action');
   const completedSubmissions = submissions
     .filter((submission) => submission.review_status === 'reviewed' || submission.review_status === 'resolved')
     .slice(0, 8);
 
   const queueCounts = {
     workoutReviews: workoutReviews.length,
-    weeklyCheckins: weeklyCheckins.length,
-    highAttention: highAttentionSubmissions.length,
     calendarActions: callBookings.length,
     completedActions: completedSubmissions.length,
   };
@@ -137,58 +126,47 @@ export default function CoachActionsPage() {
     return `/coach/actions/submissions/${submission.id}`;
   };
 
-  const renderSubmission = (submission: SubmissionRecord) => {
-    const badgeLabel = getSubmissionBadgeLabel(submission);
-    if (!badgeLabel) return null;
-
-    return (
-      <Link key={submission.id} href={getSubmissionHref(submission)} className="block rounded-lg border border-gray-200 p-4 hover:bg-gray-50">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="font-bold text-sm uppercase text-[#000000]">{formatLabel(submission.submission_type)}</p>
-            <p className="mt-1 text-xs text-gray-500">{clients[submission.client_id] || 'Client'} • {formatDateTime(submission.submitted_at)}</p>
-            {submission.followup_required && <p className="mt-1 text-xs font-bold uppercase text-[#FA0201]">Follow-up required</p>}
-          </div>
-          <div className="flex flex-col items-end gap-2">
-            {submission.answer_value !== null && <span className="text-sm font-bold text-gray-700">{submission.answer_value}/10</span>}
-            <Badge variant={getStatusBadgeVariant(submission.review_status) as any}>{badgeLabel}</Badge>
-          </div>
+  const renderSubmission = (submission: SubmissionRecord) => (
+    <Link key={submission.id} href={getSubmissionHref(submission)} className="block rounded-lg border border-gray-200 p-4 hover:bg-gray-50">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="font-bold text-sm uppercase text-[#000000]">{formatLabel(submission.submission_type)}</p>
+          <p className="mt-1 text-xs text-gray-500">{clients[submission.client_id] || 'Client'} • {formatDateTime(submission.submitted_at)}</p>
+          {submission.followup_required && <p className="mt-1 text-xs font-bold uppercase text-[#FA0201]">Follow-up required</p>}
         </div>
-      </Link>
-    );
-  };
-
-  const renderCompletedSubmission = (submission: SubmissionRecord) => {
-    const badgeLabel = getSubmissionBadgeLabel(submission);
-    if (!badgeLabel) return null;
-
-    return (
-      <div key={submission.id} className="rounded-lg border border-gray-200 bg-gray-100 p-4 opacity-80">
-        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-          <div>
-            <p className="font-bold text-sm uppercase text-[#000000]">{formatLabel(submission.submission_type)}</p>
-            <p className="mt-1 text-xs text-gray-500">{clients[submission.client_id] || 'Client'} • {formatDateTime(submission.submitted_at)}</p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2 md:justify-end">
-            <Badge variant={getStatusBadgeVariant(submission.review_status) as any}>{formatLabel(submission.review_status)}</Badge>
-            <Link href={getSubmissionHref(submission)} className="rounded-lg border border-black px-3 py-1 text-xs font-bold uppercase text-black hover:bg-black hover:text-white">Edit</Link>
-          </div>
+        <div className="flex flex-col items-end gap-2">
+          {submission.answer_value !== null && <span className="text-sm font-bold text-gray-700">{submission.answer_value}/10</span>}
+          <Badge variant={getStatusBadgeVariant(submission.review_status) as any}>Review workout</Badge>
         </div>
       </div>
-    );
-  };
+    </Link>
+  );
+
+  const renderCompletedSubmission = (submission: SubmissionRecord) => (
+    <div key={submission.id} className="rounded-lg border border-gray-200 bg-gray-100 p-4 opacity-80">
+      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+        <div>
+          <p className="font-bold text-sm uppercase text-[#000000]">{formatLabel(submission.submission_type)}</p>
+          <p className="mt-1 text-xs text-gray-500">{clients[submission.client_id] || 'Client'} • {formatDateTime(submission.submitted_at)}</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 md:justify-end">
+          <Badge variant={getStatusBadgeVariant(submission.review_status) as any}>{formatLabel(submission.review_status)}</Badge>
+          <Link href={getSubmissionHref(submission)} className="rounded-lg border border-black px-3 py-1 text-xs font-bold uppercase text-black hover:bg-black hover:text-white">Edit</Link>
+        </div>
+      </div>
+    </div>
+  );
 
   return (
     <div className="p-6 md:p-8">
-      <PageHeader title="ACTION QUEUE" subtitle="Specific coaching actions only. Call scheduling now lives in Calendar." />
+      <PageHeader title="ACTION QUEUE" subtitle="Workout reviews only. Call scheduling lives in Calendar." />
       <div className="mt-8 space-y-8">
         {isLoading && <div className="bg-white rounded-lg border border-gray-200 p-8 text-center"><p className="font-semibold text-gray-700">Loading actions...</p></div>}
         {error && <div className="bg-red-50 border border-red-200 rounded-lg p-4"><p className="font-semibold text-red-700">{error}</p></div>}
         {!isLoading && !error && (
           <>
-            <section className="grid grid-cols-1 gap-4 md:grid-cols-4">
+            <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
               <Card><p className="text-xs font-bold uppercase text-gray-500">Workout Reviews</p><p className="mt-2 text-3xl font-black text-[#000000]">{queueCounts.workoutReviews}</p></Card>
-              <Card><p className="text-xs font-bold uppercase text-gray-500">Weekly Check-ins</p><p className="mt-2 text-3xl font-black text-[#000000]">{queueCounts.weeklyCheckins}</p></Card>
               <Card><p className="text-xs font-bold uppercase text-gray-500">Calendar Actions</p><p className="mt-2 text-3xl font-black text-[#FA0201]">{queueCounts.calendarActions}</p></Card>
               <Card><p className="text-xs font-bold uppercase text-gray-500">Completed</p><p className="mt-2 text-3xl font-black text-gray-600">{queueCounts.completedActions}</p></Card>
             </section>
@@ -214,22 +192,6 @@ export default function CoachActionsPage() {
                 {workoutReviews.length === 0 ? <p className="text-sm text-gray-600">No workout reviews right now.</p> : <div className="space-y-3">{workoutReviews.map(renderSubmission)}</div>}
               </Card>
             </section>
-
-            <section>
-              <SectionHeader title="WEEKLY CHECK-INS" accent />
-              <Card>
-                {weeklyCheckins.length === 0 ? <p className="text-sm text-gray-600">No weekly check-ins right now.</p> : <div className="space-y-3">{weeklyCheckins.map(renderSubmission)}</div>}
-              </Card>
-            </section>
-
-            {queueCounts.highAttention > 0 && (
-              <section>
-                <SectionHeader title="HIGH ATTENTION" accent />
-                <Card>
-                  <div className="space-y-3">{highAttentionSubmissions.map(renderSubmission)}</div>
-                </Card>
-              </section>
-            )}
 
             <section>
               <SectionHeader title="COMPLETED ACTIONS" accent />
