@@ -51,15 +51,6 @@ type PerformedSetRecord = {
   notes: string | null;
 };
 
-type FeedbackForm = {
-  win: string;
-  improve: string;
-  adjustment: string;
-};
-
-const emptyFeedback: FeedbackForm = { win: '', improve: '', adjustment: '' };
-const EXERCISE_NOTES_MARKER = '[RITMO_EXERCISE_NOTES]';
-
 const formatDateTime = (value: string | null) => {
   if (!value) return 'Not recorded';
   return new Intl.DateTimeFormat('en-GB', {
@@ -198,9 +189,7 @@ export default function CoachWorkoutReviewPage() {
   const [exercises, setExercises] = useState<ProgramExerciseRecord[]>([]);
   const [programSets, setProgramSets] = useState<ProgramSetRecord[]>([]);
   const [performedSets, setPerformedSets] = useState<PerformedSetRecord[]>([]);
-  const [coachNote, setCoachNote] = useState('');
-  const [feedback, setFeedback] = useState<FeedbackForm>(emptyFeedback);
-  const [exerciseNotes, setExerciseNotes] = useState<Record<string, string>>({});
+  const [feedbackText, setFeedbackText] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -278,7 +267,6 @@ export default function CoachWorkoutReviewPage() {
     setPerformedSets((performedResult.data ?? []) as PerformedSetRecord[]);
     setExercises(loadedExercises);
     setProgramSets((setResult.data ?? []) as ProgramSetRecord[]);
-    setCoachNote(loadedSession.coach_note || '');
     setLoading(false);
   };
 
@@ -300,80 +288,47 @@ export default function CoachWorkoutReviewPage() {
     }, {});
   }, [performedSets]);
 
-  const updateExerciseNote = (exerciseId: string, note: string) => {
-    setExerciseNotes((current) => ({ ...current, [exerciseId]: note }));
-  };
+  const sendClientFeedback = async () => {
+    if (!isSupabaseConfigured || !client || !session) return;
 
-  const saveReviewStatus = async (nextStatus: ReviewStatus) => {
-    if (!isSupabaseConfigured || !session) return;
+    const feedback = feedbackText.trim();
+    if (!feedback) {
+      setError('Add feedback before sending.');
+      return;
+    }
+
     setSaving(true);
     setMessage(null);
     setError(null);
 
     const supabase = createClient();
-    const [sessionUpdate, submissionUpdate] = await Promise.all([
-      supabase.from('workout_sessions').update({ review_status: nextStatus, coach_note: coachNote.trim() || null }).eq('id', session.id),
+    const [feedbackInsert, sessionUpdate, submissionUpdate] = await Promise.all([
+      supabase.from('feedback_notes').insert({
+        client_id: client.id,
+        feedback_date: new Date().toISOString().slice(0, 10),
+        main_win: feedback,
+        main_focus: null,
+        agreed_action: null,
+        plan_change: null,
+        client_visible: true,
+      }),
+      supabase.from('workout_sessions').update({ review_status: 'reviewed' }).eq('id', session.id),
       supabase
         .from('task_submissions')
-        .update({ review_status: nextStatus, coach_note: coachNote.trim() || null, followup_required: nextStatus === 'needs_action' || nextStatus === 'flagged' })
+        .update({ review_status: 'reviewed', coach_note: feedback, followup_required: false })
         .eq('client_id', clientId)
         .eq('submission_type', 'workout_session')
         .eq('answer_text', session.id),
     ]);
 
-    if (sessionUpdate.error || submissionUpdate.error) {
-      setError(sessionUpdate.error?.message || submissionUpdate.error?.message || 'Could not save review status.');
+    if (feedbackInsert.error || sessionUpdate.error || submissionUpdate.error) {
+      setError(feedbackInsert.error?.message || sessionUpdate.error?.message || submissionUpdate.error?.message || 'Could not send feedback.');
       setSaving(false);
       return;
     }
 
-    setSession((current) => (current ? { ...current, review_status: nextStatus, coach_note: coachNote.trim() || null } : current));
-    setMessage(`Review saved as ${nextStatus.replaceAll('_', ' ')}.`);
-    setSaving(false);
-  };
-
-  const sendClientFeedback = async () => {
-    if (!isSupabaseConfigured || !client) return;
-
-    const win = feedback.win.trim();
-    const improve = feedback.improve.trim();
-    const adjustment = feedback.adjustment.trim();
-    const visibleExerciseNotes = exercises
-      .map((exercise) => ({ exerciseName: exercise.exercise_name, note: (exerciseNotes[exercise.id] || '').trim() }))
-      .filter((item) => item.note.length > 0);
-    const exerciseNotesBlock = visibleExerciseNotes.length
-      ? `${EXERCISE_NOTES_MARKER}\n${visibleExerciseNotes.map((item) => `- ${item.exerciseName}: ${item.note}`).join('\n')}`
-      : '';
-
-    if (!win && !improve && !adjustment && !exerciseNotesBlock) {
-      setError('Add feedback or at least one exercise note before sending.');
-      return;
-    }
-
-    setSaving(true);
-    setMessage(null);
-    setError(null);
-
-    const supabase = createClient();
-    const { error: feedbackError } = await supabase.from('feedback_notes').insert({
-      client_id: client.id,
-      feedback_date: new Date().toISOString().slice(0, 10),
-      main_win: win || null,
-      main_focus: improve || null,
-      agreed_action: adjustment || null,
-      plan_change: exerciseNotesBlock || null,
-      client_visible: true,
-    });
-
-    if (feedbackError) {
-      setError(feedbackError.message);
-      setSaving(false);
-      return;
-    }
-
-    await saveReviewStatus('reviewed');
-    setFeedback(emptyFeedback);
-    setExerciseNotes({});
+    setSession((current) => (current ? { ...current, review_status: 'reviewed' } : current));
+    setFeedbackText('');
     setMessage('Client feedback sent and workout marked reviewed.');
     setSaving(false);
   };
@@ -391,6 +346,9 @@ export default function CoachWorkoutReviewPage() {
         </div>
         <div className="flex flex-col items-start gap-2 md:items-end">
           {session && <Badge variant={getStatusVariant(session.review_status) as any}>{session.review_status.replaceAll('_', ' ')}</Badge>}
+          <Link href={workout ? `/coach/clients/${clientId}/current-workouts/${workout.id}/edit` : '#'} className="rounded-lg bg-black px-4 py-2 text-xs font-black uppercase text-white hover:bg-gray-900">
+            Adjust following workout
+          </Link>
           <Link href={`/coach/clients/${clientId}`} className="text-sm font-bold uppercase text-[#FA0201] hover:underline">Back to client</Link>
         </div>
       </div>
@@ -439,44 +397,29 @@ export default function CoachWorkoutReviewPage() {
                   );
                 })}
               </div>
-              <div className="mt-4 rounded-lg border border-gray-200 bg-white p-4">
-                <Textarea
-                  label="Exercise note to client"
-                  value={exerciseNotes[exercise.id] || ''}
-                  onChange={(event) => updateExerciseNote(exercise.id, event.target.value)}
-                  placeholder={`Optional note for ${exercise.exercise_name}. If left blank, the client will not see a note section for this exercise.`}
-                />
-              </div>
             </div>
           ))}
         </Card>
       </section>
 
       <section>
-        <SectionHeader title="COACH REVIEW" accent />
-        <Card className="space-y-6">
-          <Textarea label="Coach-only note" value={coachNote} onChange={(event) => setCoachNote(event.target.value)} placeholder="Private record only. Not shown to the client." />
-
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
-            <button type="button" disabled={saving} onClick={() => saveReviewStatus('reviewed')} className="rounded-lg bg-black px-4 py-3 text-sm font-bold uppercase text-white hover:bg-gray-900 disabled:opacity-60">Mark reviewed</button>
-            <button type="button" disabled={saving} onClick={() => saveReviewStatus('needs_feedback')} className="rounded-lg bg-[#FA0201] px-4 py-3 text-sm font-bold uppercase text-white hover:bg-red-700 disabled:opacity-60">Needs feedback</button>
-            <button type="button" disabled={saving} onClick={() => saveReviewStatus('needs_action')} className="rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm font-bold uppercase text-[#000000] hover:bg-gray-100 disabled:opacity-60">Needs action</button>
-            <button type="button" disabled={saving} onClick={() => saveReviewStatus('flagged')} className="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm font-bold uppercase text-red-700 hover:bg-red-100 disabled:opacity-60">Flag issue</button>
-          </div>
-        </Card>
-      </section>
-
-      <section>
         <SectionHeader title="CLIENT-FACING FEEDBACK" accent />
         <Card className="space-y-5">
-          <p className="text-sm text-gray-600">Only fields with text will be sent to the client. Empty fields are ignored.</p>
-          <Textarea label="Win" value={feedback.win} onChange={(event) => setFeedback((current) => ({ ...current, win: event.target.value }))} placeholder="What went well in this workout?" />
-          <Textarea label="What to improve" value={feedback.improve} onChange={(event) => setFeedback((current) => ({ ...current, improve: event.target.value }))} placeholder="What should the client tighten up next time?" />
-          <Textarea label="Adjustment" value={feedback.adjustment} onChange={(event) => setFeedback((current) => ({ ...current, adjustment: event.target.value }))} placeholder="What changes now? Keep load, increase, reduce, adjust technique, or change focus." />
-
+          <Textarea
+            label="Feedback"
+            value={feedbackText}
+            onChange={(event) => setFeedbackText(event.target.value)}
+            placeholder="Write the feedback the client should see from this workout review."
+          />
           <button type="button" disabled={saving} onClick={sendClientFeedback} className="w-full rounded-lg bg-[#FA0201] px-5 py-3 text-sm font-bold uppercase text-white hover:bg-red-700 disabled:opacity-60">
-            {saving ? 'Saving...' : 'Send feedback to client'}
+            {saving ? 'Sending...' : 'Send feedback to client'}
           </button>
+          <Link href={workout ? `/coach/clients/${clientId}/current-workouts/${workout.id}/edit` : '#'} className="block w-full rounded-lg border border-black bg-white px-5 py-3 text-center text-sm font-black uppercase text-black hover:bg-black hover:text-white">
+            Adjust following workout
+          </Link>
+          <p className="text-xs font-semibold text-gray-500">
+            This edits the reusable {workout?.title || 'workout'} template, so the next time the client runs this workout, the adjusted version is used.
+          </p>
         </Card>
       </section>
     </div>
