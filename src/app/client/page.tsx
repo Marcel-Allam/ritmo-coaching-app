@@ -49,7 +49,7 @@ const defaultSettings: HubSettings = {
 
 const SetupCard = ({ client, latestBodyweight }: { client: ClientRecord; latestBodyweight: BodyweightRecord | null }) => {
   const missingItems = [
-    !client.tdee_gender ? 'BMR equation profile' : null,
+    !client.tdee_gender ? 'sex' : null,
     !client.date_of_birth ? 'date of birth' : null,
     !client.height_cm ? 'height' : null,
     !latestBodyweight ? 'starting bodyweight' : null,
