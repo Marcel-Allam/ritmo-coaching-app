@@ -486,7 +486,6 @@ export default function ClientProfilePage() {
               </button>
             )}
             <Link href={`/coach/clients/${clientId}/hub-settings`} className="rounded-lg bg-black px-4 py-2 text-sm font-bold uppercase text-white hover:bg-gray-900">Hub Settings</Link>
-            <Link href={`/coach/clients/${clientId}/settings`} className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-bold uppercase text-[#000000] hover:bg-gray-100">Client Settings</Link>
             <Link href="/coach/clients" className="text-sm font-semibold uppercase text-[#FA0201] hover:underline">Back to Clients</Link>
           </div>
         </div>
@@ -558,10 +557,9 @@ export default function ClientProfilePage() {
                   </div>
                 ) : <p className="mt-2 text-sm text-gray-600">No feedback sent yet.</p>}
               </div>
-
               <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
                 <p className="text-xs font-bold uppercase text-gray-500">Current coaching focus</p>
-                <p className="mt-2 text-sm font-semibold text-[#000000]">{client.current_focus || 'No current focus set'}</p>
+                <p className="mt-2 text-sm font-bold text-[#000000]">{client.current_focus || 'No current focus set'}</p>
                 <p className="mt-2 text-sm text-gray-700"><span className="font-semibold">Next review:</span> {formatDate(client.next_review_date)}</p>
               </div>
             </div>
@@ -569,94 +567,81 @@ export default function ClientProfilePage() {
         </div>
 
         <div>
-          <SectionHeader title="FUTURE PERFORMANCE TRACKING" accent />
+          <SectionHeader title="PERFORMANCE TRACKING" accent />
           <Card>
             <ClientMetricChartDashboard clientId={clientId} />
           </Card>
         </div>
 
         <div>
-          <SectionHeader title="TASKS" accent />
-          <Card className="space-y-6">
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <div>
-                <p className="text-sm font-bold uppercase text-[#000000]">Tasks</p>
-                <p className="mt-1 text-xs font-semibold uppercase text-gray-500">Assigned tasks and recent submissions in one workflow.</p>
+          <SectionHeader title="CLIENT ACTIONS" accent />
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            <Card>
+              <div className="mb-4 flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-bold uppercase text-[#000000]">Active tasks</h2>
+                  <p className="text-sm text-gray-600">Assign lightweight accountability tasks for this client.</p>
+                </div>
+                <button type="button" onClick={() => setIsTaskFormOpen((open) => !open)} className="rounded-lg bg-black px-4 py-2 text-xs font-bold uppercase text-white hover:bg-gray-900">
+                  {isTaskFormOpen ? 'Close' : 'Add task'}
+                </button>
               </div>
-              <button type="button" onClick={() => setIsTaskFormOpen((value) => !value)} className="rounded-lg bg-[#FA0201] px-4 py-2 text-sm font-bold uppercase text-white hover:bg-red-700">
-                {isTaskFormOpen ? 'Close Task Form' : 'Assign Task'}
-              </button>
-            </div>
 
-            {isTaskFormOpen && (
-              <div className="rounded-xl border-2 border-[#FA0201] bg-white p-4">
-                <form onSubmit={handleCreateTask} className="space-y-4">
-                  <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                    <label>
-                      <span className="mb-2 block text-sm font-semibold uppercase">Task type</span>
-                      <select value={taskForm.taskType} onChange={(event) => setTaskForm({ ...taskForm, taskType: event.target.value })} className="w-full rounded-lg border-2 border-gray-300 px-4 py-2 text-black">
-                        {taskOptions.map((task) => <option key={task.value} value={task.value}>{task.label}</option>)}
-                      </select>
-                    </label>
-                    <label>
-                      <span className="mb-2 block text-sm font-semibold uppercase">Frequency</span>
-                      <select value={taskForm.frequency} onChange={(event) => setTaskForm({ ...taskForm, frequency: event.target.value })} className="w-full rounded-lg border-2 border-gray-300 px-4 py-2 text-black">
-                        <option value="daily">Daily</option>
-                        <option value="weekly">Weekly</option>
-                        <option value="one_off">One-off</option>
-                      </select>
-                    </label>
-                    <Input label="End date" type="date" value={taskForm.endDate} onChange={(event) => setTaskForm({ ...taskForm, endDate: event.target.value })} />
-                  </div>
-                  <label>
-                    <span className="mb-2 block text-sm font-semibold uppercase">Instructions</span>
-                    <textarea value={taskForm.instructions} onChange={(event) => setTaskForm({ ...taskForm, instructions: event.target.value })} rows={3} className="w-full rounded-lg border-2 border-gray-300 px-4 py-2 text-black" placeholder="Tell the client what to submit and how often." />
+              {isTaskFormOpen && (
+                <form onSubmit={handleCreateTask} className="mb-5 space-y-4 rounded-xl border border-gray-200 bg-gray-50 p-4">
+                  <label className="block">
+                    <span className="mb-1 block text-xs font-bold uppercase text-gray-500">Task type</span>
+                    <select value={taskForm.taskType} onChange={(event) => setTaskForm((current) => ({ ...current, taskType: event.target.value }))} className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-[#000000]">
+                      {taskOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                    </select>
                   </label>
-                  <button type="submit" disabled={isSavingTask} className="rounded-lg bg-black px-5 py-3 text-sm font-bold uppercase text-white hover:bg-gray-900 disabled:opacity-60">
-                    {isSavingTask ? 'Assigning...' : 'Assign Task'}
+                  <label className="block">
+                    <span className="mb-1 block text-xs font-bold uppercase text-gray-500">Frequency</span>
+                    <select value={taskForm.frequency} onChange={(event) => setTaskForm((current) => ({ ...current, frequency: event.target.value }))} className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-[#000000]">
+                      <option value="daily">Daily</option>
+                      <option value="weekly">Weekly</option>
+                      <option value="once">Once</option>
+                    </select>
+                  </label>
+                  <Input label="End date" type="date" value={taskForm.endDate} onChange={(event) => setTaskForm((current) => ({ ...current, endDate: event.target.value }))} />
+                  <label className="block">
+                    <span className="mb-1 block text-xs font-bold uppercase text-gray-500">Instructions</span>
+                    <textarea value={taskForm.instructions} onChange={(event) => setTaskForm((current) => ({ ...current, instructions: event.target.value }))} rows={3} className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-[#000000]" placeholder="What should the client submit?" />
+                  </label>
+                  <button type="submit" disabled={isSavingTask} className="rounded-lg bg-[#FA0201] px-4 py-2 text-xs font-bold uppercase text-white hover:bg-red-700 disabled:opacity-60">
+                    {isSavingTask ? 'Saving...' : 'Save task'}
                   </button>
                 </form>
-              </div>
-            )}
+              )}
 
-            <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-              <div>
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <p className="text-xs font-black uppercase text-[#000000]">Assigned tasks</p>
-                  <Badge variant="default">{tasks.length}</Badge>
-                </div>
-                <div className="grid grid-cols-1 gap-4">
-                  {tasks.length === 0 ? (
-                    <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm text-gray-600">No active tasks assigned.</div>
-                  ) : tasks.map((task) => (
-                    <TaskCard key={task.id} title={task.task_name} description={`${task.frequency}${task.end_date ? ` until ${formatDate(task.end_date)}` : ''}`} completed={isTaskComplete(task)} href={`/coach/actions/tasks/${task.id}`} />
-                  ))}
-                </div>
+              <div className="space-y-3">
+                {tasks.length === 0 ? <p className="text-sm text-gray-600">No active tasks assigned.</p> : tasks.map((task) => (
+                  <TaskCard key={task.id} title={task.task_name} meta={`${getTaskLabel(task.task_type)} • ${task.frequency}`} status={isTaskComplete(task) ? 'Completed' : 'Open'}>
+                    {task.instructions && <p className="text-sm text-gray-700">{task.instructions}</p>}
+                    <p className="text-xs font-semibold uppercase text-gray-500">Ends: {formatDate(task.end_date)}</p>
+                  </TaskCard>
+                ))}
               </div>
+            </Card>
 
-              <div>
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <p className="text-xs font-black uppercase text-[#000000]">Recent submissions</p>
-                  <Badge variant="default">{submissions.length}</Badge>
-                </div>
-                <div className="grid grid-cols-1 gap-4">
-                  {submissions.length === 0 ? (
-                    <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm text-gray-600">No recent submissions yet.</div>
-                  ) : submissions.map((submission) => (
-                    <Link key={submission.id} href={getSubmissionHref(submission)} className="rounded-xl border border-gray-200 bg-white p-4 hover:border-[#FA0201]">
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <p className="font-bold uppercase text-[#000000]">{submission.submission_type.replaceAll('_', ' ')}</p>
-                          <p className="text-sm text-gray-600">Submitted {formatDate(submission.submitted_at)}</p>
-                        </div>
-                        <Badge variant={submission.review_status === 'reviewed' ? 'success' : 'warning'}>{submission.review_status}</Badge>
+            <Card>
+              <h2 className="mb-4 text-lg font-bold uppercase text-[#000000]">Recent submissions</h2>
+              <div className="space-y-3">
+                {submissions.length === 0 ? <p className="text-sm text-gray-600">No submissions yet.</p> : submissions.map((submission) => (
+                  <div key={submission.id} className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-bold uppercase text-[#000000]">{submission.submission_type.replaceAll('_', ' ')}</p>
+                        <p className="text-xs font-semibold text-gray-500">{formatDate(submission.submitted_at)}</p>
                       </div>
-                    </Link>
-                  ))}
-                </div>
+                      <Badge variant={submission.review_status === 'reviewed' ? 'success' : 'warning'}>{submission.review_status}</Badge>
+                    </div>
+                    <Link href={getSubmissionHref(submission)} className="mt-3 inline-block text-xs font-bold uppercase text-[#FA0201] hover:underline">Review submission</Link>
+                  </div>
+                ))}
               </div>
-            </div>
-          </Card>
+            </Card>
+          </div>
         </div>
       </div>
     </div>
