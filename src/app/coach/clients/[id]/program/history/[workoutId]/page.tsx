@@ -73,6 +73,8 @@ export default function ProgrammeWorkoutHistoryPage() {
   const [setsBySession, setSetsBySession] = useState<Record<string, SetSummaryRecord[]>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
 
   useEffect(() => {
     const loadHistory = async () => {
@@ -131,8 +133,67 @@ export default function ProgrammeWorkoutHistoryPage() {
     loadHistory();
   }, [clientId, workoutId]);
 
+  const deleteSession = async (session: SessionRecord) => {
+    if (!isSupabaseConfigured) return;
+
+    const confirmed = window.confirm(`Delete this completed ${workout?.title || 'workout'} session from ${formatDateTime(session.completed_at)}? This removes the performed sets and review queue item for this session.`);
+    if (!confirmed) return;
+
+    setDeletingSessionId(session.id);
+    setError(null);
+    setMessage(null);
+
+    const supabase = createClient();
+
+    const { error: performedDeleteError } = await supabase
+      .from('performed_sets')
+      .delete()
+      .eq('session_id', session.id);
+
+    if (performedDeleteError) {
+      setError(performedDeleteError.message);
+      setDeletingSessionId(null);
+      return;
+    }
+
+    const { error: submissionDeleteError } = await supabase
+      .from('task_submissions')
+      .delete()
+      .eq('client_id', clientId)
+      .eq('submission_type', 'workout_session')
+      .eq('answer_text', session.id);
+
+    if (submissionDeleteError) {
+      setError(submissionDeleteError.message);
+      setDeletingSessionId(null);
+      return;
+    }
+
+    const { error: sessionDeleteError } = await supabase
+      .from('workout_sessions')
+      .delete()
+      .eq('id', session.id)
+      .eq('client_id', clientId)
+      .eq('program_workout_id', workoutId);
+
+    if (sessionDeleteError) {
+      setError(sessionDeleteError.message);
+      setDeletingSessionId(null);
+      return;
+    }
+
+    setSessions((current) => current.filter((item) => item.id !== session.id));
+    setSetsBySession((current) => {
+      const next = { ...current };
+      delete next[session.id];
+      return next;
+    });
+    setMessage('Workout history entry deleted.');
+    setDeletingSessionId(null);
+  };
+
   if (loading) return <div className="p-6 md:p-8"><Card>Loading workout history...</Card></div>;
-  if (error) return <div className="p-6 md:p-8"><Card><p className="text-sm font-semibold text-red-700">{error}</p></Card></div>;
+  if (error && !client) return <div className="p-6 md:p-8"><Card><p className="text-sm font-semibold text-red-700">{error}</p></Card></div>;
 
   return (
     <div className="space-y-8 p-6 md:p-8">
@@ -144,6 +205,9 @@ export default function ProgrammeWorkoutHistoryPage() {
         </div>
         <Link href={`/coach/clients/${clientId}/program`} className="text-sm font-bold uppercase text-[#FA0201] hover:underline">Back to programme</Link>
       </div>
+
+      {message && <Card className="border-2 border-green-200 bg-green-50"><p className="text-sm font-semibold text-green-700">{message}</p></Card>}
+      {error && <Card className="border-2 border-red-200 bg-red-50"><p className="text-sm font-semibold text-red-700">{error}</p></Card>}
 
       <section>
         <SectionHeader title="COMPLETED SESSIONS" accent />
@@ -157,7 +221,7 @@ export default function ProgrammeWorkoutHistoryPage() {
                 const completedSetCount = sessionSets.filter((set) => set.completed).length;
                 const volume = getSessionVolume(sessionSets);
                 return (
-                  <Link key={session.id} href={`/coach/clients/${clientId}/workout-review/${session.id}`} className="block rounded-xl border border-gray-200 bg-white p-4 hover:bg-gray-50">
+                  <div key={session.id} className="rounded-xl border border-gray-200 bg-white p-4">
                     <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
                       <div>
                         <p className="text-lg font-black uppercase text-[#000000]">{formatDateTime(session.completed_at)}</p>
@@ -166,10 +230,18 @@ export default function ProgrammeWorkoutHistoryPage() {
                       </div>
                       <div className="flex flex-wrap gap-2 md:justify-end">
                         <Badge variant={statusVariant(session.review_status) as any}>{session.review_status.replaceAll('_', ' ')}</Badge>
-                        <span className="rounded-lg border border-gray-300 px-3 py-2 text-xs font-bold uppercase text-[#000000]">Open review</span>
+                        <Link href={`/coach/clients/${clientId}/workout-review/${session.id}`} className="rounded-lg border border-gray-300 px-3 py-2 text-xs font-bold uppercase text-[#000000] hover:bg-gray-50">Open review</Link>
+                        <button
+                          type="button"
+                          onClick={() => deleteSession(session)}
+                          disabled={deletingSessionId === session.id}
+                          className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-xs font-bold uppercase text-[#FA0201] hover:bg-red-100 disabled:opacity-60"
+                        >
+                          {deletingSessionId === session.id ? 'Deleting...' : 'Delete'}
+                        </button>
                       </div>
                     </div>
-                  </Link>
+                  </div>
                 );
               })}
             </div>
