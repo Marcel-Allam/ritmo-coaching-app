@@ -195,9 +195,25 @@ export default function ClientWorkoutSessionPage() {
   const kgMatchesPrescription = matchesPrescription(currentLog.weight, currentPrescribedWeight);
   const repsMatchesPrescription = matchesPrescription(currentLog.reps, currentPrescribedReps);
   const focusInputBaseClass = 'mt-2 w-full border-0 border-b-4 border-black bg-transparent text-right text-7xl font-black outline-none transition-colors duration-150';
+  const canGoPrevious = focusSetIndex > 0;
+  const canGoNext = focusSetIndex < orderedFocusSets.length - 1;
 
   const updateLog = (setId: string, updates: Partial<SetLog>) => {
     setLogs((current) => ({ ...current, [setId]: { ...(current[setId] || emptyLog), ...updates } }));
+  };
+
+  const goToPreviousSet = () => {
+    setShowFinishPanel(false);
+    setFocusSetIndex((current) => Math.max(0, current - 1));
+  };
+
+  const goToNextSet = () => {
+    setShowFinishPanel(false);
+    if (canGoNext) {
+      setFocusSetIndex((current) => Math.min(orderedFocusSets.length - 1, current + 1));
+      return;
+    }
+    setShowFinishPanel(true);
   };
 
   const completeCurrentSet = () => {
@@ -336,7 +352,24 @@ export default function ClientWorkoutSessionPage() {
             <div className="flex items-end justify-between gap-4">
               <div>
                 <p className="text-sm font-bold uppercase text-gray-500">Exercise {currentFocusItem.exercise.exercise_order} of {exercises.length}</p>
-                <h2 className="mt-1 text-5xl font-black uppercase tracking-tight">Set {currentSetPositionInExercise}</h2>
+                <div className="mt-1 flex flex-wrap items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={goToPreviousSet}
+                    disabled={!canGoPrevious}
+                    className="rounded-lg border-2 border-black px-3 py-2 text-xs font-black uppercase text-black disabled:cursor-not-allowed disabled:border-gray-300 disabled:text-gray-300"
+                  >
+                    ← Previous set
+                  </button>
+                  <h2 className="text-5xl font-black uppercase tracking-tight">Set {currentSetPositionInExercise}</h2>
+                  <button
+                    type="button"
+                    onClick={goToNextSet}
+                    className="rounded-lg border-2 border-black px-3 py-2 text-xs font-black uppercase text-black hover:bg-black hover:text-white"
+                  >
+                    Next set →
+                  </button>
+                </div>
                 <p className="mt-1 text-sm font-bold uppercase text-gray-500">{completionStats.completedCount}/{completionStats.totalCount} sets complete</p>
               </div>
               <div className="rounded-xl bg-gray-100 px-4 py-3 text-right">
