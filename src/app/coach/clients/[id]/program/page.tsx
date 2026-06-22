@@ -32,14 +32,8 @@ type CoachActionRecord = {
   created_at: string;
 };
 
-const formatDate = (value: string | null) => {
-  if (!value) return 'Unscheduled';
-  return new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(`${value}T00:00:00`));
-};
-
 const statusVariant = (status: string) => {
   if (status === 'completed') return 'success';
-  if (status === 'scheduled') return 'warning';
   if (status === 'archived') return 'danger';
   return 'default';
 };
@@ -51,10 +45,14 @@ const priorityVariant = (priority: string) => {
   return 'default';
 };
 
+const formatDate = (value: string | null) => {
+  if (!value) return 'Not set';
+  return new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(value));
+};
+
 const getWorkoutDisplayStatus = (workout: WorkoutRecord, completedWorkoutIds: Set<string>) => {
   if (completedWorkoutIds.has(workout.id) || workout.status === 'completed') return 'completed';
-  if (workout.scheduled_date) return 'scheduled';
-  return 'unscheduled';
+  return 'active';
 };
 
 export default function ClientProgramPage() {
@@ -157,9 +155,7 @@ export default function ClientProgramPage() {
     loadPage();
   }, [clientId]);
 
-  const completedWorkoutIds = useMemo(() => {
-    return new Set(completedSessions.map((session) => session.program_workout_id));
-  }, [completedSessions]);
+  const completedWorkoutIds = useMemo(() => new Set(completedSessions.map((session) => session.program_workout_id)), [completedSessions]);
 
   const programmeGroups = useMemo(() => {
     return programs.map((program) => ({
@@ -194,12 +190,13 @@ export default function ClientProgramPage() {
 
   const deleteWorkout = async (workout: WorkoutRecord) => {
     if (!isSupabaseConfigured) return;
-    if (completedWorkoutIds.has(workout.id) || workout.status === 'completed') {
-      setError('Completed workouts are locked as history and cannot be deleted.');
-      return;
-    }
 
-    const confirmed = window.confirm(`Delete ${workout.title}? This removes its exercises and prescribed sets.`);
+    const hasHistory = completedWorkoutIds.has(workout.id) || workout.status === 'completed';
+    const confirmed = window.confirm(
+      hasHistory
+        ? `Remove ${workout.title} from current programme delivery? Previous completed sessions will remain in history.`
+        : `Delete ${workout.title} from current programme delivery?`
+    );
     if (!confirmed) return;
 
     setDeletingWorkoutId(workout.id);
@@ -207,43 +204,19 @@ export default function ClientProgramPage() {
     setError(null);
 
     const supabase = createClient();
-    const { data: exerciseData, error: exerciseError } = await supabase
-      .from('program_exercises')
-      .select('id')
-      .eq('workout_id', workout.id);
+    const { error: archiveError } = await supabase
+      .from('program_workouts')
+      .update({ status: 'archived' })
+      .eq('id', workout.id);
 
-    if (exerciseError) {
-      setError(exerciseError.message);
-      setDeletingWorkoutId(null);
-      return;
-    }
-
-    const exerciseIds = ((exerciseData ?? []) as { id: string }[]).map((exercise) => exercise.id);
-    if (exerciseIds.length > 0) {
-      const { error: setDeleteError } = await supabase.from('program_sets').delete().in('exercise_id', exerciseIds);
-      if (setDeleteError) {
-        setError(setDeleteError.message);
-        setDeletingWorkoutId(null);
-        return;
-      }
-    }
-
-    const { error: exerciseDeleteError } = await supabase.from('program_exercises').delete().eq('workout_id', workout.id);
-    if (exerciseDeleteError) {
-      setError(exerciseDeleteError.message);
-      setDeletingWorkoutId(null);
-      return;
-    }
-
-    const { error: workoutDeleteError } = await supabase.from('program_workouts').delete().eq('id', workout.id);
-    if (workoutDeleteError) {
-      setError(workoutDeleteError.message);
+    if (archiveError) {
+      setError(archiveError.message);
       setDeletingWorkoutId(null);
       return;
     }
 
     setWorkouts((current) => current.filter((item) => item.id !== workout.id));
-    setMessage(`${workout.title} deleted.`);
+    setMessage(`${workout.title} removed from current programme delivery.`);
     setDeletingWorkoutId(null);
   };
 
@@ -256,7 +229,7 @@ export default function ClientProgramPage() {
         <div>
           <h1 className="text-3xl font-bold uppercase tracking-tight text-[#000000]">Client Program</h1>
           <p className="mt-1 text-sm text-gray-600">{client?.full_name}{client?.email ? ` • ${client.email}` : ''}</p>
-          <p className="mt-1 text-xs font-bold uppercase text-gray-500">Library programmes create client-specific workouts. Edit future workouts directly from this page.</p>
+          <p className="mt-1 text-xs font-bold uppercase text-gray-500">Library programmes create client-specific workouts. Edit prescribed workouts directly from this page.</p>
         </div>
         <div className="flex flex-col items-start gap-2 md:items-end">
           <Link href={`/coach/clients/${clientId}`} className="text-sm font-bold uppercase text-[#FA0201] hover:underline">Back to client</Link>
@@ -286,12 +259,7 @@ export default function ClientProgramPage() {
                       {action.notes && <p className="whitespace-pre-line text-xs text-gray-500">{action.notes}</p>}
                       <p className="text-xs font-semibold uppercase text-gray-400">Created: {formatDate(action.created_at)}{action.due_date ? ` • Due: ${formatDate(action.due_date)}` : ''}</p>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => markAdjustmentHandled(action.id)}
-                      disabled={updatingActionId === action.id}
-                      className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-bold uppercase text-[#000000] hover:bg-gray-50 disabled:opacity-60"
-                    >
+                    <button type="button" onClick={() => markAdjustmentHandled(action.id)} disabled={updatingActionId === action.id} className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-bold uppercase text-[#000000] hover:bg-gray-50 disabled:opacity-60">
                       {updatingActionId === action.id ? 'Updating...' : 'Mark handled'}
                     </button>
                   </div>
@@ -317,16 +285,12 @@ export default function ClientProgramPage() {
                       <h2 className="text-xl font-black uppercase text-[#000000]">{group.program.title || 'Untitled programme'}</h2>
                       {group.program.goal && <p className="mt-1 text-sm text-gray-600">{group.program.goal}</p>}
                     </div>
-                    <div className="flex flex-wrap gap-2 md:justify-end">
-                      <Badge variant="default">{group.workouts.length} workout{group.workouts.length === 1 ? '' : 's'}</Badge>
-                      <Link href={`/coach/clients/${clientId}/schedule-workouts`} className="rounded-lg bg-[#000000] px-3 py-2 text-xs font-bold uppercase text-white hover:bg-gray-900">Schedule programme</Link>
-                    </div>
+                    <Badge variant="default">{group.workouts.length} workout{group.workouts.length === 1 ? '' : 's'}</Badge>
                   </div>
 
                   <div className="space-y-3">
                     {group.workouts.map((workout, index) => {
                       const displayStatus = getWorkoutDisplayStatus(workout, completedWorkoutIds);
-                      const locked = displayStatus === 'completed';
                       const dayNumber = workout.workout_order || index + 1;
                       return (
                         <div key={workout.id} className="rounded-xl border border-gray-200 bg-white p-4">
@@ -335,22 +299,16 @@ export default function ClientProgramPage() {
                               <div className="mb-2 flex flex-wrap items-center gap-2">
                                 <Badge variant="default">Day {dayNumber}</Badge>
                                 <Badge variant={statusVariant(displayStatus) as any}>{displayStatus}</Badge>
-                                {locked && <Badge variant="success">locked</Badge>}
                               </div>
                               <p className="text-lg font-bold uppercase text-[#000000]">{workout.title}</p>
-                              <p className="mt-1 text-sm text-gray-600">Scheduled: {formatDate(workout.scheduled_date)} • Exercises: {exerciseCounts[workout.id] || 0}</p>
-                              {locked && <p className="mt-2 text-xs font-semibold uppercase text-gray-500">Completed workouts are locked as history.</p>}
+                              <p className="mt-1 text-sm text-gray-600">Exercises: {exerciseCounts[workout.id] || 0}</p>
                             </div>
                             <div className="flex flex-wrap gap-2 md:justify-end">
-                              {!workout.scheduled_date && !locked && (
-                                <Link href={`/coach/clients/${clientId}/schedule-workouts`} className="rounded-lg bg-[#FA0201] px-3 py-2 text-xs font-bold uppercase text-white hover:bg-red-700">Schedule</Link>
-                              )}
+                              <Link href={`/coach/clients/${clientId}/program/history/${workout.id}`} className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-bold uppercase text-[#000000] hover:bg-gray-50">History</Link>
                               <Link href={`/coach/clients/${clientId}/current-workouts/${workout.id}/edit`} className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-bold uppercase text-[#000000] hover:bg-gray-50">Edit workout</Link>
-                              {!locked && (
-                                <button type="button" onClick={() => deleteWorkout(workout)} disabled={deletingWorkoutId === workout.id} className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-xs font-bold uppercase text-[#FA0201] hover:bg-red-100 disabled:opacity-60">
-                                  {deletingWorkoutId === workout.id ? 'Deleting...' : 'Delete'}
-                                </button>
-                              )}
+                              <button type="button" onClick={() => deleteWorkout(workout)} disabled={deletingWorkoutId === workout.id} className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-xs font-bold uppercase text-[#FA0201] hover:bg-red-100 disabled:opacity-60">
+                                {deletingWorkoutId === workout.id ? 'Deleting...' : 'Delete'}
+                              </button>
                             </div>
                           </div>
                         </div>
