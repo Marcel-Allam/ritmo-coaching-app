@@ -59,12 +59,7 @@ type WorkoutHistoryStats = {
 
 const formatDate = (value: string | null) => {
   if (!value) return 'Not logged';
-
-  return new Intl.DateTimeFormat('en-GB', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  }).format(new Date(value));
+  return new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(value));
 };
 
 const getSetValue = (value: number | null) => {
@@ -103,7 +98,6 @@ export default function ClientTrainingPage() {
       }
 
       const supabase = createClient();
-
       const { data: clientData, error: clientError } = await supabase
         .from('clients')
         .select('id, full_name')
@@ -136,14 +130,8 @@ export default function ClientTrainingPage() {
           .limit(25),
       ]);
 
-      if (workoutResult.error) {
-        setMessage(workoutResult.error.message);
-        setIsLoading(false);
-        return;
-      }
-
-      if (completedResult.error) {
-        setMessage(completedResult.error.message);
+      if (workoutResult.error || completedResult.error) {
+        setMessage(workoutResult.error?.message || completedResult.error?.message || 'Could not load workouts.');
         setIsLoading(false);
         return;
       }
@@ -249,7 +237,6 @@ export default function ClientTrainingPage() {
         count: current.count + 1,
         lastCompletedAt: sessionTime > currentTime ? session.completed_at : current.lastCompletedAt,
       };
-
       return acc;
     }, {});
   }, [completedSessions]);
@@ -405,15 +392,14 @@ export default function ClientTrainingPage() {
               const exerciseCount = exerciseCounts[workout.id] || 0;
 
               return (
-                <Link
+                <div
                   key={workout.id}
-                  href={`/client/training/${workout.id}`}
-                  className={`block border-b border-gray-200 p-5 last:border-b-0 ${
+                  className={`border-b border-gray-200 p-5 last:border-b-0 ${
                     isNext
-                      ? 'bg-[#FA0201] text-white hover:bg-red-700'
+                      ? 'bg-[#FA0201] text-white'
                       : index % 2 === 0
-                        ? 'bg-gray-100 text-[#000000] hover:bg-gray-200'
-                        : 'bg-white text-[#000000] hover:bg-gray-50'
+                        ? 'bg-gray-100 text-[#000000]'
+                        : 'bg-white text-[#000000]'
                   }`}
                 >
                   <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -427,11 +413,18 @@ export default function ClientTrainingPage() {
                         Last done: {stats?.lastCompletedAt ? formatDate(stats.lastCompletedAt) : '—'}
                       </p>
                     </div>
-                    <span className={`w-fit rounded-lg px-4 py-3 text-xs font-black uppercase ${isNext ? 'bg-white text-[#FA0201]' : 'border border-gray-300 bg-white text-[#000000]'}`}>
-                      {isNext ? 'Start workout' : 'View workout'}
-                    </span>
+                    <div className="flex flex-wrap gap-2 md:justify-end">
+                      {isNext && (
+                        <Link href={`/client/training/${workout.id}?view=focus`} className="rounded-lg bg-white px-4 py-3 text-xs font-black uppercase text-[#FA0201] hover:bg-gray-100">
+                          Start workout
+                        </Link>
+                      )}
+                      <Link href={`/client/training/${workout.id}?view=table`} className={`rounded-lg px-4 py-3 text-xs font-black uppercase ${isNext ? 'border border-white/60 text-white hover:bg-white hover:text-[#FA0201]' : 'border border-gray-300 bg-white text-[#000000] hover:bg-gray-50'}`}>
+                        View workout
+                      </Link>
+                    </div>
                   </div>
-                </Link>
+                </div>
               );
             })}
           </div>
