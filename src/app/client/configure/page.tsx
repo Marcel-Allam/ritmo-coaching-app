@@ -91,7 +91,7 @@ export default function ClientConfigurePage() {
     const parsedWeight = Number.parseFloat(bodyweightKg);
 
     if (!equationProfile || !dateOfBirth || !Number.isFinite(parsedHeight)) {
-      setError('Please complete equation profile, date of birth, and height.');
+      setError('Please complete sex, date of birth, and height.');
       return;
     }
 
@@ -168,12 +168,12 @@ export default function ClientConfigurePage() {
           <form onSubmit={handleSubmit} className="space-y-6">
             <Card className="space-y-5">
               <label className="block">
-                <span className="mb-2 block text-sm font-black uppercase text-[#000000]">BMR equation profile</span>
+                <span className="mb-2 block text-sm font-black uppercase text-[#000000]">Sex</span>
                 <select value={equationProfile} onChange={(event) => setEquationProfile(event.target.value)} className="w-full rounded-lg border-2 border-gray-300 px-4 py-3 text-sm font-bold text-black">
-                  <option value="standard_plus">Standard +5 equation</option>
-                  <option value="standard_minus">Standard -161 equation</option>
+                  <option value="standard_plus">Male</option>
+                  <option value="standard_minus">Female</option>
                 </select>
-                <p className="mt-2 text-xs font-semibold text-gray-600">Your coach uses this for BMR estimation only.</p>
+                <p className="mt-2 text-xs font-semibold text-gray-600">Used only for your coach's calorie estimate.</p>
               </label>
 
               <label className="block">
