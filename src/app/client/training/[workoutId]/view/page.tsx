@@ -168,8 +168,7 @@ export default function ClientWorkoutTableViewPage() {
                   <div className="border-b border-gray-200 bg-gray-50 p-5">
                     <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
                       <div>
-                        <p className="text-xs font-black uppercase text-[#FA0201]">Exercise {exercise.exercise_order}</p>
-                        <h2 className="mt-1 text-2xl font-black uppercase tracking-tight text-[#000000]">{exercise.exercise_name}</h2>
+                        <h2 className="text-2xl font-black uppercase tracking-tight text-[#000000]">{exercise.exercise_name}</h2>
                       </div>
                       <p className="rounded-full bg-gray-200 px-3 py-1 text-xs font-black uppercase text-[#000000]">{exerciseSets.length} set{exerciseSets.length === 1 ? '' : 's'}</p>
                     </div>
