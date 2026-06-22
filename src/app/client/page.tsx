@@ -179,23 +179,31 @@ export default function ClientHub() {
     );
   }
 
-  const showSecondRow = settings.show_next_workout_card || settings.show_coaching_status_card;
-
   return (
     <div>
       <PageHeader title="YOUR HUB" subtitle={`Welcome, ${client.full_name}`} />
       <div className="mx-auto max-w-6xl space-y-8 px-4 py-6 md:px-8">
         <SetupCard client={client} latestBodyweight={latestBodyweight} />
 
-        <section className={settings.show_bodyweight_card ? 'grid grid-cols-1 gap-6 xl:grid-cols-[1fr_420px]' : 'grid grid-cols-1 gap-6'}>
+        {settings.show_next_workout_card && (
+          <section>
+            <NextWorkoutCard clientId={client.id} />
+          </section>
+        )}
+
+        <section>
           <TdeeSummaryCard settings={settings} />
-          {settings.show_bodyweight_card && <BodyweightTrendCard clientId={client.id} showSubmitBodyweight={settings.show_submit_bodyweight} />}
         </section>
 
-        {showSecondRow && (
-          <section className="grid grid-cols-1 gap-6 xl:grid-cols-[1fr_420px]">
-            {settings.show_next_workout_card && <NextWorkoutCard clientId={client.id} />}
-            {settings.show_coaching_status_card && <CoachingStatusCard clientId={client.id} />}
+        {settings.show_coaching_status_card && (
+          <section>
+            <CoachingStatusCard clientId={client.id} />
+          </section>
+        )}
+
+        {settings.show_bodyweight_card && (
+          <section>
+            <BodyweightTrendCard clientId={client.id} showSubmitBodyweight={settings.show_submit_bodyweight} />
           </section>
         )}
 
