@@ -402,9 +402,9 @@ export default function CoachWorkoutReviewPage() {
         <SectionHeader title="CLIENT PERFORMANCE" accent />
         <Card className="space-y-6">
           {session?.client_notes && (
-            <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-              <p className="text-xs font-bold uppercase text-gray-500">Client workout notes</p>
-              <p className="mt-2 text-sm text-gray-700">{session.client_notes}</p>
+            <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-blue-900">
+              <p className="text-xs font-black uppercase">Client workout notes</p>
+              <p className="mt-2 text-sm font-semibold">{session.client_notes}</p>
             </div>
           )}
 
@@ -425,9 +425,14 @@ export default function CoachWorkoutReviewPage() {
                         </div>
                         <span className="rounded bg-white/70 px-2 py-1 text-xs font-bold uppercase">{outcomeLabel[analysis.outcome]}</span>
                       </div>
-                      <div className="mt-3 space-y-1">
+                      <div className="mt-3 space-y-2">
                         {analysis.reasons.map((reason) => <p key={reason} className="text-xs font-semibold opacity-80">{reason}</p>)}
-                        {actual?.notes && <p className="text-xs opacity-80"><span className="font-bold">Client note:</span> {actual.notes}</p>}
+                        {actual?.notes && (
+                          <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-blue-900">
+                            <p className="text-[11px] font-black uppercase">Client set note</p>
+                            <p className="mt-1 text-xs font-semibold">{actual.notes}</p>
+                          </div>
+                        )}
                         {set.notes && <p className="text-xs opacity-70"><span className="font-bold">Prescribed note:</span> {set.notes}</p>}
                       </div>
                     </div>
