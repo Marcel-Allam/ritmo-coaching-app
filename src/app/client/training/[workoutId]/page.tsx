@@ -7,7 +7,6 @@ import { useParams, useRouter } from 'next/navigation';
 import { PageHeader } from '@/components/layout/page-header';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { SectionHeader } from '@/components/ui/section-header';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
@@ -447,13 +446,101 @@ export default function ClientWorkoutSessionPage() {
   return (
     <div>
       <PageHeader title="FULL WORKOUT VIEW" subtitle={workout ? `Logging ${workout.title}` : undefined} />
-      <main className="px-4 py-6 md:px-8 max-w-5xl mx-auto pb-24 md:pb-8">
-        {error && <Card className="mb-6 border-2 border-red-200 bg-red-50"><p className="text-sm font-semibold text-red-700">{error}</p></Card>}
-        <div className="mb-6 flex flex-wrap gap-3"><button type="button" onClick={() => setViewMode('focus')} className="rounded-lg bg-[#FA0201] px-4 py-3 text-xs font-bold uppercase text-white hover:bg-red-700">Back to focus mode</button><button type="button" onClick={markAllSetsComplete} className="rounded-lg bg-black px-4 py-3 text-xs font-bold uppercase text-white hover:bg-gray-900">Mark all sets complete</button></div>
-        {workout?.instructions && <Card className="mb-6"><p className="text-sm text-gray-700">{workout.instructions}</p></Card>}
-        <form onSubmit={submitWorkout} className="space-y-8">
-          {exercises.map((exercise) => <section key={exercise.id}><SectionHeader title={`${exercise.exercise_order}. ${exercise.exercise_name}`} accent /><Card className="space-y-4">{exercise.notes && <p className="text-sm text-gray-700">{exercise.notes}</p>}{setsByExercise[exercise.id]?.map((set) => { const log = logs[set.id] || emptyLog; const fullViewRpe = getRpeDescription(log.rpe); return <div key={set.id} className={`rounded-lg border p-4 ${log.completed ? 'border-gray-300 bg-gray-100 opacity-75' : 'border-gray-200 bg-white'}`}><div className="mb-4 flex items-start justify-between gap-4"><div><p className="text-sm font-bold uppercase text-[#000000]">Set {set.set_order}</p><p className="text-xs text-gray-500">Target: {set.target_reps || '-'} reps {set.target_weight_kg ? `@ ${set.target_weight_kg}kg` : ''}</p></div><label className="flex items-center gap-2 text-xs font-bold uppercase text-gray-600"><input type="checkbox" checked={log.completed} onChange={(event) => updateLog(set.id, { completed: event.target.checked })} />Complete</label></div><div className="grid grid-cols-1 gap-4 md:grid-cols-4"><Input label="Kg" type="number" step="0.5" value={log.weight} placeholder={set.target_weight_kg?.toString() || ''} onChange={(event) => updateLog(set.id, { weight: event.target.value })} /><Input label="Reps" type="number" value={log.reps} placeholder={set.target_reps || ''} onChange={(event) => updateLog(set.id, { reps: event.target.value })} /><div><label className="mb-2 block text-sm font-semibold uppercase">RPE</label><select value={log.rpe} onChange={(event) => updateLog(set.id, { rpe: event.target.value })} className="w-full rounded-lg border-2 border-gray-300 bg-white px-4 py-2 text-black"><option value="">Select RPE</option>{rpeGuide.map((item) => <option key={item.score} value={item.score}>{item.score}</option>)}</select>{fullViewRpe && <p className="mt-2 text-xs font-semibold text-gray-600">{fullViewRpe.repsLeft}</p>}</div><Input label="Notes" value={log.notes} onChange={(event) => updateLog(set.id, { notes: event.target.value })} /></div></div>; })}</Card></section>)}
-          <Card className="space-y-5"><div><label className="mb-2 block text-sm font-semibold uppercase">How did this session feel?</label><select value={sessionFeel} onChange={(event) => setSessionFeel(event.target.value)} className="w-full rounded-lg border-2 border-gray-300 bg-white px-4 py-2 text-black"><option value="">Select a rating</option>{sessionFeelOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div><Textarea label="Overall workout notes" value={sessionNotes} onChange={(event) => setSessionNotes(event.target.value)} /><div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs font-semibold text-amber-900">Submit only when the workout is finished. After submission, this workout locks and your coach reviews it.</div></Card>
+      <main className="mx-auto max-w-5xl space-y-6 px-4 py-6 md:px-8 md:pb-8">
+        {error && <Card className="border-2 border-red-200 bg-red-50"><p className="text-sm font-semibold text-red-700">{error}</p></Card>}
+
+        <div className="sticky top-0 z-20 -mx-4 border-b border-gray-200 bg-white/95 px-4 py-3 backdrop-blur md:mx-0 md:rounded-xl md:border md:px-4">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="text-xs font-black uppercase tracking-wide text-[#FA0201]">Full workout view</p>
+              <h1 className="text-2xl font-black uppercase tracking-tight text-[#000000]">{workout?.title}</h1>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={() => setViewMode('focus')} className="rounded-lg bg-[#FA0201] px-4 py-3 text-xs font-black uppercase text-white hover:bg-red-700">Back to focus</button>
+              <button type="button" onClick={markAllSetsComplete} className="rounded-lg bg-black px-4 py-3 text-xs font-black uppercase text-white hover:bg-gray-900">Mark all complete</button>
+              <button type="button" onClick={() => setShowFinishPanel(true)} className="rounded-lg border border-gray-300 bg-white px-4 py-3 text-xs font-black uppercase text-[#000000] hover:bg-gray-50">Finish</button>
+            </div>
+          </div>
+        </div>
+
+        {workout?.instructions && <Card className="py-4"><p className="text-sm font-semibold text-gray-700">{workout.instructions}</p></Card>}
+
+        <form onSubmit={submitWorkout} className="space-y-5">
+          {exercises.map((exercise) => {
+            const exerciseSets = setsByExercise[exercise.id] || [];
+            return (
+              <Card key={exercise.id} className="overflow-hidden p-0">
+                <div className="flex flex-col gap-2 border-b border-gray-200 bg-gray-50 p-4 md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <h2 className="text-xl font-black uppercase tracking-tight text-[#000000]">{exercise.exercise_name}</h2>
+                    {exercise.notes && <p className="mt-1 text-sm font-semibold text-gray-700">{exercise.notes}</p>}
+                  </div>
+                  <p className="w-fit rounded-full bg-gray-200 px-3 py-1 text-xs font-black uppercase text-[#000000]">{exerciseSets.length} set{exerciseSets.length === 1 ? '' : 's'}</p>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[760px] border-collapse text-left text-sm">
+                    <thead className="bg-white text-xs font-black uppercase text-gray-500">
+                      <tr>
+                        <th className="px-4 py-3">Done</th>
+                        <th className="px-4 py-3">Set</th>
+                        <th className="px-4 py-3">Kg</th>
+                        <th className="px-4 py-3">Reps</th>
+                        <th className="px-4 py-3">RPE</th>
+                        <th className="px-4 py-3">Notes</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {exerciseSets.map((set) => {
+                        const log = logs[set.id] || emptyLog;
+                        const fullViewRpe = getRpeDescription(log.rpe);
+                        return (
+                          <tr key={set.id} className={`border-t border-gray-100 ${log.completed ? 'bg-green-50/70' : 'odd:bg-gray-50 even:bg-white'}`}>
+                            <td className="px-4 py-3 align-top">
+                              <input type="checkbox" checked={log.completed} onChange={(event) => updateLog(set.id, { completed: event.target.checked })} className="h-5 w-5 accent-[#FA0201]" />
+                            </td>
+                            <td className="px-4 py-3 align-top">
+                              <p className="font-black uppercase text-[#000000]">Set {set.set_order}</p>
+                              <p className="mt-1 text-xs font-semibold text-gray-500">Target: {set.target_reps || '-'} reps{set.target_weight_kg ? ` @ ${set.target_weight_kg}kg` : ''}</p>
+                            </td>
+                            <td className="px-4 py-3 align-top">
+                              <input type="number" step="0.5" value={log.weight} placeholder={set.target_weight_kg?.toString() || ''} onChange={(event) => updateLog(set.id, { weight: event.target.value })} className="w-24 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-bold text-black" />
+                            </td>
+                            <td className="px-4 py-3 align-top">
+                              <input type="number" value={log.reps} placeholder={set.target_reps || ''} onChange={(event) => updateLog(set.id, { reps: event.target.value })} className="w-24 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-bold text-black" />
+                            </td>
+                            <td className="px-4 py-3 align-top">
+                              <select value={log.rpe} onChange={(event) => updateLog(set.id, { rpe: event.target.value })} className="w-28 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-bold text-black">
+                                <option value="">RPE</option>
+                                {rpeGuide.map((item) => <option key={item.score} value={item.score}>{item.score}</option>)}
+                              </select>
+                              {fullViewRpe && <p className="mt-1 text-[11px] font-semibold text-gray-500">{fullViewRpe.repsLeft}</p>}
+                            </td>
+                            <td className="px-4 py-3 align-top">
+                              <input value={log.notes} onChange={(event) => updateLog(set.id, { notes: event.target.value })} placeholder="Optional" className="w-48 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-black" />
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+            );
+          })}
+
+          <Card className="space-y-4 p-4">
+            <div>
+              <label className="mb-2 block text-sm font-black uppercase text-[#000000]">How did this session feel?</label>
+              <select value={sessionFeel} onChange={(event) => setSessionFeel(event.target.value)} className="w-full rounded-lg border-2 border-gray-300 bg-white px-4 py-3 text-black">
+                <option value="">Select a rating</option>
+                {sessionFeelOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+            </div>
+            <Textarea label="Overall workout notes" value={sessionNotes} onChange={(event) => setSessionNotes(event.target.value)} />
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs font-semibold text-amber-900">Submit only when the workout is finished. After submission, this workout locks and your coach reviews it.</div>
+          </Card>
+
           <Button type="submit" variant="primary" size="lg" fullWidth disabled={saving} className="bg-[#FA0201] hover:bg-red-700 disabled:opacity-60">{saving ? 'SUBMITTING...' : 'SUBMIT WORKOUT'}</Button>
         </form>
       </main>
