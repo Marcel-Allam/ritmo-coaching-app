@@ -5,7 +5,9 @@ import { PageHeader } from '@/components/layout/page-header';
 import { Card } from '@/components/ui/card';
 import { SectionHeader } from '@/components/ui/section-header';
 import { BodyweightTrendCard } from '@/components/client/bodyweight-trend-card';
+import { CoachingStatusCard } from '@/components/client/coaching-status-card';
 import { ClientDirectionMetricCards } from '@/components/client/client-direction-metric-cards';
+import { NextWorkoutCard } from '@/components/client/next-workout-card';
 import { TdeeSummaryCard } from '@/components/client/tdee-summary-card';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
 import { useAuth } from '@/lib/auth-context';
@@ -78,6 +80,11 @@ export default function ClientHub() {
         <section className="grid grid-cols-1 gap-6 xl:grid-cols-[1fr_420px]">
           <TdeeSummaryCard clientId={client.id} />
           <BodyweightTrendCard clientId={client.id} />
+        </section>
+
+        <section className="grid grid-cols-1 gap-6 xl:grid-cols-[1fr_420px]">
+          <NextWorkoutCard clientId={client.id} />
+          <CoachingStatusCard clientId={client.id} />
         </section>
 
         <section>
