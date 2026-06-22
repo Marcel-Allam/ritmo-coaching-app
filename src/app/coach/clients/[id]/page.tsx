@@ -485,6 +485,7 @@ export default function ClientProfilePage() {
                 {isCreatingInvite ? 'Creating invite...' : 'Invite Client'}
               </button>
             )}
+            <Link href={`/coach/clients/${clientId}/hub-settings`} className="rounded-lg bg-black px-4 py-2 text-sm font-bold uppercase text-white hover:bg-gray-900">Hub Settings</Link>
             <Link href={`/coach/clients/${clientId}/settings`} className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-bold uppercase text-[#000000] hover:bg-gray-100">Client Settings</Link>
             <Link href="/coach/clients" className="text-sm font-semibold uppercase text-[#FA0201] hover:underline">Back to Clients</Link>
           </div>
