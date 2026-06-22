@@ -347,7 +347,7 @@ export default function CoachClientHubSettingsPage() {
         <section>
           <SectionHeader title="CLIENT HUB CARDS" accent />
           <Card className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <Toggle label="Show submit bodyweight button" checked={settings.show_submit_bodyweight} onChange={(checked) => patch('show_submit_bodyweight', checked)} />
+            <Toggle label="Show bodyweight-card submit button" checked={settings.show_submit_bodyweight} onChange={(checked) => patch('show_submit_bodyweight', checked)} />
             <Toggle label="Show bodyweight card" checked={settings.show_bodyweight_card} onChange={(checked) => patch('show_bodyweight_card', checked)} />
             <Toggle label="Show next workout card" checked={settings.show_next_workout_card} onChange={(checked) => patch('show_next_workout_card', checked)} />
             <Toggle label="Show coaching status card" checked={settings.show_coaching_status_card} onChange={(checked) => patch('show_coaching_status_card', checked)} />
