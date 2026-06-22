@@ -419,7 +419,7 @@ export default function ClientTrainingPage() {
                           Start workout
                         </Link>
                       )}
-                      <Link href={`/client/training/${workout.id}?view=table`} className={`rounded-lg px-4 py-3 text-xs font-black uppercase ${isNext ? 'border border-white/60 text-white hover:bg-white hover:text-[#FA0201]' : 'border border-gray-300 bg-white text-[#000000] hover:bg-gray-50'}`}>
+                      <Link href={`/client/training/${workout.id}/view`} className={`rounded-lg px-4 py-3 text-xs font-black uppercase ${isNext ? 'border border-white/60 text-white hover:bg-white hover:text-[#FA0201]' : 'border border-gray-300 bg-white text-[#000000] hover:bg-gray-50'}`}>
                         View workout
                       </Link>
                     </div>
