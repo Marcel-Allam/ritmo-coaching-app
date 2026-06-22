@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { Card } from '@/components/ui/card';
 import { SectionHeader } from '@/components/ui/section-header';
+import { ClientMetricChartDashboard } from '@/components/coach/client-metric-chart-dashboard';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
 
 type ClientRecord = {
@@ -21,15 +22,11 @@ type LatestBodyweight = {
 };
 
 type HubSettings = {
-  show_calorie_target: boolean;
   calorie_target: string;
   calorie_adjustment: string;
-  show_protein_target: boolean;
   protein_target_g: string;
   protein_multiplier: string;
-  show_carb_target: boolean;
   carb_target_g: string;
-  show_fat_target: boolean;
   fat_target_g: string;
   show_bodyweight_card: boolean;
   show_submit_bodyweight: boolean;
@@ -40,15 +37,11 @@ type HubSettings = {
 };
 
 const defaults: HubSettings = {
-  show_calorie_target: false,
   calorie_target: '',
   calorie_adjustment: '-500',
-  show_protein_target: false,
   protein_target_g: '',
   protein_multiplier: '1.8',
-  show_carb_target: false,
   carb_target_g: '',
-  show_fat_target: false,
   fat_target_g: '',
   show_bodyweight_card: true,
   show_submit_bodyweight: true,
@@ -104,31 +97,26 @@ const calculateBmr = ({ client, latestBodyweight }: { client: ClientRecord | nul
   return roundToTen((10 * bodyweightKg) + (6.25 * heightCm) - (5 * age) + sexOffset);
 };
 
-const Toggle = ({ label, checked, onChange }: { label: string; checked: boolean; onChange: (checked: boolean) => void }) => (
-  <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-gray-200 bg-white p-4">
-    <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} className="h-5 w-5 accent-[#FA0201]" />
-    <span className="text-sm font-black uppercase text-[#000000]">{label}</span>
-  </label>
-);
-
-const TargetRow = ({ label, checked, value, placeholder, onChecked, onValue }: { label: string; checked: boolean; value: string; placeholder: string; onChecked: (checked: boolean) => void; onValue: (value: string) => void }) => (
-  <div className="rounded-xl border border-gray-200 bg-white p-4">
-    <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-      <label className="flex cursor-pointer items-center gap-3">
-        <input type="checkbox" checked={checked} onChange={(event) => onChecked(event.target.checked)} className="h-5 w-5 accent-[#FA0201]" />
-        <span className="text-sm font-black uppercase text-[#000000]">Show {label}</span>
-      </label>
-      <input type="number" value={value} onChange={(event) => onValue(event.target.value)} placeholder={placeholder} className="w-full rounded-lg border-2 border-gray-300 px-3 py-2 text-sm font-bold text-black md:w-44" />
-    </div>
-  </div>
-);
-
 const EstimateTile = ({ label, value, helper }: { label: string; value: string; helper: string }) => (
   <div className="rounded-xl bg-gray-100 p-4">
     <p className="text-[10px] font-bold uppercase text-gray-500">{label}</p>
     <p className="mt-2 text-2xl font-black text-[#000000]">{value}</p>
     <p className="mt-1 text-xs font-semibold text-gray-600">{helper}</p>
   </div>
+);
+
+const TargetInput = ({ label, value, placeholder, helper, onChange }: { label: string; value: string; placeholder: string; helper: string; onChange: (value: string) => void }) => (
+  <label className="block rounded-xl border border-gray-200 bg-white p-4">
+    <span className="block text-sm font-black uppercase text-[#000000]">{label}</span>
+    <input
+      type="number"
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      placeholder={placeholder}
+      className="mt-3 w-full rounded-lg border-2 border-gray-300 px-3 py-3 text-sm font-bold text-black"
+    />
+    <span className="mt-2 block text-xs font-semibold text-gray-600">{helper}</span>
+  </label>
 );
 
 export default function CoachClientHubSettingsPage() {
@@ -181,15 +169,11 @@ export default function CoachClientHubSettingsPage() {
       const row = settingsResult.data as any;
       if (row) {
         setSettings({
-          show_calorie_target: Boolean(row.show_calorie_target),
           calorie_target: row.calorie_target?.toString() || '',
           calorie_adjustment: row.calorie_adjustment?.toString() || '-500',
-          show_protein_target: Boolean(row.show_protein_target),
           protein_target_g: row.protein_target_g?.toString() || '',
           protein_multiplier: row.protein_multiplier?.toString() || '1.8',
-          show_carb_target: Boolean(row.show_carb_target),
           carb_target_g: row.carb_target_g?.toString() || '',
-          show_fat_target: Boolean(row.show_fat_target),
           fat_target_g: row.fat_target_g?.toString() || '',
           show_bodyweight_card: Boolean(row.show_bodyweight_card),
           show_submit_bodyweight: Boolean(row.show_submit_bodyweight),
@@ -218,9 +202,7 @@ export default function CoachClientHubSettingsPage() {
   const applyCalculatedTargets = () => {
     setSettings((current) => ({
       ...current,
-      show_calorie_target: calculatedCalorieTarget !== null ? true : current.show_calorie_target,
       calorie_target: calculatedCalorieTarget !== null ? calculatedCalorieTarget.toString() : current.calorie_target,
-      show_protein_target: calculatedProteinTarget !== null ? true : current.show_protein_target,
       protein_target_g: calculatedProteinTarget !== null ? calculatedProteinTarget.toString() : current.protein_target_g,
     }));
   };
@@ -233,57 +215,33 @@ export default function CoachClientHubSettingsPage() {
     setError(null);
     setMessage(null);
 
-    const resolvedCalorieTarget = numberOrNull(settings.calorie_target) ?? (settings.show_calorie_target ? calculatedCalorieTarget : null);
-    const resolvedProteinTarget = numberOrNull(settings.protein_target_g) ?? (settings.show_protein_target ? calculatedProteinTarget : null);
+    const resolvedCalorieTarget = numberOrNull(settings.calorie_target) ?? calculatedCalorieTarget;
+    const resolvedProteinTarget = numberOrNull(settings.protein_target_g) ?? calculatedProteinTarget;
     const resolvedCarbTarget = numberOrNull(settings.carb_target_g);
     const resolvedFatTarget = numberOrNull(settings.fat_target_g);
-
-    if (settings.show_calorie_target && resolvedCalorieTarget === null) {
-      setError('Calorie target is visible but has no value. Complete the calculator inputs or enter a manual calorie target.');
-      setSaving(false);
-      return;
-    }
-
-    if (settings.show_protein_target && resolvedProteinTarget === null) {
-      setError('Protein target is visible but has no value. Add a bodyweight entry or enter a manual protein target.');
-      setSaving(false);
-      return;
-    }
-
-    if (settings.show_carb_target && resolvedCarbTarget === null) {
-      setError('Carbohydrate target is visible but has no value. Enter a manual carbohydrate target or turn the toggle off.');
-      setSaving(false);
-      return;
-    }
-
-    if (settings.show_fat_target && resolvedFatTarget === null) {
-      setError('Fat target is visible but has no value. Enter a manual fat target or turn the toggle off.');
-      setSaving(false);
-      return;
-    }
 
     const supabase = createClient();
     const { error: saveError } = await supabase.from('client_hub_settings').upsert({
       client_id: clientId,
-      show_calorie_target: settings.show_calorie_target,
+      show_calorie_target: resolvedCalorieTarget !== null,
       calorie_target: resolvedCalorieTarget,
       calorie_adjustment: calorieAdjustment,
       estimated_bmr: bmr,
       estimated_tdee: estimatedTdee,
       activity_multiplier: activityMultiplier,
       workouts_past_7_days: workoutsPast7Days,
-      show_protein_target: settings.show_protein_target,
+      show_protein_target: resolvedProteinTarget !== null,
       protein_target_g: resolvedProteinTarget,
       protein_multiplier: proteinMultiplier,
-      show_carb_target: settings.show_carb_target,
+      show_carb_target: resolvedCarbTarget !== null,
       carb_target_g: resolvedCarbTarget,
-      show_fat_target: settings.show_fat_target,
+      show_fat_target: resolvedFatTarget !== null,
       fat_target_g: resolvedFatTarget,
       show_bodyweight_card: settings.show_bodyweight_card,
       show_submit_bodyweight: settings.show_submit_bodyweight,
       show_next_workout_card: settings.show_next_workout_card,
       show_coaching_status_card: settings.show_coaching_status_card,
-      show_progress_cards: settings.show_progress_cards,
+      show_progress_cards: true,
       target_notes: settings.target_notes.trim() || null,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'client_id' });
@@ -296,8 +254,9 @@ export default function CoachClientHubSettingsPage() {
         protein_target_g: resolvedProteinTarget?.toString() || '',
         carb_target_g: resolvedCarbTarget?.toString() || '',
         fat_target_g: resolvedFatTarget?.toString() || '',
+        show_progress_cards: true,
       }));
-      setMessage('Client hub settings saved.');
+      setMessage('Client hub targets saved.');
     }
     setSaving(false);
   };
@@ -310,7 +269,7 @@ export default function CoachClientHubSettingsPage() {
         <div>
           <p className="text-xs font-black uppercase tracking-wide text-[#FA0201]">Client hub settings</p>
           <h1 className="mt-2 text-3xl font-black uppercase tracking-tight text-[#000000]">{client?.full_name || 'Client'}</h1>
-          <p className="mt-2 text-sm text-gray-600">Calculate calories and protein, then choose what the client sees.</p>
+          <p className="mt-2 text-sm text-gray-600">Set client targets and choose the progress graphs shown on their hub.</p>
         </div>
         <Link href={`/coach/clients/${clientId}`} className="w-fit rounded-lg border border-gray-300 bg-white px-4 py-3 text-xs font-black uppercase text-[#000000] hover:bg-gray-100">Back to client</Link>
       </div>
@@ -320,7 +279,7 @@ export default function CoachClientHubSettingsPage() {
 
       <form onSubmit={save} className="space-y-8">
         <section>
-          <SectionHeader title="TARGET CALCULATOR" accent />
+          <SectionHeader title="TARGETS" accent />
           <Card className="space-y-6">
             <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
               <EstimateTile label="Latest bodyweight" value={latestBodyweight ? `${latestBodyweight.bodyweight_kg}kg` : 'Missing'} helper={latestBodyweight ? `Logged ${latestBodyweight.entry_date}` : 'Submit bodyweight first'} />
@@ -365,23 +324,14 @@ export default function CoachClientHubSettingsPage() {
             <button type="button" onClick={applyCalculatedTargets} className="rounded-lg bg-black px-5 py-3 text-xs font-black uppercase text-white hover:bg-gray-900">
               Use calculated calorie and protein targets
             </button>
-          </Card>
-        </section>
 
-        <section>
-          <SectionHeader title="CLIENT-VISIBLE TARGETS" accent />
-          <Card className="space-y-4">
-            <p className="text-sm font-semibold text-gray-700">If calorie or protein is visible and the field is empty, the calculated value will be saved automatically. Carbs and fats are manual for now.</p>
-            <TargetRow label="calorie target" checked={settings.show_calorie_target} value={settings.calorie_target} placeholder={calculatedCalorieTarget?.toString() || '2020'} onChecked={(checked) => {
-              patch('show_calorie_target', checked);
-              if (checked && !settings.calorie_target && calculatedCalorieTarget !== null) patch('calorie_target', calculatedCalorieTarget.toString());
-            }} onValue={(value) => patch('calorie_target', value)} />
-            <TargetRow label="protein target" checked={settings.show_protein_target} value={settings.protein_target_g} placeholder={calculatedProteinTarget?.toString() || '156'} onChecked={(checked) => {
-              patch('show_protein_target', checked);
-              if (checked && !settings.protein_target_g && calculatedProteinTarget !== null) patch('protein_target_g', calculatedProteinTarget.toString());
-            }} onValue={(value) => patch('protein_target_g', value)} />
-            <TargetRow label="carbohydrate target" checked={settings.show_carb_target} value={settings.carb_target_g} placeholder="200" onChecked={(checked) => patch('show_carb_target', checked)} onValue={(value) => patch('carb_target_g', value)} />
-            <TargetRow label="fat target" checked={settings.show_fat_target} value={settings.fat_target_g} placeholder="55" onChecked={(checked) => patch('show_fat_target', checked)} onValue={(value) => patch('fat_target_g', value)} />
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <TargetInput label="Calorie target" value={settings.calorie_target} placeholder={calculatedCalorieTarget?.toString() || '2020'} helper="Leave blank to use the calculated calorie target when available." onChange={(value) => patch('calorie_target', value)} />
+              <TargetInput label="Protein target" value={settings.protein_target_g} placeholder={calculatedProteinTarget?.toString() || '156'} helper="Leave blank to use the calculated protein target when available." onChange={(value) => patch('protein_target_g', value)} />
+              <TargetInput label="Carbohydrate target" value={settings.carb_target_g} placeholder="200" helper="Optional. Leave blank to hide carbs from the client hub." onChange={(value) => patch('carb_target_g', value)} />
+              <TargetInput label="Fat target" value={settings.fat_target_g} placeholder="55" helper="Optional. Leave blank to hide fats from the client hub." onChange={(value) => patch('fat_target_g', value)} />
+            </div>
+
             <label className="block">
               <span className="mb-2 block text-sm font-black uppercase text-[#000000]">Target notes</span>
               <textarea value={settings.target_notes} onChange={(event) => patch('target_notes', event.target.value)} rows={3} className="w-full rounded-lg border-2 border-gray-300 px-4 py-3 text-sm text-black" placeholder="Optional note shown under targets." />
@@ -389,21 +339,17 @@ export default function CoachClientHubSettingsPage() {
           </Card>
         </section>
 
-        <section>
-          <SectionHeader title="CLIENT HUB CARDS" accent />
-          <Card className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <Toggle label="Show bodyweight-card submit button" checked={settings.show_submit_bodyweight} onChange={(checked) => patch('show_submit_bodyweight', checked)} />
-            <Toggle label="Show bodyweight card" checked={settings.show_bodyweight_card} onChange={(checked) => patch('show_bodyweight_card', checked)} />
-            <Toggle label="Show next workout card" checked={settings.show_next_workout_card} onChange={(checked) => patch('show_next_workout_card', checked)} />
-            <Toggle label="Show coaching status card" checked={settings.show_coaching_status_card} onChange={(checked) => patch('show_coaching_status_card', checked)} />
-            <Toggle label="Show progress cards" checked={settings.show_progress_cards} onChange={(checked) => patch('show_progress_cards', checked)} />
-          </Card>
-        </section>
-
         <button type="submit" disabled={saving} className="w-full rounded-lg bg-[#FA0201] px-5 py-4 text-sm font-black uppercase text-white hover:bg-red-700 disabled:opacity-60 md:w-fit">
-          {saving ? 'Saving...' : 'Save client hub settings'}
+          {saving ? 'Saving...' : 'Save targets'}
         </button>
       </form>
+
+      <section className="mt-8">
+        <SectionHeader title="CLIENT PROGRESS GRAPHS" accent />
+        <Card>
+          <ClientMetricChartDashboard clientId={clientId} />
+        </Card>
+      </section>
     </div>
   );
 }
