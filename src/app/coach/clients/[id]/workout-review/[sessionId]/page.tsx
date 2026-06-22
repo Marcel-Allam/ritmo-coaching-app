@@ -10,7 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
 
 type ReviewStatus = 'new' | 'reviewed' | 'needs_feedback' | 'needs_action' | 'flagged' | 'resolved';
-type Outcome = 'above' | 'matched' | 'caution' | 'below';
+type Outcome = 'above' | 'matched' | 'caution' | 'below' | 'missing';
 
 type ClientRecord = { id: string; full_name: string; email: string | null };
 type WorkoutSessionRecord = {
@@ -81,6 +81,16 @@ const parseTargetReps = (value: string | null) => {
   return { min: parsed, max: parsed };
 };
 
+const getMissingFields = (actual?: PerformedSetRecord) => {
+  if (!actual) return ['the full set log'];
+
+  const missingFields: string[] = [];
+  if (actual.actual_weight_kg === null || actual.actual_weight_kg === undefined) missingFields.push('load');
+  if (actual.actual_reps === null || actual.actual_reps === undefined) missingFields.push('reps');
+  if (actual.actual_rpe === null || actual.actual_rpe === undefined) missingFields.push('RPE');
+  return missingFields;
+};
+
 const getStatusVariant = (status: ReviewStatus) => {
   if (status === 'reviewed' || status === 'resolved') return 'success';
   if (status === 'flagged') return 'danger';
@@ -93,6 +103,7 @@ const outcomeClasses: Record<Outcome, string> = {
   matched: 'border-gray-200 bg-white text-[#000000]',
   caution: 'border-amber-200 bg-amber-50 text-amber-900',
   below: 'border-red-200 bg-red-50 text-red-900',
+  missing: 'border-blue-300 bg-blue-50 text-blue-900',
 };
 
 const outcomeLabel: Record<Outcome, string> = {
@@ -100,16 +111,25 @@ const outcomeLabel: Record<Outcome, string> = {
   matched: 'On target',
   caution: 'Watch',
   below: 'Under target',
+  missing: 'Missing info',
 };
 
 const analyseSet = (target: ProgramSetRecord, actual?: PerformedSetRecord) => {
+  const missingFields = getMissingFields(actual);
+  if (missingFields.length > 0) {
+    return {
+      outcome: 'missing' as Outcome,
+      reasons: [`Missing ${missingFields.join(', ')}.`],
+    };
+  }
+
   const reasons: string[] = [];
   const targetReps = parseTargetReps(target.target_reps);
   let hasPositive = false;
   let hasCaution = false;
   let hasNegative = false;
 
-  if (!actual) return { outcome: 'below' as Outcome, reasons: ['No actual set log found.'] };
+  if (!actual) return { outcome: 'missing' as Outcome, reasons: ['Missing the full set log.'] };
 
   if (!actual.completed) {
     hasNegative = true;
