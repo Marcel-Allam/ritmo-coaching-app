@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { PageHeader } from '@/components/layout/page-header';
 import { Card } from '@/components/ui/card';
 import { SectionHeader } from '@/components/ui/section-header';
@@ -12,7 +13,15 @@ import { ClientHubTargetSettings, TdeeSummaryCard } from '@/components/client/td
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
 import { useAuth } from '@/lib/auth-context';
 
-type ClientRecord = { id: string; full_name: string };
+type ClientRecord = {
+  id: string;
+  full_name: string;
+  tdee_gender: string | null;
+  date_of_birth: string | null;
+  height_cm: number | null;
+};
+
+type BodyweightRecord = { id: string; bodyweight_kg: number; entry_date: string };
 
 type HubSettings = ClientHubTargetSettings & {
   show_bodyweight_card: boolean;
@@ -38,9 +47,37 @@ const defaultSettings: HubSettings = {
   show_progress_cards: true,
 };
 
+const SetupCard = ({ client, latestBodyweight }: { client: ClientRecord; latestBodyweight: BodyweightRecord | null }) => {
+  const missingItems = [
+    !client.tdee_gender ? 'BMR equation profile' : null,
+    !client.date_of_birth ? 'date of birth' : null,
+    !client.height_cm ? 'height' : null,
+    !latestBodyweight ? 'starting bodyweight' : null,
+  ].filter((item): item is string => Boolean(item));
+
+  if (missingItems.length === 0) return null;
+
+  return (
+    <Card className="border-2 border-dashed border-[#FA0201] bg-red-50">
+      <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
+        <div>
+          <p className="text-xs font-black uppercase tracking-wide text-[#FA0201]">Starting setup needed</p>
+          <h2 className="mt-2 text-2xl font-black uppercase text-[#000000]">Complete your coaching baseline</h2>
+          <p className="mt-2 text-sm text-gray-700">This is a one-time setup so your coach can estimate calorie and protein targets accurately.</p>
+          <p className="mt-3 text-xs font-bold uppercase text-gray-600">Missing: {missingItems.join(', ')}</p>
+        </div>
+        <Link href="/client/configure" className="w-fit rounded-lg bg-[#FA0201] px-5 py-3 text-xs font-black uppercase text-white hover:bg-red-700">
+          Complete setup
+        </Link>
+      </div>
+    </Card>
+  );
+};
+
 export default function ClientHub() {
   const { user } = useAuth();
   const [client, setClient] = useState<ClientRecord | null>(null);
+  const [latestBodyweight, setLatestBodyweight] = useState<BodyweightRecord | null>(null);
   const [settings, setSettings] = useState<HubSettings>(defaultSettings);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
@@ -56,7 +93,7 @@ export default function ClientHub() {
       const supabase = createClient();
       const { data, error } = await supabase
         .from('clients')
-        .select('id, full_name')
+        .select('id, full_name, tdee_gender, date_of_birth, height_cm')
         .eq('user_id', user.id)
         .single();
 
@@ -69,18 +106,29 @@ export default function ClientHub() {
       const linkedClient = data as ClientRecord;
       setClient(linkedClient);
 
-      const { data: settingsData, error: settingsError } = await supabase
-        .from('client_hub_settings')
-        .select('*')
-        .eq('client_id', linkedClient.id)
-        .maybeSingle();
+      const [settingsResult, bodyweightResult] = await Promise.all([
+        supabase
+          .from('client_hub_settings')
+          .select('*')
+          .eq('client_id', linkedClient.id)
+          .maybeSingle(),
+        supabase
+          .from('bodyweight_entries')
+          .select('id, bodyweight_kg, entry_date')
+          .eq('client_id', linkedClient.id)
+          .order('entry_date', { ascending: false })
+          .limit(1),
+      ]);
 
-      if (settingsError) {
-        setMessage(settingsError.message);
+      if (settingsResult.error || bodyweightResult.error) {
+        setMessage(settingsResult.error?.message || bodyweightResult.error?.message || 'Could not load hub setup.');
         setLoading(false);
         return;
       }
 
+      setLatestBodyweight(((bodyweightResult.data ?? []) as BodyweightRecord[])[0] ?? null);
+
+      const settingsData = settingsResult.data as any;
       if (settingsData) {
         setSettings({
           show_calorie_target: Boolean(settingsData.show_calorie_target),
@@ -137,6 +185,8 @@ export default function ClientHub() {
     <div>
       <PageHeader title="YOUR HUB" subtitle={`Welcome, ${client.full_name}`} />
       <div className="mx-auto max-w-6xl space-y-8 px-4 py-6 md:px-8">
+        <SetupCard client={client} latestBodyweight={latestBodyweight} />
+
         <section className={settings.show_bodyweight_card ? 'grid grid-cols-1 gap-6 xl:grid-cols-[1fr_420px]' : 'grid grid-cols-1 gap-6'}>
           <TdeeSummaryCard settings={settings} />
           {settings.show_bodyweight_card && <BodyweightTrendCard clientId={client.id} showSubmitBodyweight={settings.show_submit_bodyweight} />}
