@@ -21,33 +21,11 @@ type WorkoutRecord = {
 };
 type SessionRecord = { program_workout_id: string };
 type ExerciseCountRecord = { workout_id: string };
-type CoachActionRecord = {
-  id: string;
-  action_type: string;
-  description: string;
-  priority: 'low' | 'medium' | 'high' | string;
-  due_date: string | null;
-  status: string;
-  notes: string | null;
-  created_at: string;
-};
 
 const statusVariant = (status: string) => {
   if (status === 'completed') return 'success';
   if (status === 'archived') return 'danger';
   return 'default';
-};
-
-const priorityVariant = (priority: string) => {
-  if (priority === 'high') return 'danger';
-  if (priority === 'medium') return 'warning';
-  if (priority === 'low') return 'default';
-  return 'default';
-};
-
-const formatDate = (value: string | null) => {
-  if (!value) return 'Not set';
-  return new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(value));
 };
 
 const getWorkoutDisplayStatus = (workout: WorkoutRecord, completedWorkoutIds: Set<string>) => {
@@ -64,12 +42,10 @@ export default function ClientProgramPage() {
   const [workouts, setWorkouts] = useState<WorkoutRecord[]>([]);
   const [completedSessions, setCompletedSessions] = useState<SessionRecord[]>([]);
   const [exerciseCounts, setExerciseCounts] = useState<Record<string, number>>({});
-  const [pendingAdjustments, setPendingAdjustments] = useState<CoachActionRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [deletingWorkoutId, setDeletingWorkoutId] = useState<string | null>(null);
-  const [updatingActionId, setUpdatingActionId] = useState<string | null>(null);
 
   const loadPage = async () => {
     if (!isSupabaseConfigured) {
@@ -79,7 +55,7 @@ export default function ClientProgramPage() {
     }
 
     const supabase = createClient();
-    const [clientResult, programResult, actionResult] = await Promise.all([
+    const [clientResult, programResult] = await Promise.all([
       supabase.from('clients').select('id, full_name, email').eq('id', clientId).single(),
       supabase
         .from('training_programs')
@@ -87,17 +63,10 @@ export default function ClientProgramPage() {
         .eq('client_id', clientId)
         .neq('status', 'archived')
         .order('created_at', { ascending: false }),
-      supabase
-        .from('coach_actions')
-        .select('id, action_type, description, priority, due_date, status, notes, created_at')
-        .eq('client_id', clientId)
-        .eq('action_type', 'programme_adjustment')
-        .neq('status', 'done')
-        .order('created_at', { ascending: false }),
     ]);
 
-    if (clientResult.error || programResult.error || actionResult.error) {
-      setError(clientResult.error?.message || programResult.error?.message || actionResult.error?.message || 'Could not load programme data.');
+    if (clientResult.error || programResult.error) {
+      setError(clientResult.error?.message || programResult.error?.message || 'Could not load programme data.');
       setLoading(false);
       return;
     }
@@ -147,7 +116,6 @@ export default function ClientProgramPage() {
     setWorkouts(loadedWorkouts);
     setCompletedSessions((sessionResult.data ?? []) as SessionRecord[]);
     setExerciseCounts(counts);
-    setPendingAdjustments((actionResult.data ?? []) as CoachActionRecord[]);
     setLoading(false);
   };
 
@@ -163,30 +131,6 @@ export default function ClientProgramPage() {
       workouts: workouts.filter((workout) => workout.program_id === program.id),
     }));
   }, [programs, workouts]);
-
-  const markAdjustmentHandled = async (actionId: string) => {
-    if (!isSupabaseConfigured) return;
-
-    setUpdatingActionId(actionId);
-    setMessage(null);
-    setError(null);
-
-    const supabase = createClient();
-    const { error: updateError } = await supabase
-      .from('coach_actions')
-      .update({ status: 'done', completed_at: new Date().toISOString() })
-      .eq('id', actionId);
-
-    if (updateError) {
-      setError(updateError.message);
-      setUpdatingActionId(null);
-      return;
-    }
-
-    setPendingAdjustments((current) => current.filter((action) => action.id !== actionId));
-    setMessage('Programme adjustment marked handled.');
-    setUpdatingActionId(null);
-  };
 
   const deleteWorkout = async (workout: WorkoutRecord) => {
     if (!isSupabaseConfigured) return;
@@ -239,36 +183,6 @@ export default function ClientProgramPage() {
 
       {message && <Card className="border-2 border-green-200 bg-green-50"><p className="text-sm font-semibold text-green-700">{message}</p></Card>}
       {error && <Card className="border-2 border-red-200 bg-red-50"><p className="text-sm font-semibold text-red-700">{error}</p></Card>}
-
-      <section>
-        <SectionHeader title="PENDING PROGRAMME ADJUSTMENTS" accent />
-        <Card>
-          {pendingAdjustments.length === 0 ? (
-            <p className="text-sm text-gray-600">No pending programme adjustments from workout review.</p>
-          ) : (
-            <div className="space-y-4">
-              {pendingAdjustments.map((action) => (
-                <div key={action.id} className="rounded-xl border border-gray-200 bg-white p-4">
-                  <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-                    <div className="space-y-2">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Badge variant={priorityVariant(action.priority) as any}>{action.priority}</Badge>
-                        <Badge variant="default">{action.status}</Badge>
-                      </div>
-                      <p className="whitespace-pre-line text-sm font-semibold text-[#000000]">{action.description}</p>
-                      {action.notes && <p className="whitespace-pre-line text-xs text-gray-500">{action.notes}</p>}
-                      <p className="text-xs font-semibold uppercase text-gray-400">Created: {formatDate(action.created_at)}{action.due_date ? ` • Due: ${formatDate(action.due_date)}` : ''}</p>
-                    </div>
-                    <button type="button" onClick={() => markAdjustmentHandled(action.id)} disabled={updatingActionId === action.id} className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-bold uppercase text-[#000000] hover:bg-gray-50 disabled:opacity-60">
-                      {updatingActionId === action.id ? 'Updating...' : 'Mark handled'}
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </Card>
-      </section>
 
       <section>
         <SectionHeader title="CURRENT PROGRAMME DELIVERY" accent />
