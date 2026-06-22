@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { Card } from '@/components/ui/card';
 
 export type ClientHubTargetSettings = {
@@ -33,27 +32,19 @@ export function TdeeSummaryCard({ settings }: { settings: ClientHubTargetSetting
 
   return (
     <Card className="overflow-hidden p-0">
-      <div className={settings.show_submit_bodyweight ? 'grid grid-cols-1 lg:grid-cols-[1fr_280px]' : 'grid grid-cols-1'}>
-        <div className="bg-white p-6">
-          <p className="text-xs font-black uppercase tracking-wide text-[#FA0201]">Today's targets</p>
-          {visibleTargets.length === 0 ? (
-            <div className="mt-4 rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 p-5">
-              <h2 className="text-2xl font-black uppercase text-[#000000]">Targets not set yet</h2>
-              <p className="mt-2 text-sm text-gray-700">Your coach has not set visible nutrition targets for your hub yet.</p>
-            </div>
-          ) : (
-            <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              {visibleTargets.map((target) => <TargetTile key={target.label} label={target.label} value={target.value} />)}
-            </div>
-          )}
-          {settings.target_notes && <p className="mt-4 text-sm font-semibold text-gray-700">{settings.target_notes}</p>}
-        </div>
-
-        {settings.show_submit_bodyweight && (
-          <Link href="/client/submit/nutrition-bodyweight" className="flex min-h-40 items-center justify-center bg-[#FA0201] p-6 text-center text-2xl font-black uppercase text-white hover:bg-red-700">
-            Submit bodyweight
-          </Link>
+      <div className="bg-white p-6">
+        <p className="text-xs font-black uppercase tracking-wide text-[#FA0201]">Today's targets</p>
+        {visibleTargets.length === 0 ? (
+          <div className="mt-4 rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 p-5">
+            <h2 className="text-2xl font-black uppercase text-[#000000]">Targets not set yet</h2>
+            <p className="mt-2 text-sm text-gray-700">Your coach has not set visible nutrition targets for your hub yet.</p>
+          </div>
+        ) : (
+          <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {visibleTargets.map((target) => <TargetTile key={target.label} label={target.label} value={target.value} />)}
+          </div>
         )}
+        {settings.target_notes && <p className="mt-4 text-sm font-semibold text-gray-700">{settings.target_notes}</p>}
       </div>
     </Card>
   );
