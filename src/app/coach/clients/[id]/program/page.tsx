@@ -19,18 +19,19 @@ type WorkoutRecord = {
   status: string;
   created_at: string;
 };
-type SessionRecord = { program_workout_id: string };
+type SessionRecord = { program_workout_id: string; completed_at: string | null };
 type ExerciseCountRecord = { workout_id: string };
+type WorkoutHistoryStats = { count: number; lastCompletedAt: string | null };
 
-const statusVariant = (status: string) => {
-  if (status === 'completed') return 'success';
-  if (status === 'archived') return 'danger';
-  return 'default';
+const formatDate = (value: string | null) => {
+  if (!value) return '—';
+  return new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(value));
 };
 
-const getWorkoutDisplayStatus = (workout: WorkoutRecord, completedWorkoutIds: Set<string>) => {
-  if (completedWorkoutIds.has(workout.id) || workout.status === 'completed') return 'completed';
-  return 'active';
+const getWorkoutHistoryLabel = (stats: WorkoutHistoryStats | undefined) => {
+  const count = stats?.count || 0;
+  if (count === 0) return 'No sessions logged';
+  return `${count} session${count === 1 ? '' : 's'} logged`;
 };
 
 export default function ClientProgramPage() {
@@ -95,7 +96,12 @@ export default function ClientProgramPage() {
 
     const [sessionResult, exerciseResult] = workoutIds.length > 0
       ? await Promise.all([
-          supabase.from('workout_sessions').select('program_workout_id').in('program_workout_id', workoutIds).eq('status', 'completed'),
+          supabase
+            .from('workout_sessions')
+            .select('program_workout_id, completed_at')
+            .in('program_workout_id', workoutIds)
+            .eq('status', 'completed')
+            .order('completed_at', { ascending: false }),
           supabase.from('program_exercises').select('workout_id').in('workout_id', workoutIds),
         ])
       : [{ data: [], error: null }, { data: [], error: null }];
@@ -123,7 +129,20 @@ export default function ClientProgramPage() {
     loadPage();
   }, [clientId]);
 
-  const completedWorkoutIds = useMemo(() => new Set(completedSessions.map((session) => session.program_workout_id)), [completedSessions]);
+  const workoutHistoryStats = useMemo(() => {
+    return completedSessions.reduce<Record<string, WorkoutHistoryStats>>((acc, session) => {
+      const current = acc[session.program_workout_id] || { count: 0, lastCompletedAt: null };
+      const sessionTime = session.completed_at ? new Date(session.completed_at).getTime() : 0;
+      const currentTime = current.lastCompletedAt ? new Date(current.lastCompletedAt).getTime() : 0;
+
+      acc[session.program_workout_id] = {
+        count: current.count + 1,
+        lastCompletedAt: sessionTime > currentTime ? session.completed_at : current.lastCompletedAt,
+      };
+
+      return acc;
+    }, {});
+  }, [completedSessions]);
 
   const programmeGroups = useMemo(() => {
     return programs.map((program) => ({
@@ -135,7 +154,7 @@ export default function ClientProgramPage() {
   const deleteWorkout = async (workout: WorkoutRecord) => {
     if (!isSupabaseConfigured) return;
 
-    const hasHistory = completedWorkoutIds.has(workout.id) || workout.status === 'completed';
+    const hasHistory = Boolean(workoutHistoryStats[workout.id]?.count);
     const confirmed = window.confirm(
       hasHistory
         ? `Remove ${workout.title} from current programme delivery? Previous completed sessions will remain in history.`
@@ -173,7 +192,7 @@ export default function ClientProgramPage() {
         <div>
           <h1 className="text-3xl font-bold uppercase tracking-tight text-[#000000]">Client Program</h1>
           <p className="mt-1 text-sm text-gray-600">{client?.full_name}{client?.email ? ` • ${client.email}` : ''}</p>
-          <p className="mt-1 text-xs font-bold uppercase text-gray-500">Library programmes create client-specific workouts. Edit prescribed workouts directly from this page.</p>
+          <p className="mt-1 text-xs font-bold uppercase text-gray-500">Manage reusable workout templates for this programme block. Sessions logged against each workout appear in History.</p>
         </div>
         <div className="flex flex-col items-start gap-2 md:items-end">
           <Link href={`/coach/clients/${clientId}`} className="text-sm font-bold uppercase text-[#FA0201] hover:underline">Back to client</Link>
@@ -185,7 +204,7 @@ export default function ClientProgramPage() {
       {error && <Card className="border-2 border-red-200 bg-red-50"><p className="text-sm font-semibold text-red-700">{error}</p></Card>}
 
       <section>
-        <SectionHeader title="CURRENT PROGRAMME DELIVERY" accent />
+        <SectionHeader title="PROGRAMME WORKOUTS" accent />
         <Card>
           {workouts.length === 0 ? (
             <p className="text-sm text-gray-600">No active workouts assigned yet. Use Replace Active Programme below to copy a reusable programme into this client.</p>
@@ -198,26 +217,35 @@ export default function ClientProgramPage() {
                       <p className="text-xs font-bold uppercase text-[#FA0201]">Programme</p>
                       <h2 className="text-xl font-black uppercase text-[#000000]">{group.program.title || 'Untitled programme'}</h2>
                       {group.program.goal && <p className="mt-1 text-sm text-gray-600">{group.program.goal}</p>}
+                      <p className="mt-2 text-xs font-bold uppercase text-gray-500">Workout templates repeated across the programme block</p>
                     </div>
-                    <Badge variant="default">{group.workouts.length} workout{group.workouts.length === 1 ? '' : 's'}</Badge>
+                    <Badge variant="default">{group.workouts.length} workout template{group.workouts.length === 1 ? '' : 's'}</Badge>
                   </div>
 
                   <div className="space-y-3">
                     {group.workouts.map((workout, index) => {
-                      const displayStatus = getWorkoutDisplayStatus(workout, completedWorkoutIds);
                       const dayNumber = workout.workout_order || index + 1;
+                      const historyStats = workoutHistoryStats[workout.id];
+
                       return (
                         <div key={workout.id} className="rounded-xl border border-gray-200 bg-white p-4">
-                          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                          <div className="grid grid-cols-1 gap-4 xl:grid-cols-[90px_1fr_160px_160px_270px] xl:items-center">
                             <div>
-                              <div className="mb-2 flex flex-wrap items-center gap-2">
-                                <Badge variant="default">Day {dayNumber}</Badge>
-                                <Badge variant={statusVariant(displayStatus) as any}>{displayStatus}</Badge>
-                              </div>
-                              <p className="text-lg font-bold uppercase text-[#000000]">{workout.title}</p>
-                              <p className="mt-1 text-sm text-gray-600">Exercises: {exerciseCounts[workout.id] || 0}</p>
+                              <Badge variant="default">Day {dayNumber}</Badge>
                             </div>
-                            <div className="flex flex-wrap gap-2 md:justify-end">
+                            <div>
+                              <p className="text-lg font-bold uppercase text-[#000000]">{workout.title}</p>
+                              <p className="mt-1 text-sm text-gray-600">{exerciseCounts[workout.id] || 0} exercise{(exerciseCounts[workout.id] || 0) === 1 ? '' : 's'}</p>
+                            </div>
+                            <div>
+                              <p className="text-xs font-bold uppercase text-gray-500">History</p>
+                              <p className="mt-1 text-sm font-bold text-[#000000]">{getWorkoutHistoryLabel(historyStats)}</p>
+                            </div>
+                            <div>
+                              <p className="text-xs font-bold uppercase text-gray-500">Last done</p>
+                              <p className="mt-1 text-sm font-bold text-[#000000]">{formatDate(historyStats?.lastCompletedAt || null)}</p>
+                            </div>
+                            <div className="flex flex-wrap gap-2 xl:justify-end">
                               <Link href={`/coach/clients/${clientId}/program/history/${workout.id}`} className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-bold uppercase text-[#000000] hover:bg-gray-50">History</Link>
                               <Link href={`/coach/clients/${clientId}/current-workouts/${workout.id}/edit`} className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-bold uppercase text-[#000000] hover:bg-gray-50">Edit workout</Link>
                               <button type="button" onClick={() => deleteWorkout(workout)} disabled={deletingWorkoutId === workout.id} className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-xs font-bold uppercase text-[#FA0201] hover:bg-red-100 disabled:opacity-60">
