@@ -233,23 +233,52 @@ export default function CoachClientHubSettingsPage() {
     setError(null);
     setMessage(null);
 
+    const resolvedCalorieTarget = numberOrNull(settings.calorie_target) ?? (settings.show_calorie_target ? calculatedCalorieTarget : null);
+    const resolvedProteinTarget = numberOrNull(settings.protein_target_g) ?? (settings.show_protein_target ? calculatedProteinTarget : null);
+    const resolvedCarbTarget = numberOrNull(settings.carb_target_g);
+    const resolvedFatTarget = numberOrNull(settings.fat_target_g);
+
+    if (settings.show_calorie_target && resolvedCalorieTarget === null) {
+      setError('Calorie target is visible but has no value. Complete the calculator inputs or enter a manual calorie target.');
+      setSaving(false);
+      return;
+    }
+
+    if (settings.show_protein_target && resolvedProteinTarget === null) {
+      setError('Protein target is visible but has no value. Add a bodyweight entry or enter a manual protein target.');
+      setSaving(false);
+      return;
+    }
+
+    if (settings.show_carb_target && resolvedCarbTarget === null) {
+      setError('Carbohydrate target is visible but has no value. Enter a manual carbohydrate target or turn the toggle off.');
+      setSaving(false);
+      return;
+    }
+
+    if (settings.show_fat_target && resolvedFatTarget === null) {
+      setError('Fat target is visible but has no value. Enter a manual fat target or turn the toggle off.');
+      setSaving(false);
+      return;
+    }
+
     const supabase = createClient();
     const { error: saveError } = await supabase.from('client_hub_settings').upsert({
       client_id: clientId,
       show_calorie_target: settings.show_calorie_target,
-      calorie_target: numberOrNull(settings.calorie_target),
+      calorie_target: resolvedCalorieTarget,
       calorie_adjustment: calorieAdjustment,
       estimated_bmr: bmr,
       estimated_tdee: estimatedTdee,
       activity_multiplier: activityMultiplier,
       workouts_past_7_days: workoutsPast7Days,
       show_protein_target: settings.show_protein_target,
-      protein_target_g: numberOrNull(settings.protein_target_g),
+      protein_target_g: resolvedProteinTarget,
       protein_multiplier: proteinMultiplier,
       show_carb_target: settings.show_carb_target,
-      carb_target_g: numberOrNull(settings.carb_target_g),
+      carb_target_g: resolvedCarbTarget,
       show_fat_target: settings.show_fat_target,
-      fat_target_g: numberOrNull(settings.fat_target_g),
+      fat_target_g: resolvedFatTarget,
       show_bodyweight_card: settings.show_bodyweight_card,
       show_submit_bodyweight: settings.show_submit_bodyweight,
       show_next_workout_card: settings.show_next_workout_card,
@@ -260,7 +289,16 @@ export default function CoachClientHubSettingsPage() {
     }, { onConflict: 'client_id' });
 
     if (saveError) setError(saveError.message);
-    else setMessage('Client hub settings saved.');
+    else {
+      setSettings((current) => ({
+        ...current,
+        calorie_target: resolvedCalorieTarget?.toString() || '',
+        protein_target_g: resolvedProteinTarget?.toString() || '',
+        carb_target_g: resolvedCarbTarget?.toString() || '',
+        fat_target_g: resolvedFatTarget?.toString() || '',
+      }));
+      setMessage('Client hub settings saved.');
+    }
     setSaving(false);
   };
 
@@ -293,7 +331,7 @@ export default function CoachClientHubSettingsPage() {
 
             {bmr === null && (
               <div className="rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 p-4">
-                <p className="text-sm font-bold text-[#000000]">Calculator needs sex/equation profile, date of birth, height, and at least one bodyweight entry.</p>
+                <p className="text-sm font-bold text-[#000000]">Calculator needs sex, date of birth, height, and at least one bodyweight entry.</p>
                 <p className="mt-1 text-xs font-semibold text-gray-600">You can still enter manual targets below.</p>
               </div>
             )}
@@ -331,10 +369,17 @@ export default function CoachClientHubSettingsPage() {
         </section>
 
         <section>
-          <SectionHeader title="TODAY'S TARGETS" accent />
+          <SectionHeader title="CLIENT-VISIBLE TARGETS" accent />
           <Card className="space-y-4">
-            <TargetRow label="calorie target" checked={settings.show_calorie_target} value={settings.calorie_target} placeholder="2020" onChecked={(checked) => patch('show_calorie_target', checked)} onValue={(value) => patch('calorie_target', value)} />
-            <TargetRow label="protein target" checked={settings.show_protein_target} value={settings.protein_target_g} placeholder="156" onChecked={(checked) => patch('show_protein_target', checked)} onValue={(value) => patch('protein_target_g', value)} />
+            <p className="text-sm font-semibold text-gray-700">If calorie or protein is visible and the field is empty, the calculated value will be saved automatically. Carbs and fats are manual for now.</p>
+            <TargetRow label="calorie target" checked={settings.show_calorie_target} value={settings.calorie_target} placeholder={calculatedCalorieTarget?.toString() || '2020'} onChecked={(checked) => {
+              patch('show_calorie_target', checked);
+              if (checked && !settings.calorie_target && calculatedCalorieTarget !== null) patch('calorie_target', calculatedCalorieTarget.toString());
+            }} onValue={(value) => patch('calorie_target', value)} />
+            <TargetRow label="protein target" checked={settings.show_protein_target} value={settings.protein_target_g} placeholder={calculatedProteinTarget?.toString() || '156'} onChecked={(checked) => {
+              patch('show_protein_target', checked);
+              if (checked && !settings.protein_target_g && calculatedProteinTarget !== null) patch('protein_target_g', calculatedProteinTarget.toString());
+            }} onValue={(value) => patch('protein_target_g', value)} />
             <TargetRow label="carbohydrate target" checked={settings.show_carb_target} value={settings.carb_target_g} placeholder="200" onChecked={(checked) => patch('show_carb_target', checked)} onValue={(value) => patch('carb_target_g', value)} />
             <TargetRow label="fat target" checked={settings.show_fat_target} value={settings.fat_target_g} placeholder="55" onChecked={(checked) => patch('show_fat_target', checked)} onValue={(value) => patch('fat_target_g', value)} />
             <label className="block">
