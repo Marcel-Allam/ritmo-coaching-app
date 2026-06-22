@@ -1,11 +1,10 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { PageHeader } from '@/components/layout/page-header';
 import { Card } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { SectionHeader } from '@/components/ui/section-header';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
 import { useAuth } from '@/lib/auth-context';
@@ -53,6 +52,11 @@ interface PerformedSetRecord {
   completed: boolean;
 }
 
+type WorkoutHistoryStats = {
+  count: number;
+  lastCompletedAt: string | null;
+};
+
 const formatDate = (value: string | null) => {
   if (!value) return 'Not logged';
 
@@ -66,6 +70,12 @@ const formatDate = (value: string | null) => {
 const getSetValue = (value: number | null) => {
   if (value === null || value === undefined) return '-';
   return value;
+};
+
+const getHistoryLabel = (stats: WorkoutHistoryStats | undefined) => {
+  const count = stats?.count || 0;
+  if (count === 0) return 'No sessions yet';
+  return `${count} session${count === 1 ? '' : 's'} logged`;
 };
 
 export default function ClientTrainingPage() {
@@ -123,7 +133,7 @@ export default function ClientTrainingPage() {
           .eq('client_id', linkedClient.id)
           .eq('status', 'completed')
           .order('completed_at', { ascending: false })
-          .limit(5),
+          .limit(25),
       ]);
 
       if (workoutResult.error) {
@@ -197,7 +207,7 @@ export default function ClientTrainingPage() {
         setWorkoutTitles(titleMap);
       }
 
-      const sessionIds = recentSessions.map((session) => session.id);
+      const sessionIds = recentSessions.slice(0, 5).map((session) => session.id);
       if (sessionIds.length > 0) {
         const { data: setData, error: setError } = await supabase
           .from('performed_sets')
@@ -227,13 +237,27 @@ export default function ClientTrainingPage() {
   const latestCompletedWorkoutId = completedSessions.find((session) => workouts.some((workout) => workout.id === session.program_workout_id))?.program_workout_id ?? null;
   const latestCompletedWorkoutIndex = workouts.findIndex((workout) => workout.id === latestCompletedWorkoutId);
   const nextWorkout = workouts.length > 0 ? workouts[(latestCompletedWorkoutIndex + 1) % workouts.length] : null;
-  const nextProgram = nextWorkout ? programs[nextWorkout.program_id] : null;
-  const programmeWorkouts = nextWorkout ? workouts.filter((workout) => workout.id !== nextWorkout.id) : workouts;
+  const currentProgram = nextWorkout ? programs[nextWorkout.program_id] : workouts[0] ? programs[workouts[0].program_id] : null;
+
+  const workoutHistoryStats = useMemo(() => {
+    return completedSessions.reduce<Record<string, WorkoutHistoryStats>>((acc, session) => {
+      const current = acc[session.program_workout_id] || { count: 0, lastCompletedAt: null };
+      const sessionTime = session.completed_at ? new Date(session.completed_at).getTime() : 0;
+      const currentTime = current.lastCompletedAt ? new Date(current.lastCompletedAt).getTime() : 0;
+
+      acc[session.program_workout_id] = {
+        count: current.count + 1,
+        lastCompletedAt: sessionTime > currentTime ? session.completed_at : current.lastCompletedAt,
+      };
+
+      return acc;
+    }, {});
+  }, [completedSessions]);
 
   const completedWorkoutsSection = (
     <section>
       <div className="flex items-center justify-between gap-4">
-        <SectionHeader title="COMPLETED WORKOUTS" accent />
+        <SectionHeader title="RECENTLY COMPLETED" accent />
         <Link href="/client/training/history" className="mb-4 text-xs font-bold uppercase text-[#FA0201] hover:underline">
           View all
         </Link>
@@ -243,7 +267,7 @@ export default function ClientTrainingPage() {
           <p className="text-sm text-gray-600">No completed workouts yet.</p>
         ) : (
           <div className="space-y-4">
-            {completedSessions.map((session) => {
+            {completedSessions.slice(0, 5).map((session) => {
               const isExpanded = expandedSessionId === session.id;
               const performedSets = setsBySession[session.id] || [];
 
@@ -359,54 +383,58 @@ export default function ClientTrainingPage() {
         )}
 
         <section>
-          <SectionHeader title="NEXT SESSION" accent />
-          <Card variant="dark" className="p-8">
-            <p className="text-sm font-bold uppercase text-[#FA0201] mb-3">
-              {nextProgram?.title || 'Training programme'}
-            </p>
-            <h1 className="text-3xl md:text-4xl font-bold text-white uppercase tracking-tight">
-              Ready to start {nextWorkout.title}?
-            </h1>
-            <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-white/80">
-              <div>
-                <p className="text-xs font-bold uppercase text-white/50">Exercises</p>
-                <p className="mt-1">{exerciseCounts[nextWorkout.id] || 0}</p>
-              </div>
-              <div>
-                <p className="text-xs font-bold uppercase text-white/50">Training flow</p>
-                <p className="mt-1">Complete this session when it fits your week.</p>
-              </div>
+          <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div>
+              <p className="text-xs font-black uppercase tracking-wide text-[#FA0201]">Programme</p>
+              <h1 className="mt-1 text-3xl font-black uppercase tracking-tight text-[#000000]">
+                {currentProgram?.title || 'Training programme'}
+              </h1>
+              <p className="mt-2 text-sm font-semibold text-gray-600">
+                {workouts.length} workout template{workouts.length === 1 ? '' : 's'} • Highlighted red = next session to complete
+              </p>
             </div>
-            <div className="mt-8">
-              <Link href={`/client/training/${nextWorkout.id}`}>
-                <Button variant="primary" size="lg" className="bg-[#FA0201] hover:bg-red-700">
-                  BEGIN WORKOUT
-                </Button>
-              </Link>
-            </div>
-          </Card>
-        </section>
+            <Link href="/client" className="rounded-lg bg-[#FA0201] px-4 py-3 text-xs font-black uppercase text-white hover:bg-red-700">
+              Back to client hub
+            </Link>
+          </div>
 
-        <section>
-          <SectionHeader title="WORKOUTS IN PROGRAMME" accent />
-          <Card>
-            {programmeWorkouts.length === 0 ? (
-              <p className="text-sm text-gray-600">This is the only workout currently in your programme.</p>
-            ) : (
-              <div className="space-y-4">
-                {programmeWorkouts.map((workout) => {
-                  const program = programs[workout.program_id];
-                  return (
-                    <Link key={workout.id} href={`/client/training/${workout.id}`} className="block rounded-lg border border-gray-200 p-4 hover:bg-gray-50">
-                      <p className="text-xs font-bold uppercase text-gray-500">{program?.title || 'Training programme'}</p>
-                      <p className="mt-1 text-lg font-bold uppercase text-[#000000]">{workout.title}</p>
-                      <p className="mt-1 text-sm text-gray-600">Day {workout.workout_order || '-'} • Exercises: {exerciseCounts[workout.id] || 0}</p>
-                    </Link>
-                  );
-                })}
-              </div>
-            )}
-          </Card>
+          <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
+            {workouts.map((workout, index) => {
+              const isNext = workout.id === nextWorkout.id;
+              const stats = workoutHistoryStats[workout.id];
+              const exerciseCount = exerciseCounts[workout.id] || 0;
+
+              return (
+                <Link
+                  key={workout.id}
+                  href={`/client/training/${workout.id}`}
+                  className={`block border-b border-gray-200 p-5 last:border-b-0 ${
+                    isNext
+                      ? 'bg-[#FA0201] text-white hover:bg-red-700'
+                      : index % 2 === 0
+                        ? 'bg-gray-100 text-[#000000] hover:bg-gray-200'
+                        : 'bg-white text-[#000000] hover:bg-gray-50'
+                  }`}
+                >
+                  <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                    <div>
+                      {isNext && <p className="mb-2 text-xs font-black uppercase tracking-wide text-white/80">Next workout</p>}
+                      <p className="text-2xl font-black uppercase tracking-tight">{workout.title}</p>
+                      <p className={`mt-1 text-sm font-semibold ${isNext ? 'text-white/80' : 'text-gray-600'}`}>
+                        Day {workout.workout_order || index + 1} • {exerciseCount} exercise{exerciseCount === 1 ? '' : 's'} • {getHistoryLabel(stats)}
+                      </p>
+                      <p className={`mt-1 text-xs font-bold uppercase ${isNext ? 'text-white/70' : 'text-gray-500'}`}>
+                        Last done: {stats?.lastCompletedAt ? formatDate(stats.lastCompletedAt) : '—'}
+                      </p>
+                    </div>
+                    <span className={`w-fit rounded-lg px-4 py-3 text-xs font-black uppercase ${isNext ? 'bg-white text-[#FA0201]' : 'border border-gray-300 bg-white text-[#000000]'}`}>
+                      {isNext ? 'Start workout' : 'View workout'}
+                    </span>
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
         </section>
 
         {completedWorkoutsSection}
