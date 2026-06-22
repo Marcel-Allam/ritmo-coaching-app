@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { PageHeader } from '@/components/layout/page-header';
 import { Card } from '@/components/ui/card';
 import { SectionHeader } from '@/components/ui/section-header';
+import { BodyweightTrendCard } from '@/components/client/bodyweight-trend-card';
 import { ClientDirectionMetricCards } from '@/components/client/client-direction-metric-cards';
 import { TdeeSummaryCard } from '@/components/client/tdee-summary-card';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
@@ -74,7 +75,10 @@ export default function ClientHub() {
     <div>
       <PageHeader title="YOUR HUB" subtitle={`Welcome, ${client.full_name}`} />
       <div className="mx-auto max-w-6xl space-y-8 px-4 py-6 md:px-8">
-        <TdeeSummaryCard clientId={client.id} />
+        <section className="grid grid-cols-1 gap-6 xl:grid-cols-[1fr_420px]">
+          <TdeeSummaryCard clientId={client.id} />
+          <BodyweightTrendCard clientId={client.id} />
+        </section>
 
         <section>
           <SectionHeader title="YOUR PROGRESS" accent />
