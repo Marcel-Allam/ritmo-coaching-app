@@ -72,8 +72,6 @@ const clientNavItems = [
   { label: 'Hub', href: '/client', icon: HomeIcon },
   { label: 'Workout', href: '/client/training', icon: DumbbellIcon },
   { label: 'Coach', href: '/client/coach', icon: PlusIcon },
-  { label: 'Configure', href: '/client/configure', icon: SettingsIcon },
-  { label: 'Feedback', href: '/client/feedback', icon: MessageIcon },
 ];
 
 export const AppShell: React.FC<AppShellProps> = ({ role, children }) => {
