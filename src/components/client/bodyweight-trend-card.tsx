@@ -30,6 +30,12 @@ const formatChange = (value: number | null) => {
   return `${rounded > 0 ? '+' : ''}${rounded}kg`;
 };
 
+const SubmitBodyweightLink = () => (
+  <Link href="/client/submit/nutrition-bodyweight" className="w-fit rounded-lg bg-[#FA0201] px-4 py-3 text-xs font-black uppercase text-white hover:bg-red-700">
+    Submit bodyweight
+  </Link>
+);
+
 const BodyweightSparkline = ({ entries }: { entries: BodyweightEntry[] }) => {
   if (entries.length < 2) {
     return (
@@ -65,7 +71,7 @@ const BodyweightSparkline = ({ entries }: { entries: BodyweightEntry[] }) => {
   );
 };
 
-export function BodyweightTrendCard({ clientId }: { clientId: string }) {
+export function BodyweightTrendCard({ clientId, showSubmitBodyweight = true }: { clientId: string; showSubmitBodyweight?: boolean }) {
   const [entries, setEntries] = useState<BodyweightEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -113,13 +119,8 @@ export function BodyweightTrendCard({ clientId }: { clientId: string }) {
     return Number(latest.bodyweight_kg) - Number(first.bodyweight_kg);
   }, [latest, first]);
 
-  if (loading) {
-    return <Card><p className="text-sm font-semibold text-gray-700">Loading bodyweight...</p></Card>;
-  }
-
-  if (error) {
-    return <Card><p className="text-sm font-semibold text-red-700">{error}</p></Card>;
-  }
+  if (loading) return <Card><p className="text-sm font-semibold text-gray-700">Loading bodyweight...</p></Card>;
+  if (error) return <Card><p className="text-sm font-semibold text-red-700">{error}</p></Card>;
 
   if (!latest) {
     return (
@@ -129,9 +130,7 @@ export function BodyweightTrendCard({ clientId }: { clientId: string }) {
           <h2 className="mt-2 text-2xl font-black uppercase text-[#000000]">No bodyweight logged</h2>
           <p className="mt-3 text-sm text-gray-700">Submit your first bodyweight entry to unlock the trend chart.</p>
         </div>
-        <Link href="/client/submit/nutrition-bodyweight" className="mt-5 inline-flex w-fit rounded-lg bg-[#FA0201] px-4 py-3 text-xs font-black uppercase text-white hover:bg-red-700">
-          Submit bodyweight
-        </Link>
+        {showSubmitBodyweight && <div className="mt-5"><SubmitBodyweightLink /></div>}
       </Card>
     );
   }
@@ -144,9 +143,7 @@ export function BodyweightTrendCard({ clientId }: { clientId: string }) {
           <h2 className="mt-2 text-4xl font-black uppercase tracking-tight text-[#000000]">{formatWeight(Number(latest.bodyweight_kg))}</h2>
           <p className="mt-1 text-xs font-bold uppercase text-gray-500">Last logged: {formatDate(latest.entry_date)}</p>
         </div>
-        <Link href="/client/submit/nutrition-bodyweight" className="w-fit rounded-lg bg-[#FA0201] px-4 py-3 text-xs font-black uppercase text-white hover:bg-red-700">
-          Submit bodyweight
-        </Link>
+        {showSubmitBodyweight && <SubmitBodyweightLink />}
       </div>
 
       <BodyweightSparkline entries={entries} />
