@@ -11,6 +11,11 @@ import { useAuth } from '@/lib/auth-context';
 
 type ClientRecord = { id: string; full_name: string };
 type WorkoutRecord = { id: string; title: string };
+type ProgramExerciseRecord = {
+  id: string;
+  exercise_order: number;
+  exercise_name: string;
+};
 type SessionRecord = {
   id: string;
   completed_at: string | null;
@@ -19,6 +24,7 @@ type SessionRecord = {
 };
 type PerformedSetRecord = {
   session_id: string;
+  program_exercise_id: string;
   set_order: number;
   actual_weight_kg: number | null;
   actual_reps: number | null;
@@ -49,6 +55,7 @@ export default function ClientWorkoutSpecificHistoryPage() {
 
   const [client, setClient] = useState<ClientRecord | null>(null);
   const [workout, setWorkout] = useState<WorkoutRecord | null>(null);
+  const [exercises, setExercises] = useState<ProgramExerciseRecord[]>([]);
   const [sessions, setSessions] = useState<SessionRecord[]>([]);
   const [setsBySession, setSetsBySession] = useState<Record<string, PerformedSetRecord[]>>({});
   const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null);
@@ -79,13 +86,18 @@ export default function ClientWorkoutSpecificHistoryPage() {
       const linkedClient = clientData as ClientRecord;
       setClient(linkedClient);
 
-      const [workoutResult, sessionResult] = await Promise.all([
+      const [workoutResult, exerciseResult, sessionResult] = await Promise.all([
         supabase
           .from('program_workouts')
           .select('id, title')
           .eq('id', workoutId)
           .eq('client_id', linkedClient.id)
           .single(),
+        supabase
+          .from('program_exercises')
+          .select('id, exercise_order, exercise_name')
+          .eq('workout_id', workoutId)
+          .order('exercise_order', { ascending: true }),
         supabase
           .from('workout_sessions')
           .select('id, completed_at, review_status, client_notes')
@@ -95,8 +107,8 @@ export default function ClientWorkoutSpecificHistoryPage() {
           .order('completed_at', { ascending: false }),
       ]);
 
-      if (workoutResult.error || sessionResult.error || !workoutResult.data) {
-        setError(workoutResult.error?.message || sessionResult.error?.message || 'Could not load workout history.');
+      if (workoutResult.error || exerciseResult.error || sessionResult.error || !workoutResult.data) {
+        setError(workoutResult.error?.message || exerciseResult.error?.message || sessionResult.error?.message || 'Could not load workout history.');
         setLoading(false);
         return;
       }
@@ -106,7 +118,7 @@ export default function ClientWorkoutSpecificHistoryPage() {
       const setResult = sessionIds.length > 0
         ? await supabase
             .from('performed_sets')
-            .select('session_id, set_order, actual_weight_kg, actual_reps, actual_rpe, completed')
+            .select('session_id, program_exercise_id, set_order, actual_weight_kg, actual_reps, actual_rpe, completed')
             .in('session_id', sessionIds)
             .order('set_order', { ascending: true })
         : { data: [], error: null };
@@ -123,6 +135,7 @@ export default function ClientWorkoutSpecificHistoryPage() {
       }, {});
 
       setWorkout(workoutResult.data as WorkoutRecord);
+      setExercises((exerciseResult.data ?? []) as ProgramExerciseRecord[]);
       setSessions(loadedSessions);
       setSetsBySession(groupedSets);
       setLoading(false);
@@ -172,6 +185,12 @@ export default function ClientWorkoutSpecificHistoryPage() {
                 {sessions.map((session) => {
                   const isExpanded = expandedSessionId === session.id;
                   const performedSets = setsBySession[session.id] || [];
+                  const exerciseSections = exercises
+                    .map((exercise) => ({
+                      exercise,
+                      sets: performedSets.filter((set) => set.program_exercise_id === exercise.id),
+                    }))
+                    .filter((section) => section.sets.length > 0);
 
                   return (
                     <div key={session.id} className="rounded-xl border border-gray-200 bg-white">
@@ -190,19 +209,20 @@ export default function ClientWorkoutSpecificHistoryPage() {
                       </button>
 
                       {isExpanded && (
-                        <div className="border-t border-gray-200 p-4">
+                        <div className="space-y-4 border-t border-gray-200 p-4">
                           {performedSets.length === 0 ? (
                             <p className="text-sm text-gray-600">No performed sets recorded for this session.</p>
-                          ) : (
+                          ) : exerciseSections.length === 0 ? (
                             <div>
+                              <p className="mb-3 text-sm font-black uppercase text-[#000000]">Workout sets</p>
                               <div className="grid grid-cols-4 gap-3 text-xs font-bold uppercase text-gray-500">
                                 <p>Set</p>
                                 <p>Kg</p>
                                 <p>Reps</p>
                                 <p>RPE</p>
                               </div>
-                              {performedSets.map((set) => (
-                                <div key={`${session.id}-${set.set_order}`} className="mt-2 grid grid-cols-4 gap-3 rounded-lg bg-gray-50 p-3 text-sm text-gray-800">
+                              {performedSets.map((set, index) => (
+                                <div key={`${session.id}-fallback-${set.set_order}-${index}`} className="mt-2 grid grid-cols-4 gap-3 rounded-lg bg-gray-50 p-3 text-sm text-gray-800">
                                   <p className="font-bold">Set {set.set_order}</p>
                                   <p>{getSetValue(set.actual_weight_kg)}</p>
                                   <p>{getSetValue(set.actual_reps)}</p>
@@ -210,8 +230,31 @@ export default function ClientWorkoutSpecificHistoryPage() {
                                 </div>
                               ))}
                             </div>
+                          ) : (
+                            exerciseSections.map(({ exercise, sets }) => (
+                              <div key={`${session.id}-${exercise.id}`} className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                                <div className="mb-3 flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+                                  <p className="text-sm font-black uppercase text-[#000000]">{exercise.exercise_name}</p>
+                                  <p className="text-xs font-bold uppercase text-gray-500">{sets.length} set{sets.length === 1 ? '' : 's'}</p>
+                                </div>
+                                <div className="grid grid-cols-4 gap-3 text-xs font-bold uppercase text-gray-500">
+                                  <p>Set</p>
+                                  <p>Kg</p>
+                                  <p>Reps</p>
+                                  <p>RPE</p>
+                                </div>
+                                {sets.map((set, index) => (
+                                  <div key={`${session.id}-${exercise.id}-${set.set_order}-${index}`} className="mt-2 grid grid-cols-4 gap-3 rounded-lg bg-white p-3 text-sm text-gray-800">
+                                    <p className="font-bold">Set {set.set_order}</p>
+                                    <p>{getSetValue(set.actual_weight_kg)}</p>
+                                    <p>{getSetValue(set.actual_reps)}</p>
+                                    <p>{getSetValue(set.actual_rpe)}</p>
+                                  </div>
+                                ))}
+                              </div>
+                            ))
                           )}
-                          {session.client_notes && <p className="mt-3 text-sm text-gray-700">{session.client_notes}</p>}
+                          {session.client_notes && <p className="text-sm text-gray-700">Session felt: {session.client_notes}</p>}
                         </div>
                       )}
                     </div>
