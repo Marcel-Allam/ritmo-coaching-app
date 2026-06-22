@@ -9,7 +9,7 @@ import { SectionHeader } from '@/components/ui/section-header';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
 import { useAuth } from '@/lib/auth-context';
 
-type SetFlag = 'above' | 'matched' | 'watch' | 'below';
+type SetFlag = 'above' | 'matched' | 'watch' | 'below' | 'missing';
 type ClientRecord = { id: string; full_name: string };
 type WorkoutRecord = { id: string; title: string };
 type ProgramExerciseRecord = {
@@ -61,6 +61,12 @@ const flagStyles: Record<SetFlag, { card: string; text: string; badge: string; l
     badge: 'bg-white text-amber-900',
     label: 'Watch',
   },
+  missing: {
+    card: 'border-blue-300 bg-blue-50',
+    text: 'text-blue-900',
+    badge: 'bg-white text-blue-900',
+    label: 'Missing info',
+  },
   below: {
     card: 'border-red-200 bg-red-50',
     text: 'text-red-900',
@@ -80,11 +86,6 @@ const formatDate = (value: string | null) => {
   }).format(new Date(value));
 };
 
-const getSetValue = (value: number | null) => {
-  if (value === null || value === undefined) return '—';
-  return value;
-};
-
 const parseTargetReps = (value: string | null) => {
   if (!value) return { min: null as number | null, max: null as number | null };
   const rangeMatch = value.match(/(\d+)\s*-\s*(\d+)/);
@@ -95,16 +96,30 @@ const parseTargetReps = (value: string | null) => {
   return { min: parsed, max: parsed };
 };
 
+const getMissingFields = (set: PerformedSetRecord) => {
+  const missingFields: string[] = [];
+  if (set.actual_weight_kg === null || set.actual_weight_kg === undefined) missingFields.push('kg');
+  if (set.actual_reps === null || set.actual_reps === undefined) missingFields.push('reps');
+  if (set.actual_rpe === null || set.actual_rpe === undefined) missingFields.push('RPE');
+  return missingFields;
+};
+
 const analyseSet = (set: PerformedSetRecord, target?: ProgramSetRecord) => {
   const reasons: string[] = [];
+  const missingFields = getMissingFields(set);
+
+  if (!set.completed) reasons.push('Set marked incomplete.');
+
+  if (missingFields.length > 0) {
+    reasons.push(`Missing ${missingFields.join(', ')}.`);
+    return { flag: 'missing' as SetFlag, reasons };
+  }
+
   let hasPositive = false;
   let hasWatch = false;
   let hasNegative = false;
 
-  if (!set.completed) {
-    hasNegative = true;
-    reasons.push('Set marked incomplete.');
-  }
+  if (!set.completed) hasNegative = true;
 
   if (!target) {
     return { flag: hasNegative ? 'below' as SetFlag : 'matched' as SetFlag, reasons: reasons.length ? reasons : ['No target was available for this set.'] };
