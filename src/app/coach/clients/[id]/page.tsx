@@ -144,6 +144,13 @@ const SnapshotMetric = ({ label, value, helper }: { label: string; value: string
   </div>
 );
 
+const CompactSnapshotLine = ({ label, value }: { label: string; value: string | number }) => (
+  <div className="flex items-center justify-between gap-4 border-b border-gray-200 py-3 last:border-b-0">
+    <p className="text-xs font-black uppercase tracking-wide text-gray-500">{label}</p>
+    <p className="text-sm font-black text-[#000000]">{value}</p>
+  </div>
+);
+
 const ProgrammeCard = ({
   program,
   isExpanded,
@@ -468,30 +475,46 @@ export default function ClientProfilePage() {
     );
   }
 
+  const nextAction = getNextAction();
+  const nextActionHref = snapshot.reviewsNeedingAction > 0
+    ? '/coach/actions'
+    : !client.user_id
+      ? '#invite-client'
+      : snapshot.workoutsScheduledThisWeek === 0
+        ? `/coach/clients/${clientId}/program`
+        : `/coach/clients/${clientId}/hub-settings`;
+  const nextActionCta = snapshot.reviewsNeedingAction > 0
+    ? 'Open actions'
+    : !client.user_id
+      ? 'Use invite button'
+      : snapshot.workoutsScheduledThisWeek === 0
+        ? 'Edit programme'
+        : 'Open hub settings';
+
   return (
     <div className="p-6 md:p-8">
-      <div className="mb-8">
-        <div className="mb-4 flex items-center justify-between">
-          <div className="flex items-start gap-4">
-            <div>
-              <h1 className="text-3xl font-bold uppercase tracking-tight text-[#000000]">{client.full_name}</h1>
-              {client.email && <p className="mt-1 text-sm text-gray-600">{client.email}</p>}
-            </div>
-            <Badge variant={getStatusBadgeVariant(client.status) as any}>{client.status}</Badge>
+      <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+        <div className="flex items-start gap-4">
+          <div>
+            <h1 className="text-3xl font-bold uppercase tracking-tight text-[#000000]">{client.full_name}</h1>
+            {client.email && <p className="mt-1 text-sm text-gray-600">{client.email}</p>}
           </div>
-          <div className="flex flex-col items-end gap-2">
-            {!client.user_id && (
-              <button type="button" onClick={handleCreateInvite} disabled={isCreatingInvite} className="rounded-lg bg-[#FA0201] px-4 py-2 text-sm font-bold uppercase text-white hover:bg-red-700 disabled:opacity-60">
-                {isCreatingInvite ? 'Creating invite...' : 'Invite Client'}
-              </button>
-            )}
-            <Link href={`/coach/clients/${clientId}/hub-settings`} className="rounded-lg bg-black px-4 py-2 text-sm font-bold uppercase text-white hover:bg-gray-900">Hub Settings</Link>
-            <Link href="/coach/clients" className="text-sm font-semibold uppercase text-[#FA0201] hover:underline">Back to Clients</Link>
-          </div>
+          <Badge variant={getStatusBadgeVariant(client.status) as any}>{client.status}</Badge>
         </div>
+        <div id="invite-client" className="flex flex-col items-start gap-2 md:items-end">
+          {!client.user_id && (
+            <button type="button" onClick={handleCreateInvite} disabled={isCreatingInvite} className="rounded-lg bg-[#FA0201] px-4 py-2 text-sm font-bold uppercase text-white hover:bg-red-700 disabled:opacity-60">
+              {isCreatingInvite ? 'Creating invite...' : 'Invite Client'}
+            </button>
+          )}
+          <Link href={`/coach/clients/${clientId}/hub-settings`} className="rounded-lg bg-black px-4 py-2 text-sm font-bold uppercase text-white hover:bg-gray-900">Hub Settings</Link>
+          <Link href="/coach/clients" className="text-sm font-semibold uppercase text-[#FA0201] hover:underline">Back to Clients</Link>
+        </div>
+      </div>
 
+      <div className="space-y-8">
         {!client.user_id && inviteLink && (
-          <Card className="mt-4 border-2 border-[#FA0201]">
+          <Card className="border-2 border-[#FA0201]">
             <div className="space-y-3">
               <p className="text-sm font-bold uppercase text-[#000000]">Client invite link</p>
               <p className="text-sm text-gray-600">Send this link to the client. Once they create their account, this invite button will disappear from the profile.</p>
@@ -503,51 +526,67 @@ export default function ClientProfilePage() {
             </div>
           </Card>
         )}
-      </div>
 
-      <div className="space-y-8">
-        <div>
-          <SectionHeader title="PROGRAMME" accent />
-          <Card className="space-y-4">
-            {programmes.length === 0 ? (
-              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                <div>
-                  <p className="text-lg font-black uppercase text-[#000000]">No programme assigned</p>
-                  <p className="mt-1 text-sm text-gray-600">Assign a programme from the Library to create editable client-specific workouts.</p>
+        <Card className="border-2 border-black bg-black text-white">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="text-xs font-black uppercase tracking-wide text-gray-400">Next action</p>
+              <h2 className="mt-2 text-2xl font-black uppercase tracking-tight">{nextAction}</h2>
+              <p className="mt-2 text-sm font-semibold text-gray-300">
+                {snapshot.reviewsNeedingAction > 0
+                  ? `${snapshot.reviewsNeedingAction} item${snapshot.reviewsNeedingAction === 1 ? '' : 's'} need review.`
+                  : !client.user_id
+                    ? 'Client account is not connected yet.'
+                    : snapshot.workoutsScheduledThisWeek === 0
+                      ? 'No scheduled workouts detected for this week.'
+                      : 'No urgent coach action detected.'}
+              </p>
+            </div>
+            <Link href={nextActionHref} className="w-fit rounded-lg bg-[#FA0201] px-5 py-3 text-xs font-black uppercase text-white hover:bg-red-700">
+              {nextActionCta}
+            </Link>
+          </div>
+        </Card>
+
+        <div className="grid grid-cols-1 gap-8 xl:grid-cols-[minmax(0,1.6fr)_minmax(340px,0.8fr)]">
+          <section>
+            <SectionHeader title="PROGRAMME" accent />
+            <Card className="space-y-4">
+              {programmes.length === 0 ? (
+                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <p className="text-lg font-black uppercase text-[#000000]">No programme assigned</p>
+                    <p className="mt-1 text-sm text-gray-600">Assign a programme from the Library to create editable client-specific workouts.</p>
+                  </div>
+                  <Link href={`/coach/clients/${clientId}/program#assign-from-library`} className="rounded-lg bg-[#FA0201] px-5 py-3 text-center text-sm font-bold uppercase text-white hover:bg-red-700">
+                    Create client plan
+                  </Link>
                 </div>
-                <Link href={`/coach/clients/${clientId}/program#assign-from-library`} className="rounded-lg bg-[#FA0201] px-5 py-3 text-center text-sm font-bold uppercase text-white hover:bg-red-700">
-                  Create client plan
-                </Link>
-              </div>
-            ) : programmes.map((program) => (
-              <ProgrammeCard key={program.id} program={program} isExpanded={expandedProgrammeIds.has(program.id)} onToggle={() => toggleProgramme(program.id)} editHref={`/coach/clients/${clientId}/program`} />
-            ))}
-          </Card>
-        </div>
+              ) : programmes.map((program) => (
+                <ProgrammeCard key={program.id} program={program} isExpanded={expandedProgrammeIds.has(program.id)} onToggle={() => toggleProgramme(program.id)} editHref={`/coach/clients/${clientId}/program`} />
+              ))}
+            </Card>
+          </section>
 
-        <div>
-          <SectionHeader title="CLIENT SNAPSHOT" accent />
-          <Card>
-            <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <div>
+          <aside>
+            <SectionHeader title="CLIENT SNAPSHOT" accent />
+            <Card>
+              <div className="rounded-xl bg-gray-100 p-4">
                 <p className="text-xs font-bold uppercase text-gray-500">Current week</p>
-                <p className="text-sm font-semibold text-[#000000]">{formatDate(snapshot.weekStart)} → {formatDate(snapshot.weekEnd)}</p>
+                <p className="mt-1 text-sm font-black text-[#000000]">{formatDate(snapshot.weekStart)} → {formatDate(snapshot.weekEnd)}</p>
               </div>
-              <div className="rounded-xl bg-black px-4 py-3 text-white">
-                <p className="text-xs font-bold uppercase text-gray-400">Next action</p>
-                <p className="text-sm font-bold uppercase">{getNextAction()}</p>
+
+              <div className="mt-4 divide-y divide-gray-200">
+                <CompactSnapshotLine label="Account" value={client.user_id ? 'Linked' : 'Invite needed'} />
+                <CompactSnapshotLine label="Scheduled" value={snapshot.workoutsScheduledThisWeek} />
+                <CompactSnapshotLine label="Completed" value={snapshot.workoutsCompletedThisWeek} />
+                <CompactSnapshotLine label="Remaining" value={snapshot.workoutsRemainingThisWeek} />
+                <CompactSnapshotLine label="Needs review" value={snapshot.reviewsNeedingAction} />
+                <CompactSnapshotLine label="Current focus" value={client.current_focus || 'Not set'} />
+                <CompactSnapshotLine label="Next review" value={formatDate(client.next_review_date)} />
               </div>
-            </div>
 
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-              <SnapshotMetric label="Account" value={client.user_id ? 'Linked' : 'Invite'} helper={client.user_id ? 'Client account connected' : 'Invite still needed'} />
-              <SnapshotMetric label="Scheduled" value={snapshot.workoutsScheduledThisWeek} helper="Workouts this week" />
-              <SnapshotMetric label="Completed" value={snapshot.workoutsCompletedThisWeek} helper={`${snapshot.workoutsRemainingThisWeek} remaining`} />
-              <SnapshotMetric label="Needs review" value={snapshot.reviewsNeedingAction} helper="Open coach actions" />
-            </div>
-
-            <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
-              <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+              <div className="mt-5 rounded-xl border border-gray-200 bg-gray-50 p-4">
                 <p className="text-xs font-bold uppercase text-gray-500">Latest feedback</p>
                 {snapshot.latestFeedback ? (
                   <div className="mt-2 space-y-2">
@@ -557,23 +596,18 @@ export default function ClientProfilePage() {
                   </div>
                 ) : <p className="mt-2 text-sm text-gray-600">No feedback sent yet.</p>}
               </div>
-              <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-                <p className="text-xs font-bold uppercase text-gray-500">Current coaching focus</p>
-                <p className="mt-2 text-sm font-bold text-[#000000]">{client.current_focus || 'No current focus set'}</p>
-                <p className="mt-2 text-sm text-gray-700"><span className="font-semibold">Next review:</span> {formatDate(client.next_review_date)}</p>
-              </div>
-            </div>
-          </Card>
+            </Card>
+          </aside>
         </div>
 
-        <div>
-          <SectionHeader title="PERFORMANCE TRACKING" accent />
+        <section>
+          <SectionHeader title="CLIENT PROGRESS GRAPHS" accent />
           <Card>
             <ClientMetricChartDashboard clientId={clientId} />
           </Card>
-        </div>
+        </section>
 
-        <div>
+        <section>
           <SectionHeader title="CLIENT ACTIONS" accent />
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
             <Card>
@@ -642,7 +676,7 @@ export default function ClientProfilePage() {
               </div>
             </Card>
           </div>
-        </div>
+        </section>
       </div>
     </div>
   );
