@@ -411,7 +411,7 @@ export default function ClientWorkoutSessionPage() {
               </label>
               <label className="block rounded-xl bg-gray-100 p-4">
                 <span className="block text-xs font-black uppercase text-gray-500">Set notes</span>
-                <input value={currentLog.notes} onChange={(event) => updateLog(currentFocusItem.set.id, { notes: event.target.value })} placeholder="Optional" className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-3 py-3 text-sm text-black" />
+                <textarea value={currentLog.notes} onChange={(event) => updateLog(currentFocusItem.set.id, { notes: event.target.value })} placeholder="Optional" rows={4} className="mt-2 min-h-28 w-full resize-y rounded-lg border border-gray-300 bg-white px-3 py-3 text-sm text-black" />
               </label>
             </div>
           </section>
