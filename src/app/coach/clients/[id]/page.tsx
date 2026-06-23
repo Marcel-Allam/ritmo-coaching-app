@@ -30,23 +30,6 @@ interface SubmissionRecord {
   answer_text?: string | null;
 }
 
-interface LatestFeedbackRecord {
-  feedback_date: string;
-  main_focus: string | null;
-  agreed_action: string | null;
-  next_review_date: string | null;
-}
-
-interface ClientSnapshot {
-  weekStart: string;
-  weekEnd: string;
-  workoutsScheduledThisWeek: number;
-  workoutsCompletedThisWeek: number;
-  workoutsRemainingThisWeek: number;
-  reviewsNeedingAction: number;
-  latestFeedback: LatestFeedbackRecord | null;
-}
-
 type ProgramRecord = { id: string; title: string; goal: string | null; status: string; created_at: string };
 type ProgramWorkoutRecord = { id: string; program_id: string; title: string; workout_order: number; scheduled_date: string | null; status: string };
 type ProgramExerciseRecord = { id: string; workout_id: string; exercise_order: number; exercise_name: string };
@@ -56,16 +39,6 @@ type ProgramOverview = ProgramRecord & {
   workouts: Array<ProgramWorkoutRecord & {
     exercises: Array<ProgramExerciseRecord & { sets: ProgramSetRecord[] }>;
   }>;
-};
-
-const emptySnapshot: ClientSnapshot = {
-  weekStart: '',
-  weekEnd: '',
-  workoutsScheduledThisWeek: 0,
-  workoutsCompletedThisWeek: 0,
-  workoutsRemainingThisWeek: 0,
-  reviewsNeedingAction: 0,
-  latestFeedback: null,
 };
 
 const reviewSubmissionTypes = ['workout_session'];
@@ -82,26 +55,6 @@ const getReviewBadgeVariant = (status: string) => {
   return 'warning';
 };
 
-const getCurrentWeekRange = () => {
-  const today = new Date();
-  const day = today.getDay();
-  const mondayOffset = day === 0 ? -6 : 1 - day;
-  const monday = new Date(today);
-  monday.setDate(today.getDate() + mondayOffset);
-  monday.setHours(0, 0, 0, 0);
-
-  const sunday = new Date(monday);
-  sunday.setDate(monday.getDate() + 6);
-  sunday.setHours(23, 59, 59, 999);
-
-  return {
-    weekStartDate: monday.toISOString().slice(0, 10),
-    weekEndDate: sunday.toISOString().slice(0, 10),
-    weekStartTimestamp: monday.toISOString(),
-    weekEndTimestamp: sunday.toISOString(),
-  };
-};
-
 const getSetSummary = (sets: ProgramSetRecord[]) => {
   if (sets.length === 0) return 'No prescribed sets';
   const reps = sets.map((set) => set.target_reps || '?').join(' / ');
@@ -111,13 +64,6 @@ const getSetSummary = (sets: ProgramSetRecord[]) => {
     : '';
   return `${sets.length} set${sets.length === 1 ? '' : 's'} × ${reps} reps${loadLabel}`;
 };
-
-const CompactSnapshotLine = ({ label, value }: { label: string; value: string | number }) => (
-  <div className="flex items-center justify-between gap-4 border-b border-gray-200 py-3 last:border-b-0">
-    <p className="text-xs font-black uppercase tracking-wide text-gray-500">{label}</p>
-    <p className="text-sm font-black text-[#000000]">{value}</p>
-  </div>
-);
 
 const ProgrammeCard = ({
   program,
@@ -204,7 +150,6 @@ export default function ClientProfilePage() {
 
   const [client, setClient] = useState<ClientRecord | null>(null);
   const [submissions, setSubmissions] = useState<SubmissionRecord[]>([]);
-  const [snapshot, setSnapshot] = useState<ClientSnapshot>(emptySnapshot);
   const [programmes, setProgrammes] = useState<ProgramOverview[]>([]);
   const [expandedProgrammeIds, setExpandedProgrammeIds] = useState<Set<string>>(new Set());
   const [isLoading, setIsLoading] = useState(true);
@@ -287,9 +232,8 @@ export default function ClientProfilePage() {
     }
 
     const supabase = createClient();
-    const weekRange = getCurrentWeekRange();
 
-    const [clientResult, submissionsResult, scheduledWorkoutsResult, completedWorkoutsResult, latestFeedbackResult] = await Promise.all([
+    const [clientResult, submissionsResult] = await Promise.all([
       supabase.from('clients').select('id, full_name, email, user_id, status, current_focus, next_review_date, next_call_date, start_date').eq('id', clientId).single(),
       supabase
         .from('task_submissions')
@@ -298,12 +242,9 @@ export default function ClientProfilePage() {
         .in('submission_type', reviewSubmissionTypes)
         .order('submitted_at', { ascending: false })
         .limit(8),
-      supabase.from('program_workouts').select('id, scheduled_date, status').eq('client_id', clientId).neq('status', 'archived').not('scheduled_date', 'is', null).gte('scheduled_date', weekRange.weekStartDate).lte('scheduled_date', weekRange.weekEndDate),
-      supabase.from('workout_sessions').select('id, status, completed_at').eq('client_id', clientId).eq('status', 'completed').gte('completed_at', weekRange.weekStartTimestamp).lte('completed_at', weekRange.weekEndTimestamp),
-      supabase.from('feedback_notes').select('feedback_date, main_focus, agreed_action, next_review_date').eq('client_id', clientId).order('feedback_date', { ascending: false }).order('created_at', { ascending: false }).limit(1),
     ]);
 
-    const firstError = clientResult.error || submissionsResult.error || scheduledWorkoutsResult.error || completedWorkoutsResult.error || latestFeedbackResult.error;
+    const firstError = clientResult.error || submissionsResult.error;
     if (firstError) {
       setError(firstError.message);
       setIsLoading(false);
@@ -346,21 +287,8 @@ export default function ClientProfilePage() {
       return;
     }
 
-    const workoutsScheduledThisWeek = scheduledWorkoutsResult.data?.length ?? 0;
-    const workoutsCompletedThisWeek = completedWorkoutsResult.data?.length ?? 0;
-    const visibleReviewCount = visibleSubmissions.filter((submission) => submission.review_status !== 'reviewed' && submission.review_status !== 'resolved').length;
-
     setClient(clientResult.data as ClientRecord);
     setSubmissions(visibleSubmissions);
-    setSnapshot({
-      weekStart: weekRange.weekStartDate,
-      weekEnd: weekRange.weekEndDate,
-      workoutsScheduledThisWeek,
-      workoutsCompletedThisWeek,
-      workoutsRemainingThisWeek: Math.max(workoutsScheduledThisWeek - workoutsCompletedThisWeek, 0),
-      reviewsNeedingAction: visibleReviewCount,
-      latestFeedback: ((latestFeedbackResult.data ?? [])[0] as LatestFeedbackRecord | undefined) ?? null,
-    });
     setIsLoading(false);
   };
 
@@ -464,57 +392,24 @@ export default function ClientProfilePage() {
 
         <CoachPeriodisationSection clientId={clientId} programs={programmes} />
 
-        <div className="grid grid-cols-1 gap-8 xl:grid-cols-[minmax(0,1.6fr)_minmax(340px,0.8fr)]">
-          <section>
-            <SectionHeader title="PROGRAMME" accent />
-            <Card className="space-y-4">
-              {programmes.length === 0 ? (
-                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                  <div>
-                    <p className="text-lg font-black uppercase text-[#000000]">No programme assigned</p>
-                    <p className="mt-1 text-sm text-gray-600">Assign a programme from the Library to create editable client-specific workouts.</p>
-                  </div>
-                  <Link href={`/coach/clients/${clientId}/program#assign-from-library`} className="rounded-lg bg-[#FA0201] px-5 py-3 text-center text-sm font-bold uppercase text-white hover:bg-red-700">
-                    Create client plan
-                  </Link>
+        <section>
+          <SectionHeader title="PROGRAMME" accent />
+          <Card className="space-y-4">
+            {programmes.length === 0 ? (
+              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <p className="text-lg font-black uppercase text-[#000000]">No programme assigned</p>
+                  <p className="mt-1 text-sm text-gray-600">Create a programme from the Library to build editable client-specific workouts.</p>
                 </div>
-              ) : programmes.map((program) => (
-                <ProgrammeCard key={program.id} program={program} isExpanded={expandedProgrammeIds.has(program.id)} onToggle={() => toggleProgramme(program.id)} editHref={`/coach/clients/${clientId}/program`} />
-              ))}
-            </Card>
-          </section>
-
-          <aside>
-            <SectionHeader title="CLIENT SNAPSHOT" accent />
-            <Card>
-              <div className="rounded-xl bg-gray-100 p-4">
-                <p className="text-xs font-bold uppercase text-gray-500">Current week</p>
-                <p className="mt-1 text-sm font-black text-[#000000]">{formatDate(snapshot.weekStart)} → {formatDate(snapshot.weekEnd)}</p>
+                <Link href={`/coach/clients/${clientId}/program#assign-from-library`} className="rounded-lg bg-[#FA0201] px-5 py-3 text-center text-sm font-bold uppercase text-white hover:bg-red-700">
+                  Create client plan
+                </Link>
               </div>
-
-              <div className="mt-4 divide-y divide-gray-200">
-                <CompactSnapshotLine label="Account" value={client.user_id ? 'Linked' : 'Invite needed'} />
-                <CompactSnapshotLine label="Scheduled" value={snapshot.workoutsScheduledThisWeek} />
-                <CompactSnapshotLine label="Completed" value={snapshot.workoutsCompletedThisWeek} />
-                <CompactSnapshotLine label="Remaining" value={snapshot.workoutsRemainingThisWeek} />
-                <CompactSnapshotLine label="Needs review" value={snapshot.reviewsNeedingAction} />
-                <CompactSnapshotLine label="Current focus" value={client.current_focus || 'Not set'} />
-                <CompactSnapshotLine label="Next review" value={formatDate(client.next_review_date)} />
-              </div>
-
-              <div className="mt-5 rounded-xl border border-gray-200 bg-gray-50 p-4">
-                <p className="text-xs font-bold uppercase text-gray-500">Latest feedback</p>
-                {snapshot.latestFeedback ? (
-                  <div className="mt-2 space-y-2">
-                    <p className="text-sm font-bold text-[#000000]">Sent {formatDate(snapshot.latestFeedback.feedback_date)}</p>
-                    <p className="text-sm text-gray-700"><span className="font-semibold">Main focus:</span> {snapshot.latestFeedback.main_focus || 'Not recorded'}</p>
-                    <p className="text-sm text-gray-700"><span className="font-semibold">Agreed action:</span> {snapshot.latestFeedback.agreed_action || 'Not recorded'}</p>
-                  </div>
-                ) : <p className="mt-2 text-sm text-gray-600">No feedback sent yet.</p>}
-              </div>
-            </Card>
-          </aside>
-        </div>
+            ) : programmes.map((program) => (
+              <ProgrammeCard key={program.id} program={program} isExpanded={expandedProgrammeIds.has(program.id)} onToggle={() => toggleProgramme(program.id)} editHref={`/coach/clients/${clientId}/program`} />
+            ))}
+          </Card>
+        </section>
 
         <section>
           <SectionHeader title="CLIENT PROGRESS GRAPHS" accent />
