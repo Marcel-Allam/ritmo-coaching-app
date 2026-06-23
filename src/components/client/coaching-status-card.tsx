@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import Link from 'next/link';
 import { Card } from '@/components/ui/card';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
 
@@ -93,10 +92,6 @@ export function CoachingStatusCard({ clientId }: { clientId: string }) {
           </div>
         </div>
       </div>
-
-      <Link href="/client/feedback" className="mt-6 inline-flex w-fit rounded-lg border border-white/30 px-4 py-3 text-xs font-black uppercase text-white hover:bg-white hover:text-black">
-        View feedback
-      </Link>
     </Card>
   );
 }
