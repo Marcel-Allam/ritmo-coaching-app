@@ -28,6 +28,7 @@ interface CoachCallBookingRecord {
 }
 
 interface ClientRecord { id: string; full_name: string }
+interface SessionIdRecord { id: string }
 
 const workoutReviewTypes = ['workout_session', 'workout_checkin'];
 
@@ -87,8 +88,29 @@ export default function CoachActionsPage() {
     const loadedSubmissions = (submissionResult.data ?? []) as SubmissionRecord[];
     const loadedBookings = (bookingResult.data ?? []) as CoachCallBookingRecord[];
 
+    const workoutSessionSubmissionIds = loadedSubmissions
+      .filter((submission) => submission.submission_type === 'workout_session' && submission.answer_text)
+      .map((submission) => submission.answer_text as string);
+
+    let validWorkoutSessionIds = new Set<string>();
+    if (workoutSessionSubmissionIds.length > 0) {
+      const { data: sessionData, error: sessionError } = await supabase
+        .from('workout_sessions')
+        .select('id')
+        .in('id', workoutSessionSubmissionIds);
+
+      if (sessionError) { setError(sessionError.message); setIsLoading(false); return; }
+      validWorkoutSessionIds = new Set(((sessionData ?? []) as SessionIdRecord[]).map((session) => session.id));
+    }
+
+    const visibleSubmissions = loadedSubmissions.filter((submission) => {
+      if (submission.submission_type !== 'workout_session') return true;
+      if (!submission.answer_text) return false;
+      return validWorkoutSessionIds.has(submission.answer_text);
+    });
+
     const clientIds = Array.from(new Set([
-      ...loadedSubmissions.map((submission) => submission.client_id),
+      ...visibleSubmissions.map((submission) => submission.client_id),
       ...loadedBookings.map((booking) => booking.client_id),
     ]));
 
@@ -102,7 +124,7 @@ export default function CoachActionsPage() {
       setClients(clientMap);
     }
 
-    setSubmissions(loadedSubmissions);
+    setSubmissions(visibleSubmissions);
     setCallBookings(loadedBookings);
     setIsLoading(false);
   };
