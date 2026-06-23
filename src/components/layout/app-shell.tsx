@@ -40,10 +40,9 @@ const DumbbellIcon = () => (
   </svg>
 );
 
-const SettingsIcon = () => (
+const CalendarIcon = () => (
   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37a1.724 1.724 0 002.572-1.065z" />
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3M5 11h14M7 5h10a2 2 0 012 2v12a2 2 0 01-2 2H7a2 2 0 01-2-2V7a2 2 0 012-2z" />
   </svg>
 );
 
@@ -57,7 +56,7 @@ const coachNavItems = [
   { label: 'Dashboard', href: '/coach', icon: HomeIcon },
   { label: 'Clients', href: '/coach/clients', icon: UsersIcon },
   { label: 'Actions', href: '/coach/actions', icon: ClipboardIcon },
-  { label: 'Calendar', href: '/coach/calendar', icon: SettingsIcon },
+  { label: 'Calendar', href: '/coach/calendar', icon: CalendarIcon },
   { label: 'Library', href: '/coach/library', icon: DumbbellIcon },
 ];
 
