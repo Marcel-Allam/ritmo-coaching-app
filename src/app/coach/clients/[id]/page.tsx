@@ -6,8 +6,6 @@ import { useParams } from 'next/navigation';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { SectionHeader } from '@/components/ui/section-header';
-import { TaskCard } from '@/components/ui/task-card';
-import { Input } from '@/components/ui/input';
 import { ClientMetricChartDashboard } from '@/components/coach/client-metric-chart-dashboard';
 import { CoachPeriodisationSection } from '@/components/coach/coach-periodisation-section';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
@@ -22,16 +20,6 @@ interface ClientRecord {
   next_review_date: string | null;
   next_call_date: string | null;
   start_date: string | null;
-}
-
-interface AssignedTaskRecord {
-  id: string;
-  task_name: string;
-  task_type: string;
-  frequency: string;
-  instructions: string | null;
-  active: boolean;
-  end_date: string | null;
 }
 
 interface SubmissionRecord {
@@ -71,13 +59,6 @@ type ProgramOverview = ProgramRecord & {
   }>;
 };
 
-const emptyTaskForm = {
-  taskType: 'weekly_checkin',
-  frequency: 'weekly',
-  endDate: '',
-  instructions: '',
-};
-
 const emptySnapshot: ClientSnapshot = {
   weekStart: '',
   weekEnd: '',
@@ -88,18 +69,7 @@ const emptySnapshot: ClientSnapshot = {
   latestFeedback: null,
 };
 
-const taskOptions = [
-  { value: 'weekly_checkin', label: 'Weekly check-in' },
-  { value: 'training_availability', label: 'Training availability' },
-  { value: 'workout_checkin', label: 'Workout check-in' },
-  { value: 'key_lift', label: 'Key lift / top set' },
-  { value: 'nutrition', label: 'Nutrition submission' },
-  { value: 'bodyweight', label: 'Bodyweight' },
-  { value: 'progress_photo', label: 'Progress photo' },
-  { value: 'habit_check', label: 'Habit check' },
-];
-
-const getTaskLabel = (taskType: string) => taskOptions.find((task) => task.value === taskType)?.label ?? taskType.replaceAll('_', ' ');
+const reviewSubmissionTypes = ['bodyweight', 'workout_session'];
 
 const formatDate = (value: string | null) => {
   if (!value) return 'Not set';
@@ -107,6 +77,11 @@ const formatDate = (value: string | null) => {
 };
 
 const getStatusBadgeVariant = (status: string) => (status === 'active' ? 'success' : 'warning');
+
+const getReviewBadgeVariant = (status: string) => {
+  if (status === 'reviewed' || status === 'resolved') return 'success';
+  return 'warning';
+};
 
 const getCurrentWeekRange = () => {
   const today = new Date();
@@ -229,16 +204,12 @@ export default function ClientProfilePage() {
   const clientId = params.id as string;
 
   const [client, setClient] = useState<ClientRecord | null>(null);
-  const [tasks, setTasks] = useState<AssignedTaskRecord[]>([]);
   const [submissions, setSubmissions] = useState<SubmissionRecord[]>([]);
   const [snapshot, setSnapshot] = useState<ClientSnapshot>(emptySnapshot);
   const [programmes, setProgrammes] = useState<ProgramOverview[]>([]);
   const [expandedProgrammeIds, setExpandedProgrammeIds] = useState<Set<string>>(new Set());
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isTaskFormOpen, setIsTaskFormOpen] = useState(false);
-  const [isSavingTask, setIsSavingTask] = useState(false);
-  const [taskForm, setTaskForm] = useState(emptyTaskForm);
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [isCreatingInvite, setIsCreatingInvite] = useState(false);
   const [inviteMessage, setInviteMessage] = useState<string | null>(null);
@@ -319,17 +290,21 @@ export default function ClientProfilePage() {
     const supabase = createClient();
     const weekRange = getCurrentWeekRange();
 
-    const [clientResult, tasksResult, submissionsResult, scheduledWorkoutsResult, completedWorkoutsResult, reviewCountResult, latestFeedbackResult] = await Promise.all([
+    const [clientResult, submissionsResult, scheduledWorkoutsResult, completedWorkoutsResult, latestFeedbackResult] = await Promise.all([
       supabase.from('clients').select('id, full_name, email, user_id, status, current_focus, next_review_date, next_call_date, start_date').eq('id', clientId).single(),
-      supabase.from('assigned_tasks').select('id, task_name, task_type, frequency, instructions, active, end_date').eq('client_id', clientId).eq('active', true).order('created_at', { ascending: false }),
-      supabase.from('task_submissions').select('id, assigned_task_id, submission_type, submitted_at, review_status, answer_text').eq('client_id', clientId).order('submitted_at', { ascending: false }).limit(5),
+      supabase
+        .from('task_submissions')
+        .select('id, assigned_task_id, submission_type, submitted_at, review_status, answer_text')
+        .eq('client_id', clientId)
+        .in('submission_type', reviewSubmissionTypes)
+        .order('submitted_at', { ascending: false })
+        .limit(8),
       supabase.from('program_workouts').select('id, scheduled_date, status').eq('client_id', clientId).neq('status', 'archived').not('scheduled_date', 'is', null).gte('scheduled_date', weekRange.weekStartDate).lte('scheduled_date', weekRange.weekEndDate),
       supabase.from('workout_sessions').select('id, status, completed_at').eq('client_id', clientId).eq('status', 'completed').gte('completed_at', weekRange.weekStartTimestamp).lte('completed_at', weekRange.weekEndTimestamp),
-      supabase.from('task_submissions').select('id', { count: 'exact', head: true }).eq('client_id', clientId).neq('review_status', 'reviewed'),
       supabase.from('feedback_notes').select('feedback_date, main_focus, agreed_action, next_review_date').eq('client_id', clientId).order('feedback_date', { ascending: false }).order('created_at', { ascending: false }).limit(1),
     ]);
 
-    const firstError = clientResult.error || tasksResult.error || submissionsResult.error || scheduledWorkoutsResult.error || completedWorkoutsResult.error || reviewCountResult.error || latestFeedbackResult.error;
+    const firstError = clientResult.error || submissionsResult.error || scheduledWorkoutsResult.error || completedWorkoutsResult.error || latestFeedbackResult.error;
     if (firstError) {
       setError(firstError.message);
       setIsLoading(false);
@@ -377,7 +352,6 @@ export default function ClientProfilePage() {
     const visibleReviewCount = visibleSubmissions.filter((submission) => submission.review_status !== 'reviewed' && submission.review_status !== 'resolved').length;
 
     setClient(clientResult.data as ClientRecord);
-    setTasks((tasksResult.data ?? []) as AssignedTaskRecord[]);
     setSubmissions(visibleSubmissions);
     setSnapshot({
       weekStart: weekRange.weekStartDate,
@@ -433,42 +407,6 @@ export default function ClientProfilePage() {
       setInviteMessage('Copy failed. Select and copy the link manually.');
     }
   };
-
-  const handleCreateTask = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!isSupabaseConfigured) return;
-
-    setIsSavingTask(true);
-    setError(null);
-
-    const taskLabel = getTaskLabel(taskForm.taskType);
-    const supabase = createClient();
-    const { error: insertError } = await supabase.from('assigned_tasks').insert({
-      client_id: clientId,
-      task_name: taskLabel,
-      task_type: taskForm.taskType,
-      frequency: taskForm.frequency,
-      required: true,
-      start_date: new Date().toISOString().slice(0, 10),
-      end_date: taskForm.endDate || null,
-      active: true,
-      instructions: taskForm.instructions.trim() || null,
-    });
-
-    if (insertError) {
-      setError(insertError.message);
-      setIsSavingTask(false);
-      return;
-    }
-
-    setTaskForm(emptyTaskForm);
-    setIsTaskFormOpen(false);
-    setIsSavingTask(false);
-    setIsLoading(true);
-    await loadClientProfile();
-  };
-
-  const isTaskComplete = (task: AssignedTaskRecord) => submissions.some((submission) => submission.assigned_task_id === task.id || submission.submission_type === task.task_type);
 
   const getSubmissionHref = (submission: SubmissionRecord) => {
     if (submission.submission_type === 'workout_session' && submission.answer_text) return `/coach/clients/${clientId}/workout-review/${submission.answer_text}`;
@@ -632,73 +570,23 @@ export default function ClientProfilePage() {
 
         <section>
           <SectionHeader title="CLIENT ACTIONS" accent />
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            <Card>
-              <div className="mb-4 flex items-center justify-between">
-                <div>
-                  <h2 className="text-lg font-bold uppercase text-[#000000]">Active tasks</h2>
-                  <p className="text-sm text-gray-600">Assign lightweight accountability tasks for this client.</p>
-                </div>
-                <button type="button" onClick={() => setIsTaskFormOpen((open) => !open)} className="rounded-lg bg-black px-4 py-2 text-xs font-bold uppercase text-white hover:bg-gray-900">
-                  {isTaskFormOpen ? 'Close' : 'Add task'}
-                </button>
-              </div>
-
-              {isTaskFormOpen && (
-                <form onSubmit={handleCreateTask} className="mb-5 space-y-4 rounded-xl border border-gray-200 bg-gray-50 p-4">
-                  <label className="block">
-                    <span className="mb-1 block text-xs font-bold uppercase text-gray-500">Task type</span>
-                    <select value={taskForm.taskType} onChange={(event) => setTaskForm((current) => ({ ...current, taskType: event.target.value }))} className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-[#000000]">
-                      {taskOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                    </select>
-                  </label>
-                  <label className="block">
-                    <span className="mb-1 block text-xs font-bold uppercase text-gray-500">Frequency</span>
-                    <select value={taskForm.frequency} onChange={(event) => setTaskForm((current) => ({ ...current, frequency: event.target.value }))} className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-[#000000]">
-                      <option value="daily">Daily</option>
-                      <option value="weekly">Weekly</option>
-                      <option value="once">Once</option>
-                    </select>
-                  </label>
-                  <Input label="End date" type="date" value={taskForm.endDate} onChange={(event) => setTaskForm((current) => ({ ...current, endDate: event.target.value }))} />
-                  <label className="block">
-                    <span className="mb-1 block text-xs font-bold uppercase text-gray-500">Instructions</span>
-                    <textarea value={taskForm.instructions} onChange={(event) => setTaskForm((current) => ({ ...current, instructions: event.target.value }))} rows={3} className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-[#000000]" placeholder="What should the client submit?" />
-                  </label>
-                  <button type="submit" disabled={isSavingTask} className="rounded-lg bg-[#FA0201] px-4 py-2 text-xs font-bold uppercase text-white hover:bg-red-700 disabled:opacity-60">
-                    {isSavingTask ? 'Saving...' : 'Save task'}
-                  </button>
-                </form>
-              )}
-
-              <div className="space-y-3">
-                {tasks.length === 0 ? <p className="text-sm text-gray-600">No active tasks assigned.</p> : tasks.map((task) => (
-                  <TaskCard key={task.id} title={task.task_name} meta={`${getTaskLabel(task.task_type)} • ${task.frequency}`} status={isTaskComplete(task) ? 'Completed' : 'Open'}>
-                    {task.instructions && <p className="text-sm text-gray-700">{task.instructions}</p>}
-                    <p className="text-xs font-semibold uppercase text-gray-500">Ends: {formatDate(task.end_date)}</p>
-                  </TaskCard>
-                ))}
-              </div>
-            </Card>
-
-            <Card>
-              <h2 className="mb-4 text-lg font-bold uppercase text-[#000000]">Recent submissions</h2>
-              <div className="space-y-3">
-                {submissions.length === 0 ? <p className="text-sm text-gray-600">No submissions yet.</p> : submissions.map((submission) => (
-                  <div key={submission.id} className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-bold uppercase text-[#000000]">{submission.submission_type.replaceAll('_', ' ')}</p>
-                        <p className="text-xs font-semibold text-gray-500">{formatDate(submission.submitted_at)}</p>
-                      </div>
-                      <Badge variant={submission.review_status === 'reviewed' ? 'success' : 'warning'}>{submission.review_status}</Badge>
+          <Card>
+            <h2 className="mb-4 text-lg font-bold uppercase text-[#000000]">Recent submissions</h2>
+            <div className="space-y-3">
+              {submissions.length === 0 ? <p className="text-sm text-gray-600">No bodyweight or workout session submissions yet.</p> : submissions.map((submission) => (
+                <div key={submission.id} className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-bold uppercase text-[#000000]">{submission.submission_type.replaceAll('_', ' ')}</p>
+                      <p className="text-xs font-semibold text-gray-500">{formatDate(submission.submitted_at)}</p>
                     </div>
-                    <Link href={getSubmissionHref(submission)} className="mt-3 inline-block text-xs font-bold uppercase text-[#FA0201] hover:underline">Review submission</Link>
+                    <Badge variant={getReviewBadgeVariant(submission.review_status) as any}>{submission.review_status}</Badge>
                   </div>
-                ))}
-              </div>
-            </Card>
-          </div>
+                  <Link href={getSubmissionHref(submission)} className="mt-3 inline-block text-xs font-bold uppercase text-[#FA0201] hover:underline">Review submission</Link>
+                </div>
+              ))}
+            </div>
+          </Card>
         </section>
       </div>
     </div>
