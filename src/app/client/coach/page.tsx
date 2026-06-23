@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
 import { PageHeader } from '@/components/layout/page-header';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -11,13 +10,6 @@ import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
 import { useAuth } from '@/lib/auth-context';
 
 type ClientRecord = { id: string; full_name: string };
-
-type AssignedTaskRecord = {
-  id: string;
-  task_type: string;
-  task_name: string;
-  instructions: string | null;
-};
 
 type CoachCallBookingStatus = 'requested' | 'accepted' | 'declined' | 'reschedule_pending' | 'cancelled' | 'completed';
 
@@ -50,13 +42,6 @@ type AvailableSlotDay = {
 
 const bookingSelect = 'id, booking_type, requested_starts_at, requested_ends_at, starts_at, ends_at, status, client_notes, coach_note, suggested_starts_at, suggested_ends_at, created_at';
 const bookingWindowDays = 6;
-
-const coachRequestRoutes: Record<string, string> = {
-  key_lift: '/client/submit/key-lift',
-  workout_checkin: '/client/submit/workout-checkin',
-};
-
-const formatTaskType = (taskType: string) => taskType.replaceAll('_', ' ');
 
 const formatDateTime = (value: string) => new Intl.DateTimeFormat('en-GB', {
   day: 'numeric',
@@ -161,7 +146,6 @@ const groupSlotsByDay = (slots: AvailableSlotRecord[]) => {
 export default function ClientCoachPage() {
   const { user } = useAuth();
   const [client, setClient] = useState<ClientRecord | null>(null);
-  const [tasks, setTasks] = useState<AssignedTaskRecord[]>([]);
   const [booking, setBooking] = useState<CoachCallBookingRecord | null>(null);
   const [availableSlots, setAvailableSlots] = useState<AvailableSlotRecord[]>([]);
   const [selectedDayKey, setSelectedDayKey] = useState<string | null>(null);
@@ -210,14 +194,7 @@ export default function ClientCoachPage() {
       const linkedClient = clientData as ClientRecord;
       setClient(linkedClient);
 
-      const [taskResult, bookingResult, slotResult] = await Promise.all([
-        supabase
-          .from('assigned_tasks')
-          .select('id, task_type, task_name, instructions')
-          .eq('client_id', linkedClient.id)
-          .eq('active', true)
-          .in('task_type', ['key_lift', 'workout_checkin'])
-          .order('created_at', { ascending: false }),
+      const [bookingResult, slotResult] = await Promise.all([
         supabase
           .from('coach_call_bookings')
           .select(bookingSelect)
@@ -226,12 +203,6 @@ export default function ClientCoachPage() {
           .limit(1),
         supabase.rpc('get_available_coach_call_slots', { p_days_ahead: bookingWindowDays }),
       ]);
-
-      if (taskResult.error) {
-        setMessage(taskResult.error.message);
-        setLoading(false);
-        return;
-      }
 
       if (bookingResult.error) {
         setMessage(bookingResult.error.message);
@@ -245,7 +216,6 @@ export default function ClientCoachPage() {
         return;
       }
 
-      setTasks((taskResult.data ?? []) as AssignedTaskRecord[]);
       setBooking((bookingResult.data?.[0] ?? null) as CoachCallBookingRecord | null);
       setAvailableSlots((slotResult.data ?? []) as AvailableSlotRecord[]);
       setLoading(false);
@@ -254,7 +224,6 @@ export default function ClientCoachPage() {
     loadCoachPage();
   }, [user]);
 
-  const coachRequestedTasks = useMemo(() => tasks, [tasks]);
   const availableSlotDays = useMemo(() => groupSlotsByDay(availableSlots), [availableSlots]);
   const selectedDay = useMemo(() => availableSlotDays.find((day) => day.key === selectedDayKey) ?? availableSlotDays[0] ?? null, [availableSlotDays, selectedDayKey]);
   const selectedSlot = useMemo(() => availableSlots.find((slot) => slot.slot_start === selectedSlotStart) ?? null, [availableSlots, selectedSlotStart]);
@@ -538,23 +507,6 @@ export default function ClientCoachPage() {
               ) : null}
             </Card>
           </section>
-
-          {coachRequestedTasks.length > 0 && (
-            <section>
-              <SectionHeader title="COACH REQUESTS" accent />
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                {coachRequestedTasks.map((task) => (
-                  <Link key={task.id} href={coachRequestRoutes[task.task_type] || '/client/coach'}>
-                    <Card className="h-full hover:bg-gray-50">
-                      <p className="text-xs font-bold uppercase text-[#FA0201]">Coach requested</p>
-                      <h2 className="mt-2 text-xl font-black uppercase text-[#000000]">{task.task_name || formatTaskType(task.task_type)}</h2>
-                      <p className="mt-3 text-sm leading-relaxed text-gray-700">{task.instructions || `Complete this ${formatTaskType(task.task_type)} update for your coach.`}</p>
-                    </Card>
-                  </Link>
-                ))}
-              </div>
-            </section>
-          )}
         </div>
       </main>
     </div>
