@@ -64,6 +64,7 @@ type ProgramRecord = { id: string; title: string; goal: string | null; status: s
 type ProgramWorkoutRecord = { id: string; program_id: string; title: string; workout_order: number; scheduled_date: string | null; status: string };
 type ProgramExerciseRecord = { id: string; workout_id: string; exercise_order: number; exercise_name: string };
 type ProgramSetRecord = { id: string; exercise_id: string; set_order: number; target_reps: string | null; target_weight_kg: number | null; target_rpe: number | null };
+type SessionIdRecord = { id: string };
 type ProgramOverview = ProgramRecord & {
   workouts: Array<ProgramWorkoutRecord & {
     exercises: Array<ProgramExerciseRecord & { sets: ProgramSetRecord[] }>;
@@ -335,6 +336,32 @@ export default function ClientProfilePage() {
       return;
     }
 
+    const loadedSubmissions = (submissionsResult.data ?? []) as SubmissionRecord[];
+    const workoutSessionSubmissionIds = loadedSubmissions
+      .filter((submission) => submission.submission_type === 'workout_session' && submission.answer_text)
+      .map((submission) => submission.answer_text as string);
+
+    let visibleSubmissions = loadedSubmissions;
+    if (workoutSessionSubmissionIds.length > 0) {
+      const { data: sessionData, error: sessionError } = await supabase
+        .from('workout_sessions')
+        .select('id')
+        .in('id', workoutSessionSubmissionIds);
+
+      if (sessionError) {
+        setError(sessionError.message);
+        setIsLoading(false);
+        return;
+      }
+
+      const validSessionIds = new Set(((sessionData ?? []) as SessionIdRecord[]).map((session) => session.id));
+      visibleSubmissions = loadedSubmissions.filter((submission) => {
+        if (submission.submission_type !== 'workout_session') return true;
+        if (!submission.answer_text) return false;
+        return validSessionIds.has(submission.answer_text);
+      });
+    }
+
     try {
       const programmeOverview = await loadProgrammeOverview(supabase);
       setProgrammes(programmeOverview);
@@ -347,17 +374,18 @@ export default function ClientProfilePage() {
 
     const workoutsScheduledThisWeek = scheduledWorkoutsResult.data?.length ?? 0;
     const workoutsCompletedThisWeek = completedWorkoutsResult.data?.length ?? 0;
+    const visibleReviewCount = visibleSubmissions.filter((submission) => submission.review_status !== 'reviewed' && submission.review_status !== 'resolved').length;
 
     setClient(clientResult.data as ClientRecord);
     setTasks((tasksResult.data ?? []) as AssignedTaskRecord[]);
-    setSubmissions((submissionsResult.data ?? []) as SubmissionRecord[]);
+    setSubmissions(visibleSubmissions);
     setSnapshot({
       weekStart: weekRange.weekStartDate,
       weekEnd: weekRange.weekEndDate,
       workoutsScheduledThisWeek,
       workoutsCompletedThisWeek,
       workoutsRemainingThisWeek: Math.max(workoutsScheduledThisWeek - workoutsCompletedThisWeek, 0),
-      reviewsNeedingAction: reviewCountResult.count ?? 0,
+      reviewsNeedingAction: visibleReviewCount,
       latestFeedback: ((latestFeedbackResult.data ?? [])[0] as LatestFeedbackRecord | undefined) ?? null,
     });
     setIsLoading(false);
