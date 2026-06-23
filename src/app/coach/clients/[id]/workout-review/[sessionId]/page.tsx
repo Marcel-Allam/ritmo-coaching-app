@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { SectionHeader } from '@/components/ui/section-header';
@@ -180,6 +180,7 @@ const formatActualSet = (actual?: PerformedSetRecord) => {
 
 export default function CoachWorkoutReviewPage() {
   const params = useParams();
+  const router = useRouter();
   const clientId = params.id as string;
   const sessionId = params.sessionId as string;
 
@@ -192,6 +193,7 @@ export default function CoachWorkoutReviewPage() {
   const [feedbackText, setFeedbackText] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -333,6 +335,69 @@ export default function CoachWorkoutReviewPage() {
     setSaving(false);
   };
 
+  const deleteSubmittedWorkout = async () => {
+    if (!isSupabaseConfigured || !session) return;
+
+    const confirmed = window.confirm(
+      'Delete this submitted workout permanently? This removes the workout session, set logs, calibration values created from this session, and the matching review action. This cannot be undone.'
+    );
+    if (!confirmed) return;
+
+    setDeleting(true);
+    setMessage(null);
+    setError(null);
+
+    const supabase = createClient();
+    const submissionDelete = await supabase
+      .from('task_submissions')
+      .delete()
+      .eq('client_id', clientId)
+      .eq('submission_type', 'workout_session')
+      .eq('answer_text', session.id);
+
+    if (submissionDelete.error) {
+      setError(submissionDelete.error.message);
+      setDeleting(false);
+      return;
+    }
+
+    const calibrationDelete = await supabase
+      .from('program_calibration_lifts')
+      .delete()
+      .eq('source_session_id', session.id);
+
+    if (calibrationDelete.error) {
+      setError(calibrationDelete.error.message);
+      setDeleting(false);
+      return;
+    }
+
+    const performedSetDelete = await supabase
+      .from('performed_sets')
+      .delete()
+      .eq('session_id', session.id);
+
+    if (performedSetDelete.error) {
+      setError(performedSetDelete.error.message);
+      setDeleting(false);
+      return;
+    }
+
+    const sessionDelete = await supabase
+      .from('workout_sessions')
+      .delete()
+      .eq('id', session.id)
+      .eq('client_id', clientId);
+
+    if (sessionDelete.error) {
+      setError(sessionDelete.error.message);
+      setDeleting(false);
+      return;
+    }
+
+    router.push(`/coach/clients/${clientId}`);
+  };
+
   if (loading) return <div className="p-6 md:p-8"><Card>Loading workout review...</Card></div>;
   if (error && !session) return <div className="p-6 md:p-8"><Card><p className="text-sm font-semibold text-red-700">{error}</p></Card></div>;
 
@@ -349,6 +414,9 @@ export default function CoachWorkoutReviewPage() {
           <Link href={workout ? `/coach/clients/${clientId}/current-workouts/${workout.id}/edit` : '#'} className="rounded-lg bg-black px-4 py-2 text-xs font-black uppercase text-white hover:bg-gray-900">
             Adjust following workout
           </Link>
+          <button type="button" disabled={deleting} onClick={deleteSubmittedWorkout} className="rounded-lg border border-red-300 bg-red-50 px-4 py-2 text-xs font-black uppercase text-[#FA0201] hover:bg-red-100 disabled:opacity-60">
+            {deleting ? 'Deleting workout...' : 'Delete submitted workout'}
+          </button>
           <Link href={`/coach/clients/${clientId}`} className="text-sm font-bold uppercase text-[#FA0201] hover:underline">Back to client</Link>
         </div>
       </div>
@@ -411,7 +479,7 @@ export default function CoachWorkoutReviewPage() {
             onChange={(event) => setFeedbackText(event.target.value)}
             placeholder="Write the feedback the client should see from this workout review."
           />
-          <button type="button" disabled={saving} onClick={sendClientFeedback} className="w-full rounded-lg bg-[#FA0201] px-5 py-3 text-sm font-bold uppercase text-white hover:bg-red-700 disabled:opacity-60">
+          <button type="button" disabled={saving || deleting} onClick={sendClientFeedback} className="w-full rounded-lg bg-[#FA0201] px-5 py-3 text-sm font-bold uppercase text-white hover:bg-red-700 disabled:opacity-60">
             {saving ? 'Sending...' : 'Send feedback to client'}
           </button>
           <Link href={workout ? `/coach/clients/${clientId}/current-workouts/${workout.id}/edit` : '#'} className="block w-full rounded-lg border border-black bg-white px-5 py-3 text-center text-sm font-black uppercase text-black hover:bg-black hover:text-white">
