@@ -39,6 +39,8 @@ type PeriodisationRecord = {
 
 type PeriodisationType = 'strength' | 'hypertrophy' | 'both';
 type ProgrammeTemplate = 'upper_lower' | 'full_body';
+type ProgramWorkoutIdRecord = { id: string };
+type WorkoutSessionIdRecord = { id: string };
 
 type StrengthBlock = {
   name: string;
@@ -372,6 +374,37 @@ export function EditPlanPeriodisationPanel({ clientId, programs }: Props) {
     setMessage(null);
 
     const supabase = createClient();
+    const { data: workoutRows, error: workoutLookupError } = await supabase
+      .from('program_workouts')
+      .select('id')
+      .eq('program_id', activeProgram.id)
+      .eq('client_id', clientId);
+
+    if (workoutLookupError) {
+      setError(workoutLookupError.message);
+      setActionLoading(null);
+      return;
+    }
+
+    const workoutIds = ((workoutRows ?? []) as ProgramWorkoutIdRecord[]).map((workout) => workout.id);
+    let sessionIds: string[] = [];
+
+    if (workoutIds.length > 0) {
+      const { data: sessionRows, error: sessionLookupError } = await supabase
+        .from('workout_sessions')
+        .select('id')
+        .eq('client_id', clientId)
+        .in('program_workout_id', workoutIds);
+
+      if (sessionLookupError) {
+        setError(sessionLookupError.message);
+        setActionLoading(null);
+        return;
+      }
+
+      sessionIds = ((sessionRows ?? []) as WorkoutSessionIdRecord[]).map((session) => session.id);
+    }
+
     const { error: deleteError } = await supabase
       .from('training_programs')
       .delete()
@@ -384,7 +417,22 @@ export function EditPlanPeriodisationPanel({ clientId, programs }: Props) {
       return;
     }
 
-    setMessage('Programme and periodisation data deleted. Reloading...');
+    if (sessionIds.length > 0) {
+      const { error: submissionCleanupError } = await supabase
+        .from('task_submissions')
+        .delete()
+        .eq('client_id', clientId)
+        .eq('submission_type', 'workout_session')
+        .in('answer_text', sessionIds);
+
+      if (submissionCleanupError) {
+        setError(`Programme deleted, but workout review cleanup failed: ${submissionCleanupError.message}`);
+        setActionLoading(null);
+        return;
+      }
+    }
+
+    setMessage('Programme, periodisation data, and matching workout reviews deleted. Reloading...');
     window.setTimeout(() => window.location.reload(), 600);
   };
 
