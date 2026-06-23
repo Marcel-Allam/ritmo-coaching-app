@@ -359,6 +359,35 @@ export function EditPlanPeriodisationPanel({ clientId, programs }: Props) {
     window.setTimeout(() => window.location.reload(), 600);
   };
 
+  const deleteActiveProgramme = async () => {
+    if (!isSupabaseConfigured || !activeProgram) return;
+
+    const confirmed = window.confirm(
+      `Delete ${activeProgram.title || 'this programme'} permanently? This removes the programme and its periodisation data. This cannot be undone.`
+    );
+    if (!confirmed) return;
+
+    setActionLoading('delete');
+    setError(null);
+    setMessage(null);
+
+    const supabase = createClient();
+    const { error: deleteError } = await supabase
+      .from('training_programs')
+      .delete()
+      .eq('id', activeProgram.id)
+      .eq('client_id', clientId);
+
+    if (deleteError) {
+      setError(deleteError.message);
+      setActionLoading(null);
+      return;
+    }
+
+    setMessage('Programme and periodisation data deleted. Reloading...');
+    window.setTimeout(() => window.location.reload(), 600);
+  };
+
   const currentBlock = activeSettings ? getBlockByName(activeSettings.current_block_name) ?? getBlockByWeek(activeSettings.current_week) : strengthBlocks[0];
   const nextBlockAvailable = activeSettings ? findBlockIndex(activeSettings) < strengthBlocks.length - 1 : true;
 
@@ -442,7 +471,7 @@ export function EditPlanPeriodisationPanel({ clientId, programs }: Props) {
               </div>
             </div>
 
-            <div className="flex flex-col gap-3 lg:flex-row">
+            <div className="flex flex-col gap-3 lg:flex-row lg:flex-wrap">
               <button type="button" onClick={extendCurrentBlock} disabled={Boolean(actionLoading)} className="rounded-lg border border-gray-300 bg-white px-4 py-3 text-xs font-black uppercase text-[#000000] hover:bg-gray-50 disabled:opacity-60">
                 {actionLoading === 'extend' ? 'Extending...' : 'Extend current block by 1 week'}
               </button>
@@ -452,6 +481,9 @@ export function EditPlanPeriodisationPanel({ clientId, programs }: Props) {
               <Link href={`/coach/clients/${clientId}/current-workouts`} className="rounded-lg bg-black px-4 py-3 text-center text-xs font-black uppercase text-white hover:bg-gray-900">
                 Edit upcoming workouts
               </Link>
+              <button type="button" onClick={deleteActiveProgramme} disabled={Boolean(actionLoading)} className="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-xs font-black uppercase text-[#FA0201] hover:bg-red-100 disabled:opacity-60">
+                {actionLoading === 'delete' ? 'Deleting programme...' : 'Delete programme'}
+              </button>
             </div>
           </div>
         )}
