@@ -9,6 +9,7 @@ import { SectionHeader } from '@/components/ui/section-header';
 import { TaskCard } from '@/components/ui/task-card';
 import { Input } from '@/components/ui/input';
 import { ClientMetricChartDashboard } from '@/components/coach/client-metric-chart-dashboard';
+import { CoachPeriodisationSection } from '@/components/coach/coach-periodisation-section';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
 
 interface ClientRecord {
@@ -135,14 +136,6 @@ const getSetSummary = (sets: ProgramSetRecord[]) => {
     : '';
   return `${sets.length} set${sets.length === 1 ? '' : 's'} × ${reps} reps${loadLabel}`;
 };
-
-const SnapshotMetric = ({ label, value, helper }: { label: string; value: string | number; helper: string }) => (
-  <div className="rounded-xl border border-gray-200 bg-white p-4">
-    <p className="text-xs font-bold uppercase text-gray-500">{label}</p>
-    <p className="mt-2 text-3xl font-black text-[#000000]">{value}</p>
-    <p className="mt-1 text-xs font-semibold text-gray-600">{helper}</p>
-  </div>
-);
 
 const CompactSnapshotLine = ({ label, value }: { label: string; value: string | number }) => (
   <div className="flex items-center justify-between gap-4 border-b border-gray-200 py-3 last:border-b-0">
@@ -547,6 +540,8 @@ export default function ClientProfilePage() {
             </Link>
           </div>
         </Card>
+
+        <CoachPeriodisationSection clientId={clientId} programs={programmes} />
 
         <div className="grid grid-cols-1 gap-8 xl:grid-cols-[minmax(0,1.6fr)_minmax(340px,0.8fr)]">
           <section>
