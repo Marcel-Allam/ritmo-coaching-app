@@ -69,7 +69,7 @@ const emptySnapshot: ClientSnapshot = {
   latestFeedback: null,
 };
 
-const reviewSubmissionTypes = ['bodyweight', 'workout_session'];
+const reviewSubmissionTypes = ['workout_session'];
 
 const formatDate = (value: string | null) => {
   if (!value) return 'Not set';
@@ -571,9 +571,9 @@ export default function ClientProfilePage() {
         <section>
           <SectionHeader title="CLIENT ACTIONS" accent />
           <Card>
-            <h2 className="mb-4 text-lg font-bold uppercase text-[#000000]">Recent submissions</h2>
+            <h2 className="mb-4 text-lg font-bold uppercase text-[#000000]">Recent workout submissions</h2>
             <div className="space-y-3">
-              {submissions.length === 0 ? <p className="text-sm text-gray-600">No bodyweight or workout session submissions yet.</p> : submissions.map((submission) => (
+              {submissions.length === 0 ? <p className="text-sm text-gray-600">No workout session submissions yet.</p> : submissions.map((submission) => (
                 <div key={submission.id} className="rounded-xl border border-gray-200 bg-gray-50 p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div>
