@@ -7,7 +7,6 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { SectionHeader } from '@/components/ui/section-header';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
-import { CoachPeriodisationSection } from './coach-periodisation-section';
 
 type ClientRecord = { id: string; full_name: string; email: string | null };
 type ProgramRecord = { id: string; title: string; goal: string | null; status: string; created_at: string };
@@ -203,8 +202,6 @@ export default function ClientProgramPage() {
 
       {message && <Card className="border-2 border-green-200 bg-green-50"><p className="text-sm font-semibold text-green-700">{message}</p></Card>}
       {error && <Card className="border-2 border-red-200 bg-red-50"><p className="text-sm font-semibold text-red-700">{error}</p></Card>}
-
-      <CoachPeriodisationSection clientId={clientId} programs={programs} />
 
       <section>
         <SectionHeader title="PROGRAMME WORKOUTS" accent />
