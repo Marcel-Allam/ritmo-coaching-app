@@ -53,6 +53,15 @@ const getHistoryLabel = (stats: WorkoutHistoryStats | undefined) => {
   return `${count} session${count === 1 ? '' : 's'} logged`;
 };
 
+const cleanProgrammeTitle = (title: string | null | undefined) => {
+  const fallbackTitle = 'Training programme';
+  if (!title) return fallbackTitle;
+
+  return title
+    .replace(/\s+-\s+calibration start$/i, '')
+    .trim() || fallbackTitle;
+};
+
 export default function ClientTrainingPage() {
   const { user } = useAuth();
   const searchParams = useSearchParams();
@@ -243,7 +252,7 @@ export default function ClientTrainingPage() {
             <div>
               <p className="text-xs font-black uppercase tracking-wide text-[#FA0201]">Programme</p>
               <h1 className="mt-1 text-3xl font-black uppercase tracking-tight text-[#000000]">
-                {currentProgram?.title || 'Training programme'}
+                {cleanProgrammeTitle(currentProgram?.title)}
               </h1>
               <p className="mt-2 text-sm font-semibold text-gray-600">
                 {workouts.length} workout template{workouts.length === 1 ? '' : 's'} • Highlighted red = next session to complete
