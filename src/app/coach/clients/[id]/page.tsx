@@ -24,7 +24,6 @@ interface ClientRecord {
 
 interface SubmissionRecord {
   id: string;
-  assigned_task_id: string | null;
   submission_type: string;
   submitted_at: string;
   review_status: string;
@@ -294,7 +293,7 @@ export default function ClientProfilePage() {
       supabase.from('clients').select('id, full_name, email, user_id, status, current_focus, next_review_date, next_call_date, start_date').eq('id', clientId).single(),
       supabase
         .from('task_submissions')
-        .select('id, assigned_task_id, submission_type, submitted_at, review_status, answer_text')
+        .select('id, submission_type, submitted_at, review_status, answer_text')
         .eq('client_id', clientId)
         .in('submission_type', reviewSubmissionTypes)
         .order('submitted_at', { ascending: false })
