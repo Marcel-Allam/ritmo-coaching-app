@@ -8,6 +8,7 @@ import { SectionHeader } from '@/components/ui/section-header';
 import { BodyweightTrendCard } from '@/components/client/bodyweight-trend-card';
 import { CoachingStatusCard } from '@/components/client/coaching-status-card';
 import { ClientProgressGraphTiles } from '@/components/client/client-progress-graph-tiles';
+import { ClientPeriodisationCard } from '@/components/client/client-periodisation-card';
 import { NextWorkoutCard } from '@/components/client/next-workout-card';
 import { ClientHubTargetSettings, TdeeSummaryCard } from '@/components/client/tdee-summary-card';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
@@ -184,6 +185,10 @@ export default function ClientHub() {
       <PageHeader title="YOUR HUB" subtitle={`Welcome, ${client.full_name}`} />
       <div className="mx-auto max-w-6xl space-y-8 px-4 py-6 md:px-8">
         <SetupCard client={client} latestBodyweight={latestBodyweight} />
+
+        <section>
+          <ClientPeriodisationCard clientId={client.id} />
+        </section>
 
         {settings.show_next_workout_card && (
           <section>
