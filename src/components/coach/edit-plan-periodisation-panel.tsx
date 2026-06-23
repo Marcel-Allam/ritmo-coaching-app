@@ -250,7 +250,7 @@ export function EditPlanPeriodisationPanel({ clientId, programs }: Props) {
 
     const supabase = createClient();
     const selectedBlock = startWithCalibration ? strengthBlocks[0] : strengthBlocks[1];
-    const programmeTitle = `Strength - ${templateLabel(programmeTemplate)}${startWithCalibration ? ' - Calibration start' : ''}`;
+    const programmeTitle = `Strength - ${templateLabel(programmeTemplate)}`;
 
     const { data: newProgramId, error: assignError } = await supabase.rpc('assign_library_programme_to_client', {
       p_client_id: clientId,
