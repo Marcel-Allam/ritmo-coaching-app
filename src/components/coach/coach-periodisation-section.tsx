@@ -84,6 +84,15 @@ const getStrengthBlockByName = (name: string) => (
   strengthBlocks.find((block) => block.name.toLowerCase() === name.toLowerCase())
 );
 
+const cleanProgrammeTitle = (title: string | null | undefined) => {
+  const fallbackTitle = 'Untitled programme';
+  if (!title) return fallbackTitle;
+
+  return title
+    .replace(/\s+-\s+calibration start$/i, '')
+    .trim() || fallbackTitle;
+};
+
 export function CoachPeriodisationSection({ programs }: Props) {
   const [rowsByProgram, setRowsByProgram] = useState<Record<string, PeriodisationRecord>>({});
   const [loading, setLoading] = useState(true);
@@ -159,7 +168,7 @@ export function CoachPeriodisationSection({ programs }: Props) {
                   <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                     <div>
                       <p className="text-xs font-bold uppercase text-[#FA0201]">Programme trajectory</p>
-                      <h2 className="text-xl font-black uppercase text-[#000000]">{program.title || 'Untitled programme'}</h2>
+                      <h2 className="text-xl font-black uppercase text-[#000000]">{cleanProgrammeTitle(program.title)}</h2>
                     </div>
                     <Badge variant={savedRow ? 'success' : 'warning'}>{savedRow ? 'Saved' : 'Not configured'}</Badge>
                   </div>
