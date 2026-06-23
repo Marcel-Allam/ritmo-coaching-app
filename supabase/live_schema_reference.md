@@ -1,6 +1,6 @@
 # RITMO App Live Supabase Schema Reference
 
-Last checked: 2026-06-15
+Last checked: 2026-06-23
 Project: RITMO App (`ukhvnfbylqgytmylwbxp`)
 
 This file exists because the live Supabase schema has moved ahead of the earliest committed migration files. Treat this as the current app-ready schema reference until the migrations are consolidated.
@@ -42,6 +42,9 @@ Columns:
 - `next_review_date date`
 - `next_call_date date`
 - `private_coach_notes text`
+- `tdee_gender text`
+- `date_of_birth date`
+- `height_cm numeric`
 - `created_at timestamptz not null`
 - `updated_at timestamptz not null`
 
@@ -68,8 +71,41 @@ Columns:
 - `client_feedback_enabled boolean not null default true`
 - `training_availability_enabled boolean not null default true`
 - `settings_json jsonb not null default '{}'::jsonb`
+- `show_key_lift_card boolean not null default true`
+- `show_bodyweight_card boolean not null default true`
+- `show_calorie_guideline_card boolean not null default false`
+- `show_today_actions_card boolean not null default true`
+- `show_upcoming_actions_card boolean not null default true`
+- `show_latest_feedback_card boolean not null default true`
 - `created_at timestamptz not null`
 - `updated_at timestamptz not null`
+
+### `client_hub_settings`
+
+Controls client hub visibility and nutrition target display.
+
+Columns include:
+- `client_id uuid not null unique references clients(id)`
+- `show_calorie_target boolean not null default false`
+- `calorie_target integer`
+- `show_protein_target boolean not null default false`
+- `protein_target_g integer`
+- `show_carb_target boolean not null default false`
+- `carb_target_g integer`
+- `show_fat_target boolean not null default false`
+- `fat_target_g integer`
+- `show_bodyweight_card boolean not null default true`
+- `show_submit_bodyweight boolean not null default true`
+- `show_next_workout_card boolean not null default true`
+- `show_coaching_status_card boolean not null default true`
+- `show_progress_cards boolean not null default true`
+- `target_notes text`
+- `calorie_adjustment integer not null default -500`
+- `protein_multiplier numeric not null default 1.80`
+- `estimated_bmr integer`
+- `estimated_tdee integer`
+- `activity_multiplier numeric`
+- `workouts_past_7_days integer not null default 0`
 
 ## Assigned tasks and flexible submissions
 
@@ -161,6 +197,42 @@ Columns:
 - `created_at timestamptz not null`
 - `updated_at timestamptz not null`
 
+### `workout_sessions`
+
+A completed or in-progress run of a programme workout.
+
+Columns include:
+- `id uuid primary key`
+- `client_id uuid not null references clients(id)`
+- `program_workout_id uuid not null references program_workouts(id)`
+- `started_at timestamptz not null default now()`
+- `completed_at timestamptz`
+- `status text not null` — `in_progress`, `completed`, or `reviewed`
+- `review_status review_status not null`
+- `client_notes text`
+- `coach_note text`
+- `is_calibration boolean not null default false`
+- `created_at timestamptz not null`
+- `updated_at timestamptz not null`
+
+### `performed_sets`
+
+Actual set logs submitted inside a workout session.
+
+Columns include:
+- `id uuid primary key`
+- `session_id uuid not null references workout_sessions(id)`
+- `program_exercise_id uuid not null references program_exercises(id)`
+- `program_set_id uuid null references program_sets(id)`
+- `set_order integer not null`
+- `actual_weight_kg numeric`
+- `actual_reps integer`
+- `actual_rpe numeric`
+- `completed boolean not null default true`
+- `notes text`
+- `created_at timestamptz not null`
+- `updated_at timestamptz not null`
+
 ### Other submission tables
 
 - `workout_checkins`
@@ -177,6 +249,60 @@ Current programme/workout system:
 - `workout_sessions`
 - `performed_sets`
 - `exercise_catalogue`
+- `program_periodisation_settings`
+- `program_calibration_lifts`
+
+### `program_periodisation_settings`
+
+Manual-first periodisation settings for a client programme. One settings row is expected per `training_programs` row.
+
+Columns:
+- `id uuid primary key`
+- `program_id uuid not null unique references training_programs(id)`
+- `client_id uuid not null references clients(id)`
+- `programme_length_weeks integer not null default 12`
+- `current_week integer not null default 0`
+- `current_block_name text not null default 'Calibration'`
+- `current_block_start_week integer not null default 0`
+- `current_block_end_week integer not null default 0`
+- `current_block_goal text`
+- `client_explanation text`
+- `next_block_name text`
+- `loading_guide text`
+- `client_visible boolean not null default true`
+- `created_at timestamptz not null`
+- `updated_at timestamptz not null`
+
+V1 block convention:
+- Week 0: Calibration
+- Weeks 1–4: Accumulation
+- Weeks 5–8: Intensification
+- Weeks 9–10: Peak / Realisation
+- Week 11: Deload / Taper
+- Week 12: Test / Review
+
+### `program_calibration_lifts`
+
+Stores calibration top sets and generated estimated 1RM values for key lifts inside a programme.
+
+Columns:
+- `id uuid primary key`
+- `program_id uuid not null references training_programs(id)`
+- `client_id uuid not null references clients(id)`
+- `lift_name text not null`
+- `top_set_weight_kg numeric not null`
+- `top_set_reps integer not null`
+- `estimated_1rm_kg numeric generated always as round(weight * (1 + reps / 30), 1) stored`
+- `source_session_id uuid null references workout_sessions(id)`
+- `source_performed_set_id uuid null references performed_sets(id)`
+- `formula text not null default 'weight * (1 + reps / 30)'`
+- `client_visible boolean not null default true`
+- `notes text`
+- `created_at timestamptz not null`
+- `updated_at timestamptz not null`
+
+Constraints:
+- unique `(program_id, lift_name)`
 
 ## Feedback, insight, and action tables
 
@@ -233,9 +359,10 @@ Coach execution queue.
 ## RLS policy summary
 
 Live RLS is enabled on key tables. Current policy pattern:
-- Coaches can manage clients, assigned tasks, submissions, feedback notes, insight flags, and coach actions.
+- Coaches can manage clients, assigned tasks, submissions, feedback notes, insight flags, coach actions, training programmes, workout sessions, performed sets, periodisation settings, and calibration lifts.
 - Clients can view their own client record.
-- Clients can insert/view their own nutrition submissions, bodyweight entries, and task submissions.
+- Clients can insert/view their own nutrition submissions, bodyweight entries, task submissions, workout sessions, and performed sets.
+- Clients can view their own visible periodisation settings and calibration lifts when `client_visible = true`.
 - Clients can only view feedback notes where `client_visible = true`.
 
 ## Current build implication
