@@ -6,6 +6,7 @@ import { useParams } from 'next/navigation';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { SectionHeader } from '@/components/ui/section-header';
+import { EditPlanPeriodisationPanel } from '@/components/coach/edit-plan-periodisation-panel';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
 
 type ClientRecord = { id: string; full_name: string; email: string | null };
@@ -203,11 +204,13 @@ export default function ClientProgramPage() {
       {message && <Card className="border-2 border-green-200 bg-green-50"><p className="text-sm font-semibold text-green-700">{message}</p></Card>}
       {error && <Card className="border-2 border-red-200 bg-red-50"><p className="text-sm font-semibold text-red-700">{error}</p></Card>}
 
+      <EditPlanPeriodisationPanel clientId={clientId} programs={programs} />
+
       <section>
         <SectionHeader title="PROGRAMME WORKOUTS" accent />
         <Card>
           {workouts.length === 0 ? (
-            <p className="text-sm text-gray-600">No active workouts assigned yet. Use Replace Active Programme below to copy a reusable programme into this client.</p>
+            <p className="text-sm text-gray-600">No active workouts assigned yet. Use the periodisation setup above to start a client plan from a template.</p>
           ) : (
             <div className="space-y-6">
               {programmeGroups.map((group) => (
