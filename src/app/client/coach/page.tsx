@@ -49,6 +49,7 @@ type AvailableSlotDay = {
 };
 
 const bookingSelect = 'id, booking_type, requested_starts_at, requested_ends_at, starts_at, ends_at, status, client_notes, coach_note, suggested_starts_at, suggested_ends_at, created_at';
+const bookingWindowDays = 6;
 
 const coachRequestRoutes: Record<string, string> = {
   key_lift: '/client/submit/key-lift',
@@ -163,6 +164,7 @@ export default function ClientCoachPage() {
   const [tasks, setTasks] = useState<AssignedTaskRecord[]>([]);
   const [booking, setBooking] = useState<CoachCallBookingRecord | null>(null);
   const [availableSlots, setAvailableSlots] = useState<AvailableSlotRecord[]>([]);
+  const [selectedDayKey, setSelectedDayKey] = useState<string | null>(null);
   const [selectedSlotStart, setSelectedSlotStart] = useState<string | null>(null);
   const [quickNote, setQuickNote] = useState('');
   const [loading, setLoading] = useState(true);
@@ -174,7 +176,7 @@ export default function ClientCoachPage() {
     if (!isSupabaseConfigured) return;
 
     const supabase = createClient();
-    const { data, error } = await supabase.rpc('get_available_coach_call_slots', { p_days_ahead: 14 });
+    const { data, error } = await supabase.rpc('get_available_coach_call_slots', { p_days_ahead: bookingWindowDays });
 
     if (error) {
       setMessage(error.message || 'Could not load coach availability.');
@@ -222,7 +224,7 @@ export default function ClientCoachPage() {
           .eq('client_id', linkedClient.id)
           .order('created_at', { ascending: false })
           .limit(1),
-        supabase.rpc('get_available_coach_call_slots', { p_days_ahead: 14 }),
+        supabase.rpc('get_available_coach_call_slots', { p_days_ahead: bookingWindowDays }),
       ]);
 
       if (taskResult.error) {
@@ -254,9 +256,28 @@ export default function ClientCoachPage() {
 
   const coachRequestedTasks = useMemo(() => tasks, [tasks]);
   const availableSlotDays = useMemo(() => groupSlotsByDay(availableSlots), [availableSlots]);
+  const selectedDay = useMemo(() => availableSlotDays.find((day) => day.key === selectedDayKey) ?? availableSlotDays[0] ?? null, [availableSlotDays, selectedDayKey]);
   const selectedSlot = useMemo(() => availableSlots.find((slot) => slot.slot_start === selectedSlotStart) ?? null, [availableSlots, selectedSlotStart]);
   const canRequestCall = !booking || isClosedBooking(booking.status);
   const canCancelMeeting = Boolean(booking && !isClosedBooking(booking.status));
+
+  useEffect(() => {
+    if (availableSlotDays.length === 0) {
+      setSelectedDayKey(null);
+      setSelectedSlotStart(null);
+      return;
+    }
+
+    if (!selectedDayKey || !availableSlotDays.some((day) => day.key === selectedDayKey)) {
+      setSelectedDayKey(availableSlotDays[0].key);
+      setSelectedSlotStart(null);
+    }
+  }, [availableSlotDays, selectedDayKey]);
+
+  const handleSelectDay = (dayKey: string) => {
+    setSelectedDayKey(dayKey);
+    setSelectedSlotStart(null);
+  };
 
   const requestWeeklyCall = async () => {
     if (!client || !isSupabaseConfigured) {
@@ -391,45 +412,63 @@ export default function ClientCoachPage() {
 
           <section>
             <SectionHeader title="COACH MEETING" accent />
-            <Card variant="dark" className="p-8">
+            <Card variant="dark" className="p-6 md:p-8">
               {canRequestCall ? (
                 <div className="space-y-6">
                   <div>
                     <p className="text-xs font-bold uppercase text-[#FA0201]">{booking ? `Last request ${getStatusLabel(booking.status)}` : 'No meeting requested'}</p>
-                    <h1 className="mt-2 text-4xl font-black uppercase tracking-tight text-white md:text-6xl">Request a coach call</h1>
-                    <p className="mt-4 max-w-2xl text-sm leading-relaxed text-white/70">Choose an available 30-minute slot. Already requested, booked, busy, or blocked times are hidden.</p>
+                    <h1 className="mt-2 text-4xl font-black uppercase tracking-tight text-white md:text-5xl">Request a coach call</h1>
+                    <p className="mt-4 max-w-2xl text-sm leading-relaxed text-white/70">Choose an available 30-minute slot. Slots within the next 2 hours, already requested, booked, busy, or blocked times are hidden.</p>
                   </div>
 
-                  <div className="space-y-3">
+                  <div className="space-y-4 rounded-xl border border-white/20 bg-white/10 p-4">
                     <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
                       <div>
-                        <p className="text-sm font-black uppercase text-white">Choose a time</p>
-                        <p className="mt-1 text-xs font-semibold text-white/60">Only currently available slots are shown.</p>
+                        <p className="text-sm font-black uppercase text-white">Choose a day</p>
+                        <p className="mt-1 text-xs font-semibold text-white/60">You can request calls from today up to 6 days ahead.</p>
                       </div>
                       {selectedSlot && <p className="text-xs font-black uppercase text-[#FA0201]">Selected: {formatSlotSummary(selectedSlot.slot_start)}</p>}
                     </div>
 
                     {availableSlotDays.length === 0 ? (
-                      <div className="rounded-xl border border-white/20 bg-white/10 p-4">
+                      <div className="rounded-xl border border-white/20 bg-black/20 p-4">
                         <p className="text-sm font-semibold text-white/80">No available coach call slots are currently open.</p>
                       </div>
                     ) : (
-                      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
-                        {availableSlotDays.map((day) => (
-                          <div key={day.key} className="rounded-xl border border-white/20 bg-white/10 p-3">
-                            <div className="mb-3 border-b border-white/20 pb-2">
-                              <p className="text-sm font-black uppercase text-white">{day.label}</p>
-                              <p className="text-xs font-semibold uppercase text-white/50">{day.dateLabel}</p>
+                      <>
+                        <div className="grid grid-cols-2 gap-2 md:grid-cols-4 xl:grid-cols-7">
+                          {availableSlotDays.map((day) => {
+                            const selected = selectedDay?.key === day.key;
+                            return (
+                              <button
+                                key={day.key}
+                                type="button"
+                                onClick={() => handleSelectDay(day.key)}
+                                className={`rounded-xl border px-3 py-3 text-left ${selected ? 'border-[#FA0201] bg-[#FA0201] text-white' : 'border-white/30 bg-white text-black hover:bg-gray-100'}`}
+                              >
+                                <p className="text-xs font-black uppercase">{day.label}</p>
+                                <p className="mt-1 text-xs font-semibold uppercase opacity-70">{day.dateLabel}</p>
+                                <p className="mt-2 text-[11px] font-black uppercase opacity-80">{day.slots.length} slot{day.slots.length === 1 ? '' : 's'}</p>
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        {selectedDay && (
+                          <div className="rounded-xl border border-white/20 bg-black/20 p-4">
+                            <div className="flex items-center justify-between gap-3 border-b border-white/20 pb-3">
+                              <p className="text-sm font-black uppercase text-white">{selectedDay.label} · {selectedDay.dateLabel}</p>
+                              <p className="text-xs font-bold uppercase text-white/60">Available times</p>
                             </div>
-                            <div className="space-y-2">
-                              {day.slots.map((slot) => {
+                            <div className="mt-4 grid grid-cols-2 gap-2 md:grid-cols-4 lg:grid-cols-6">
+                              {selectedDay.slots.map((slot) => {
                                 const selected = selectedSlotStart === slot.slot_start;
                                 return (
                                   <button
                                     key={slot.slot_start}
                                     type="button"
                                     onClick={() => setSelectedSlotStart(slot.slot_start)}
-                                    className={`w-full rounded-lg border px-3 py-2 text-sm font-black uppercase ${selected ? 'border-[#FA0201] bg-[#FA0201] text-white' : 'border-white/30 bg-white text-black hover:bg-gray-100'}`}
+                                    className={`rounded-lg border px-3 py-2 text-sm font-black uppercase ${selected ? 'border-[#FA0201] bg-[#FA0201] text-white' : 'border-white/30 bg-white text-black hover:bg-gray-100'}`}
                                   >
                                     {formatSlotTime(slot.slot_start)}
                                   </button>
@@ -437,8 +476,8 @@ export default function ClientCoachPage() {
                               })}
                             </div>
                           </div>
-                        ))}
-                      </div>
+                        )}
+                      </>
                     )}
                   </div>
 
