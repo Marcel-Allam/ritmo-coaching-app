@@ -412,13 +412,6 @@ export default function ClientProfilePage() {
     return `/coach/actions/submissions/${submission.id}`;
   };
 
-  const getNextAction = () => {
-    if (snapshot.reviewsNeedingAction > 0) return 'Review latest client submission';
-    if (!client?.user_id) return 'Send client invite';
-    if (snapshot.workoutsScheduledThisWeek === 0) return 'Assign this week training';
-    return 'Monitor delivery';
-  };
-
   if (isLoading) return <div className="flex min-h-[400px] items-center justify-center"><p className="font-semibold text-gray-700">Loading client profile...</p></div>;
 
   if (error || !client) {
@@ -432,22 +425,6 @@ export default function ClientProfilePage() {
       </div>
     );
   }
-
-  const nextAction = getNextAction();
-  const nextActionHref = snapshot.reviewsNeedingAction > 0
-    ? '/coach/actions'
-    : !client.user_id
-      ? '#invite-client'
-      : snapshot.workoutsScheduledThisWeek === 0
-        ? `/coach/clients/${clientId}/program`
-        : `/coach/clients/${clientId}/hub-settings`;
-  const nextActionCta = snapshot.reviewsNeedingAction > 0
-    ? 'Open actions'
-    : !client.user_id
-      ? 'Use invite button'
-      : snapshot.workoutsScheduledThisWeek === 0
-        ? 'Edit programme'
-        : 'Open hub settings';
 
   return (
     <div className="p-6 md:p-8">
@@ -484,27 +461,6 @@ export default function ClientProfilePage() {
             </div>
           </Card>
         )}
-
-        <Card className="border-2 border-black bg-black text-white">
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div>
-              <p className="text-xs font-black uppercase tracking-wide text-gray-400">Next action</p>
-              <h2 className="mt-2 text-2xl font-black uppercase tracking-tight">{nextAction}</h2>
-              <p className="mt-2 text-sm font-semibold text-gray-300">
-                {snapshot.reviewsNeedingAction > 0
-                  ? `${snapshot.reviewsNeedingAction} item${snapshot.reviewsNeedingAction === 1 ? '' : 's'} need review.`
-                  : !client.user_id
-                    ? 'Client account is not connected yet.'
-                    : snapshot.workoutsScheduledThisWeek === 0
-                      ? 'No scheduled workouts detected for this week.'
-                      : 'No urgent coach action detected.'}
-              </p>
-            </div>
-            <Link href={nextActionHref} className="w-fit rounded-lg bg-[#FA0201] px-5 py-3 text-xs font-black uppercase text-white hover:bg-red-700">
-              {nextActionCta}
-            </Link>
-          </div>
-        </Card>
 
         <CoachPeriodisationSection clientId={clientId} programs={programmes} />
 
