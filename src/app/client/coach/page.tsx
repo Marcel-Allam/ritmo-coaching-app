@@ -36,6 +36,18 @@ type CoachCallBookingRecord = {
   created_at: string;
 };
 
+type AvailableSlotRecord = {
+  slot_start: string;
+  slot_end: string;
+};
+
+type AvailableSlotDay = {
+  key: string;
+  label: string;
+  dateLabel: string;
+  slots: AvailableSlotRecord[];
+};
+
 const bookingSelect = 'id, booking_type, requested_starts_at, requested_ends_at, starts_at, ends_at, status, client_notes, coach_note, suggested_starts_at, suggested_ends_at, created_at';
 
 const coachRequestRoutes: Record<string, string> = {
@@ -53,27 +65,29 @@ const formatDateTime = (value: string) => new Intl.DateTimeFormat('en-GB', {
   minute: '2-digit',
 }).format(new Date(value));
 
-const toDateTimeLocal = (value: Date) => {
+const formatSlotTime = (value: string) => new Intl.DateTimeFormat('en-GB', {
+  hour: '2-digit',
+  minute: '2-digit',
+}).format(new Date(value));
+
+const formatSlotSummary = (value: string) => new Intl.DateTimeFormat('en-GB', {
+  weekday: 'long',
+  day: 'numeric',
+  month: 'short',
+  hour: '2-digit',
+  minute: '2-digit',
+}).format(new Date(value));
+
+const getLocalDateKey = (value: string) => {
   const date = new Date(value);
-  date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
-  return date.toISOString().slice(0, 16);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 };
 
-const getDefaultRequestedDateTime = () => {
-  const date = new Date();
-  date.setDate(date.getDate() + 1);
-  date.setHours(18, 0, 0, 0);
-  return toDateTimeLocal(date);
-};
-
-const getIsoRange = (localStart: string, durationMinutes: number) => {
-  const startsAt = new Date(localStart);
-  const endsAt = new Date(startsAt.getTime() + durationMinutes * 60_000);
-  return {
-    starts_at: startsAt.toISOString(),
-    ends_at: endsAt.toISOString(),
-  };
-};
+const getDayLabel = (value: string) => new Intl.DateTimeFormat('en-GB', { weekday: 'short' }).format(new Date(value));
+const getDayDateLabel = (value: string) => new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short' }).format(new Date(value));
 
 const getBookingFromRpc = (data: unknown) => {
   if (Array.isArray(data)) return (data[0] ?? null) as CoachCallBookingRecord | null;
@@ -105,7 +119,7 @@ const getMeetingDateLabel = (booking: CoachCallBookingRecord) => {
 const getStatusLabel = (status: CoachCallBookingStatus | 'none') => {
   if (status === 'accepted') return 'Confirmed';
   if (status === 'reschedule_pending') return 'Coach proposed a different time';
-  if (status === 'requested') return 'Requested';
+  if (status === 'requested') return 'Pending coach confirmation';
   if (status === 'declined') return 'Declined';
   if (status === 'cancelled') return 'Closed';
   if (status === 'completed') return 'Completed';
@@ -119,18 +133,56 @@ const getStatusColour = (status: CoachCallBookingStatus | 'none') => {
   return 'text-green-400';
 };
 
+const groupSlotsByDay = (slots: AvailableSlotRecord[]) => {
+  const grouped = slots.reduce<Record<string, AvailableSlotDay>>((accumulator, slot) => {
+    const key = getLocalDateKey(slot.slot_start);
+    if (!accumulator[key]) {
+      accumulator[key] = {
+        key,
+        label: getDayLabel(slot.slot_start),
+        dateLabel: getDayDateLabel(slot.slot_start),
+        slots: [],
+      };
+    }
+
+    accumulator[key].slots.push(slot);
+    return accumulator;
+  }, {});
+
+  return Object.values(grouped)
+    .map((day) => ({
+      ...day,
+      slots: day.slots.sort((a, b) => new Date(a.slot_start).getTime() - new Date(b.slot_start).getTime()),
+    }))
+    .sort((a, b) => a.key.localeCompare(b.key));
+};
+
 export default function ClientCoachPage() {
   const { user } = useAuth();
   const [client, setClient] = useState<ClientRecord | null>(null);
   const [tasks, setTasks] = useState<AssignedTaskRecord[]>([]);
   const [booking, setBooking] = useState<CoachCallBookingRecord | null>(null);
+  const [availableSlots, setAvailableSlots] = useState<AvailableSlotRecord[]>([]);
+  const [selectedSlotStart, setSelectedSlotStart] = useState<string | null>(null);
   const [quickNote, setQuickNote] = useState('');
-  const [requestedDateTime, setRequestedDateTime] = useState(getDefaultRequestedDateTime);
-  const [requestedDurationMinutes, setRequestedDurationMinutes] = useState(30);
   const [loading, setLoading] = useState(true);
   const [savingRequest, setSavingRequest] = useState(false);
   const [updatingMeeting, setUpdatingMeeting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+
+  const loadAvailableSlots = async () => {
+    if (!isSupabaseConfigured) return;
+
+    const supabase = createClient();
+    const { data, error } = await supabase.rpc('get_available_coach_call_slots', { p_days_ahead: 14 });
+
+    if (error) {
+      setMessage(error.message || 'Could not load coach availability.');
+      return;
+    }
+
+    setAvailableSlots((data ?? []) as AvailableSlotRecord[]);
+  };
 
   useEffect(() => {
     const loadCoachPage = async () => {
@@ -156,7 +208,7 @@ export default function ClientCoachPage() {
       const linkedClient = clientData as ClientRecord;
       setClient(linkedClient);
 
-      const [taskResult, bookingResult] = await Promise.all([
+      const [taskResult, bookingResult, slotResult] = await Promise.all([
         supabase
           .from('assigned_tasks')
           .select('id, task_type, task_name, instructions')
@@ -170,6 +222,7 @@ export default function ClientCoachPage() {
           .eq('client_id', linkedClient.id)
           .order('created_at', { ascending: false })
           .limit(1),
+        supabase.rpc('get_available_coach_call_slots', { p_days_ahead: 14 }),
       ]);
 
       if (taskResult.error) {
@@ -184,8 +237,15 @@ export default function ClientCoachPage() {
         return;
       }
 
+      if (slotResult.error) {
+        setMessage(slotResult.error.message || 'Could not load coach availability.');
+        setLoading(false);
+        return;
+      }
+
       setTasks((taskResult.data ?? []) as AssignedTaskRecord[]);
       setBooking((bookingResult.data?.[0] ?? null) as CoachCallBookingRecord | null);
+      setAvailableSlots((slotResult.data ?? []) as AvailableSlotRecord[]);
       setLoading(false);
     };
 
@@ -193,6 +253,8 @@ export default function ClientCoachPage() {
   }, [user]);
 
   const coachRequestedTasks = useMemo(() => tasks, [tasks]);
+  const availableSlotDays = useMemo(() => groupSlotsByDay(availableSlots), [availableSlots]);
+  const selectedSlot = useMemo(() => availableSlots.find((slot) => slot.slot_start === selectedSlotStart) ?? null, [availableSlots, selectedSlotStart]);
   const canRequestCall = !booking || isClosedBooking(booking.status);
   const canCancelMeeting = Boolean(booking && !isClosedBooking(booking.status));
 
@@ -202,8 +264,8 @@ export default function ClientCoachPage() {
       return;
     }
 
-    if (!requestedDateTime) {
-      setMessage('Choose a time you are available for the call.');
+    if (!selectedSlot) {
+      setMessage('Choose one of the available 30-minute call slots.');
       return;
     }
 
@@ -212,17 +274,18 @@ export default function ClientCoachPage() {
 
     const supabase = createClient();
     const notes = quickNote.trim();
-    const range = getIsoRange(requestedDateTime, requestedDurationMinutes);
 
     const { data, error } = await supabase.rpc('request_coach_call_booking', {
       p_client_id: client.id,
-      p_requested_starts_at: range.starts_at,
-      p_requested_ends_at: range.ends_at,
+      p_requested_starts_at: selectedSlot.slot_start,
+      p_requested_ends_at: selectedSlot.slot_end,
       p_client_notes: notes || null,
     });
 
     if (error || !data) {
       setMessage(error?.message || 'Could not request coach call.');
+      await loadAvailableSlots();
+      setSelectedSlotStart(null);
       setSavingRequest(false);
       return;
     }
@@ -230,9 +293,9 @@ export default function ClientCoachPage() {
     const newBooking = getBookingFromRpc(data);
     setBooking(newBooking);
     setQuickNote('');
-    setRequestedDateTime(getDefaultRequestedDateTime());
-    setRequestedDurationMinutes(30);
-    setMessage('Coach call availability sent. Your coach will confirm or suggest another time.');
+    setSelectedSlotStart(null);
+    setMessage('Coach call requested. Your coach will confirm it or suggest another time.');
+    await loadAvailableSlots();
     setSavingRequest(false);
   };
 
@@ -256,6 +319,7 @@ export default function ClientCoachPage() {
     const updatedBooking = getBookingFromRpc(data);
     setBooking(updatedBooking);
     setMessage(accepted ? 'Proposed coach call time accepted.' : 'Proposed time declined. You can request a new call when ready.');
+    await loadAvailableSlots();
     setUpdatingMeeting(false);
   };
 
@@ -285,6 +349,7 @@ export default function ClientCoachPage() {
 
     setBooking(null);
     setMessage('Coach call cancelled. You can request a new call when ready.');
+    await loadAvailableSlots();
     setUpdatingMeeting(false);
   };
 
@@ -332,39 +397,58 @@ export default function ClientCoachPage() {
                   <div>
                     <p className="text-xs font-bold uppercase text-[#FA0201]">{booking ? `Last request ${getStatusLabel(booking.status)}` : 'No meeting requested'}</p>
                     <h1 className="mt-2 text-4xl font-black uppercase tracking-tight text-white md:text-6xl">Request a coach call</h1>
-                    <p className="mt-4 max-w-2xl text-sm leading-relaxed text-white/70">Choose a time you are available. Your coach will confirm it or suggest another time.</p>
+                    <p className="mt-4 max-w-2xl text-sm leading-relaxed text-white/70">Choose an available 30-minute slot. Already requested, booked, busy, or blocked times are hidden.</p>
                   </div>
-                  <div className="grid grid-cols-1 gap-4 md:grid-cols-[2fr_1fr]">
-                    <div>
-                      <label className="mb-2 block text-sm font-semibold uppercase text-white">Available time</label>
-                      <input
-                        type="datetime-local"
-                        value={requestedDateTime}
-                        onChange={(event) => setRequestedDateTime(event.target.value)}
-                        className="w-full rounded-lg border-2 border-white/40 bg-white px-4 py-2 text-black focus:border-white focus:outline-none"
-                      />
+
+                  <div className="space-y-3">
+                    <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+                      <div>
+                        <p className="text-sm font-black uppercase text-white">Choose a time</p>
+                        <p className="mt-1 text-xs font-semibold text-white/60">Only currently available slots are shown.</p>
+                      </div>
+                      {selectedSlot && <p className="text-xs font-black uppercase text-[#FA0201]">Selected: {formatSlotSummary(selectedSlot.slot_start)}</p>}
                     </div>
-                    <div>
-                      <label className="mb-2 block text-sm font-semibold uppercase text-white">Duration</label>
-                      <select
-                        value={requestedDurationMinutes}
-                        onChange={(event) => setRequestedDurationMinutes(Number(event.target.value))}
-                        className="w-full rounded-lg border-2 border-white/40 bg-white px-4 py-2 text-black focus:border-white focus:outline-none"
-                      >
-                        <option value={15}>15 minutes</option>
-                        <option value={30}>30 minutes</option>
-                        <option value={45}>45 minutes</option>
-                        <option value={60}>60 minutes</option>
-                      </select>
-                    </div>
+
+                    {availableSlotDays.length === 0 ? (
+                      <div className="rounded-xl border border-white/20 bg-white/10 p-4">
+                        <p className="text-sm font-semibold text-white/80">No available coach call slots are currently open.</p>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5">
+                        {availableSlotDays.map((day) => (
+                          <div key={day.key} className="rounded-xl border border-white/20 bg-white/10 p-3">
+                            <div className="mb-3 border-b border-white/20 pb-2">
+                              <p className="text-sm font-black uppercase text-white">{day.label}</p>
+                              <p className="text-xs font-semibold uppercase text-white/50">{day.dateLabel}</p>
+                            </div>
+                            <div className="space-y-2">
+                              {day.slots.map((slot) => {
+                                const selected = selectedSlotStart === slot.slot_start;
+                                return (
+                                  <button
+                                    key={slot.slot_start}
+                                    type="button"
+                                    onClick={() => setSelectedSlotStart(slot.slot_start)}
+                                    className={`w-full rounded-lg border px-3 py-2 text-sm font-black uppercase ${selected ? 'border-[#FA0201] bg-[#FA0201] text-white' : 'border-white/30 bg-white text-black hover:bg-gray-100'}`}
+                                  >
+                                    {formatSlotTime(slot.slot_start)}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
+
                   <Textarea
-                    label="Notes for your coach"
+                    label="What do you want to discuss?"
                     value={quickNote}
                     onChange={(event) => setQuickNote(event.target.value)}
-                    placeholder="Example: I am free after work, want to review next week, or need help with a session."
+                    placeholder="Example: I want to review next week's training, adjust a session, or discuss recovery."
                   />
-                  <Button type="button" onClick={requestWeeklyCall} disabled={savingRequest} className="w-fit bg-[#FA0201] hover:bg-red-700">{savingRequest ? 'Sending...' : 'Send availability'}</Button>
+                  <Button type="button" onClick={requestWeeklyCall} disabled={savingRequest || !selectedSlot} className="w-fit bg-[#FA0201] hover:bg-red-700 disabled:opacity-60">{savingRequest ? 'Requesting...' : 'Request call'}</Button>
                 </div>
               ) : booking ? (
                 <div>
@@ -432,16 +516,6 @@ export default function ClientCoachPage() {
               </div>
             </section>
           )}
-
-          <section>
-            <SectionHeader title="LIVE CHAT" accent />
-            <Card className="p-8">
-              <p className="text-xs font-bold uppercase text-gray-500">Always available</p>
-              <h2 className="mt-1 text-3xl font-black uppercase text-[#000000]">Message your coach</h2>
-              <p className="mt-3 max-w-2xl text-sm leading-relaxed text-gray-700">This will become the live chat area. For now, it marks where quick coach communication will live.</p>
-              <div className="mt-6"><Button type="button" variant="outline">Open live chat</Button></div>
-            </Card>
-          </section>
         </div>
       </main>
     </div>
