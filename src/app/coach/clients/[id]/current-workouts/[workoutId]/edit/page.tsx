@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -12,6 +12,7 @@ import { SectionHeader } from '@/components/ui/section-header';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
 
 type ClientRecord = { id: string; full_name: string; email: string | null };
+
 type WorkoutRecord = {
   id: string;
   title: string;
@@ -20,7 +21,9 @@ type WorkoutRecord = {
   scheduled_date: string | null;
   status: string;
 };
+
 type SessionRecord = { id: string };
+
 type ExerciseRecord = {
   id: string;
   exercise_order: number;
@@ -28,6 +31,7 @@ type ExerciseRecord = {
   notes: string | null;
   exercise_catalogue_id: string | null;
 };
+
 type ProgramSetRecord = {
   id: string;
   exercise_id: string;
@@ -36,6 +40,7 @@ type ProgramSetRecord = {
   target_weight_kg: number | null;
   notes: string | null;
 };
+
 type ExerciseCatalogueRecord = {
   id: string;
   name: string;
@@ -45,15 +50,48 @@ type ExerciseCatalogueRecord = {
   primary_muscles: string[];
   default_notes: string | null;
 };
-type SetForm = { targetReps: string; targetWeightKg: string; notes: string };
-type ExerciseForm = { exerciseName: string; exerciseCatalogueId: string | null; notes: string; sets: SetForm[] };
-type ExerciseSelectorFilter = { open: boolean; search: string; muscle: string; equipment: string };
-type NewExerciseDraft = { open: boolean; name: string; equipment: string; muscles: string; notes: string };
+
+type SetForm = {
+  targetReps: string;
+  targetWeightKg: string;
+  notes: string;
+};
+
+type ExerciseForm = {
+  exerciseName: string;
+  exerciseCatalogueId: string | null;
+  notes: string;
+  sets: SetForm[];
+};
+
+type ExerciseSelectorFilter = {
+  open: boolean;
+  search: string;
+  muscle: string;
+  equipment: string;
+};
+
+type NewExerciseDraft = {
+  open: boolean;
+  name: string;
+  equipment: string;
+  muscles: string;
+  notes: string;
+};
 
 const blankSet = (): SetForm => ({ targetReps: '', targetWeightKg: '', notes: '' });
-const blankExercise = (): ExerciseForm => ({ exerciseName: '', exerciseCatalogueId: null, notes: '', sets: [blankSet(), blankSet(), blankSet()] });
+
+const blankExercise = (): ExerciseForm => ({
+  exerciseName: '',
+  exerciseCatalogueId: null,
+  notes: '',
+  sets: [blankSet(), blankSet(), blankSet()],
+});
+
 const blankFilter = (): ExerciseSelectorFilter => ({ open: false, search: '', muscle: '', equipment: '' });
+
 const blankNewExerciseDraft = (): NewExerciseDraft => ({ open: false, name: '', equipment: '', muscles: '', notes: '' });
+
 const numberOrNull = (value: string) => (value.trim() ? Number(value) : null);
 const textOrNull = (value: string) => value.trim() || null;
 const parseMuscles = (value: string) => value.split(',').map((muscle) => muscle.trim()).filter(Boolean);
@@ -102,24 +140,16 @@ export default function EditAssignedWorkoutPage() {
     }
 
     const supabase = createClient();
+
     const [clientResult, workoutResult, sessionResult, catalogueResult] = await Promise.all([
-      supabase
-        .from('clients')
-        .select('id, full_name, email')
-        .eq('id', clientId)
-        .single(),
+      supabase.from('clients').select('id, full_name, email').eq('id', clientId).single(),
       supabase
         .from('program_workouts')
         .select('id, title, client_id, program_id, scheduled_date, status')
         .eq('id', workoutId)
         .eq('client_id', clientId)
         .single(),
-      supabase
-        .from('workout_sessions')
-        .select('id')
-        .eq('program_workout_id', workoutId)
-        .eq('status', 'completed')
-        .limit(1),
+      supabase.from('workout_sessions').select('id').eq('program_workout_id', workoutId).eq('status', 'completed').limit(1),
       supabase
         .from('exercise_catalogue')
         .select('id, name, category, movement_pattern, equipment, primary_muscles, default_notes')
@@ -163,6 +193,7 @@ export default function EditAssignedWorkoutPage() {
 
     const loadedExercises = (exerciseData ?? []) as ExerciseRecord[];
     const exerciseIds = loadedExercises.map((exercise) => exercise.id);
+
     const { data: setData, error: setError } = exerciseIds.length > 0
       ? await supabase
           .from('program_sets')
@@ -298,6 +329,16 @@ export default function EditAssignedWorkoutPage() {
 
   const removeExercise = (index: number) => {
     setExercises((current) => current.filter((_, i) => i !== index));
+    setSelectorFilters((current) => {
+      const next = { ...current };
+      delete next[index];
+      return next;
+    });
+    setNewExerciseDrafts((current) => {
+      const next = { ...current };
+      delete next[index];
+      return next;
+    });
   };
 
   const updateSet = (exerciseIndex: number, setIndex: number, updates: Partial<SetForm>) => {
@@ -313,27 +354,19 @@ export default function EditAssignedWorkoutPage() {
   const addSet = (exerciseIndex: number) => {
     setExercises((current) => current.map((exercise, i) => {
       if (i !== exerciseIndex) return exercise;
-
       const previousSet = exercise.sets[exercise.sets.length - 1] || blankSet();
-      return {
-        ...exercise,
-        sets: [...exercise.sets, { ...previousSet }],
-      };
+      return { ...exercise, sets: [...exercise.sets, { ...previousSet }] };
     }));
   };
 
   const removeSet = (exerciseIndex: number, setIndex: number) => {
     setExercises((current) => current.map((exercise, i) => {
       if (i !== exerciseIndex) return exercise;
-
-      return {
-        ...exercise,
-        sets: exercise.sets.filter((_, j) => j !== setIndex),
-      };
+      return { ...exercise, sets: exercise.sets.filter((_, j) => j !== setIndex) };
     }));
   };
 
-  const saveWorkout = async (event: React.FormEvent<HTMLFormElement>) => {
+  const saveWorkout = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!workout || !isSupabaseConfigured) return;
 
@@ -347,9 +380,15 @@ export default function EditAssignedWorkoutPage() {
       return;
     }
 
-    const validExercises = exercises.filter((exercise) => exercise.exerciseName.trim());
+    const validExercises = exercises.filter((exercise) => exercise.exerciseName.trim() || exercise.exerciseCatalogueId);
     if (validExercises.length === 0) {
       setError('Add at least one exercise.');
+      return;
+    }
+
+    const unlinkedExercise = validExercises.find((exercise) => !exercise.exerciseCatalogueId || !catalogueById[exercise.exerciseCatalogueId]);
+    if (unlinkedExercise) {
+      setError('Every exercise must be selected from the Exercise Library so client graphs stay consistent. Use the searchable dropdown or add the exercise to the library first.');
       return;
     }
 
@@ -373,22 +412,14 @@ export default function EditAssignedWorkoutPage() {
     }
 
     if (originalExerciseIds.length > 0) {
-      const { error: deleteSetsError } = await supabase
-        .from('program_sets')
-        .delete()
-        .in('exercise_id', originalExerciseIds);
-
+      const { error: deleteSetsError } = await supabase.from('program_sets').delete().in('exercise_id', originalExerciseIds);
       if (deleteSetsError) {
         setError(deleteSetsError.message);
         setSaving(false);
         return;
       }
 
-      const { error: deleteExercisesError } = await supabase
-        .from('program_exercises')
-        .delete()
-        .in('id', originalExerciseIds);
-
+      const { error: deleteExercisesError } = await supabase.from('program_exercises').delete().in('id', originalExerciseIds);
       if (deleteExercisesError) {
         setError(deleteExercisesError.message);
         setSaving(false);
@@ -398,13 +429,15 @@ export default function EditAssignedWorkoutPage() {
 
     const newExerciseIds: string[] = [];
     for (const [exerciseIndex, exercise] of validExercises.entries()) {
+      const linkedCatalogueExercise = catalogueById[exercise.exerciseCatalogueId as string];
+
       const { data: exerciseData, error: exerciseError } = await supabase
         .from('program_exercises')
         .insert({
           workout_id: workout.id,
           exercise_order: exerciseIndex + 1,
-          exercise_name: exercise.exerciseName.trim(),
-          exercise_catalogue_id: exercise.exerciseCatalogueId,
+          exercise_name: linkedCatalogueExercise.name,
+          exercise_catalogue_id: linkedCatalogueExercise.id,
           notes: textOrNull(exercise.notes),
         })
         .select('id')
@@ -418,6 +451,7 @@ export default function EditAssignedWorkoutPage() {
 
       const newExerciseId = (exerciseData as { id: string }).id;
       newExerciseIds.push(newExerciseId);
+
       const setRows = exercise.sets.map((set, setIndex) => ({
         exercise_id: newExerciseId,
         set_order: setIndex + 1,
@@ -437,7 +471,7 @@ export default function EditAssignedWorkoutPage() {
     }
 
     setOriginalExerciseIds(newExerciseIds);
-    setMessage('Workout updated.');
+    setMessage('Workout updated. Exercises are linked to the Exercise Library for consistent client graphs.');
     setSaving(false);
   };
 
@@ -450,10 +484,10 @@ export default function EditAssignedWorkoutPage() {
   }
 
   return (
-    <div className="p-6 md:p-8 space-y-8">
+    <div className="space-y-8 p-6 md:p-8">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold uppercase text-[#000000] tracking-tight">Edit workout</h1>
+          <h1 className="text-3xl font-bold uppercase tracking-tight text-[#000000]">Edit workout</h1>
           <p className="mt-1 text-sm text-gray-600">{client?.full_name} • {workout?.title}</p>
         </div>
         <div className="flex flex-col items-end gap-2">
@@ -464,14 +498,10 @@ export default function EditAssignedWorkoutPage() {
 
       {isLocked && (
         <Card className="border-2 border-yellow-200 bg-yellow-50">
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div>
-              <Badge variant="warning">Locked</Badge>
-              <p className="mt-2 text-sm font-semibold text-yellow-800">
-                This workout is locked because the client has completed it. Duplicate it from Current Workouts to make a new editable copy.
-              </p>
-            </div>
-          </div>
+          <Badge variant="warning">Locked</Badge>
+          <p className="mt-2 text-sm font-semibold text-yellow-800">
+            This workout is locked because the client has completed it. Duplicate it from Current Workouts to make a new editable copy.
+          </p>
         </Card>
       )}
 
@@ -482,9 +512,16 @@ export default function EditAssignedWorkoutPage() {
         <SectionHeader title="WORKOUT DETAILS" accent />
         <Card>
           <form onSubmit={saveWorkout} className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <Input label="Workout title" value={workoutTitle} onChange={(e) => setWorkoutTitle(e.target.value)} required disabled={isLocked} />
               <Input label="Scheduled date" type="date" value={scheduledDate} onChange={(e) => setScheduledDate(e.target.value)} disabled={isLocked} />
+            </div>
+
+            <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
+              <p className="text-xs font-black uppercase tracking-wide text-blue-900">Exercise names are graph-linked</p>
+              <p className="mt-1 text-sm font-semibold text-blue-800">
+                Choose exercises from the Exercise Library dropdown. This stores the catalogue ID and keeps client strength graphs consistent across programmes.
+              </p>
             </div>
 
             {exercises.map((exercise, exerciseIndex) => {
@@ -494,16 +531,22 @@ export default function EditAssignedWorkoutPage() {
               const newExerciseDraft = newExerciseDrafts[exerciseIndex] || blankNewExerciseDraft();
 
               return (
-                <div key={exerciseIndex} className="rounded-xl border border-gray-200 p-4 space-y-4">
+                <div key={exerciseIndex} className="space-y-4 rounded-xl border border-gray-200 p-4">
                   <div className="flex items-center justify-between gap-4">
-                    <p className="text-sm font-bold uppercase text-[#000000]">Exercise {exerciseIndex + 1}</p>
-                    {!isLocked && exercises.length > 1 && (
+                    <div>
+                      <p className="text-sm font-bold uppercase text-[#000000]">Exercise {exerciseIndex + 1}</p>
+                      <p className="mt-1 text-xs font-semibold uppercase text-gray-500">
+                        {linkedExercise ? `Linked to DB: ${linkedExercise.name}` : 'Not linked yet'}
+                      </p>
+                    </div>
+                    {!isLocked && (
                       <button
                         type="button"
                         onClick={() => removeExercise(exerciseIndex)}
-                        className="text-xs font-bold uppercase text-[#FA0201] hover:underline"
+                        className="flex items-center gap-2 rounded-lg border border-red-200 bg-white px-3 py-2 text-xs font-black uppercase text-[#FA0201] hover:bg-red-50"
                       >
-                        Remove exercise
+                        <span aria-hidden="true">🗑</span>
+                        Delete exercise
                       </button>
                     )}
                   </div>
@@ -523,13 +566,14 @@ export default function EditAssignedWorkoutPage() {
                           onClick={() => updateSelectorFilter(exerciseIndex, { open: !filter.open })}
                           className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-xs font-bold uppercase text-[#000000] hover:bg-gray-100"
                         >
-                          {filter.open ? 'Close Library' : 'Open Exercise Library'}
+                          {filter.open ? 'Close dropdown ▲' : 'Search library ▼'}
                         </button>
                       )}
                     </div>
 
                     {linkedExercise && (
                       <div className="flex flex-wrap items-center gap-2 text-xs font-bold uppercase text-gray-500">
+                        <Badge variant="default">DB linked</Badge>
                         <Badge variant="default">{linkedExercise.category}</Badge>
                         {linkedExercise.equipment && <Badge variant="warning">{linkedExercise.equipment}</Badge>}
                         {linkedExercise.primary_muscles?.length > 0 && <span>{linkedExercise.primary_muscles.join(', ')}</span>}
@@ -540,7 +584,7 @@ export default function EditAssignedWorkoutPage() {
                       <div className="space-y-3 rounded-lg border border-gray-200 bg-white p-3">
                         <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
                           <Input
-                            label="Search"
+                            label="Search exercises"
                             value={filter.search}
                             onChange={(e) => updateSelectorFilter(exerciseIndex, { search: e.target.value })}
                             placeholder="e.g. squat, bench, row"
@@ -575,7 +619,7 @@ export default function EditAssignedWorkoutPage() {
                             onClick={() => updateNewExerciseDraft(exerciseIndex, { open: !newExerciseDraft.open })}
                             className="text-xs font-bold uppercase text-[#FA0201] hover:underline"
                           >
-                            {newExerciseDraft.open ? 'Close add exercise' : 'Add exercise to library'}
+                            {newExerciseDraft.open ? 'Close add exercise' : 'Add missing exercise to library'}
                           </button>
 
                           {newExerciseDraft.open && (
@@ -602,7 +646,7 @@ export default function EditAssignedWorkoutPage() {
                                 label="Default notes"
                                 value={newExerciseDraft.notes}
                                 onChange={(e) => updateNewExerciseDraft(exerciseIndex, { notes: e.target.value })}
-                                placeholder="e.g. Feet shoulder width apart, controlled descent, ribs down."
+                                placeholder="e.g. Controlled descent, stable brace."
                               />
                               <div className="md:col-span-2">
                                 <Button
@@ -611,7 +655,7 @@ export default function EditAssignedWorkoutPage() {
                                   onClick={() => addExerciseToLibrary(exerciseIndex)}
                                   className="bg-[#000000] hover:bg-gray-900"
                                 >
-                                  {addingExerciseIndex === exerciseIndex ? 'Adding...' : 'Add and select exercise'}
+                                  {addingExerciseIndex === exerciseIndex ? 'Adding...' : 'Add to DB and select'}
                                 </Button>
                               </div>
                             </div>
@@ -631,6 +675,7 @@ export default function EditAssignedWorkoutPage() {
                               >
                                 <div className="flex flex-wrap items-center gap-2">
                                   <p className="text-sm font-black uppercase text-[#000000]">{catalogueExercise.name}</p>
+                                  <Badge variant="default">DB exercise</Badge>
                                   <Badge variant="default">{catalogueExercise.category}</Badge>
                                   {catalogueExercise.equipment && <Badge variant="warning">{catalogueExercise.equipment}</Badge>}
                                 </div>
@@ -690,7 +735,7 @@ export default function EditAssignedWorkoutPage() {
               );
             })}
 
-            <div className="flex flex-col md:flex-row gap-3">
+            <div className="flex flex-col gap-3 md:flex-row">
               {!isLocked && <Button type="button" variant="outline" onClick={() => setExercises((current) => [...current, blankExercise()])}>Add exercise</Button>}
               <Button type="submit" variant="primary" isLoading={saving} className="bg-[#FA0201] hover:bg-red-700" disabled={isLocked || saving}>Save changes</Button>
             </div>
