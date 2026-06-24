@@ -7,6 +7,8 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
 
+type ExerciseRole = 'main_lift' | 'accessory';
+
 type Workout = {
   id: string;
   name: string;
@@ -30,6 +32,7 @@ type WorkoutExercise = {
   exercise_name: string;
   exercise_order: number;
   notes: string | null;
+  exercise_role: ExerciseRole;
 };
 
 type WorkoutSet = {
@@ -60,6 +63,7 @@ type ExerciseEditForm = {
   search: string;
   order: string;
   notes: string;
+  exerciseRole: ExerciseRole;
 };
 
 const blankWorkoutForm: WorkoutForm = {
@@ -153,6 +157,9 @@ const filterCatalogue = (catalogue: CatalogueExercise[], query: string) => {
   });
 };
 
+const getRoleLabel = (role: ExerciseRole) => role === 'main_lift' ? 'Main / Key Lift' : 'Accessory';
+const getRoleBadgeVariant = (role: ExerciseRole) => role === 'main_lift' ? 'success' : 'default';
+
 export default function WorkoutLibraryPage() {
   const [workouts, setWorkouts] = useState<Workout[]>([]);
   const [catalogue, setCatalogue] = useState<CatalogueExercise[]>([]);
@@ -163,6 +170,7 @@ export default function WorkoutLibraryPage() {
   const [isCreatingWorkout, setIsCreatingWorkout] = useState(false);
   const [workoutForm, setWorkoutForm] = useState<WorkoutForm>(blankWorkoutForm);
   const [selectedExerciseId, setSelectedExerciseId] = useState('');
+  const [selectedExerciseRole, setSelectedExerciseRole] = useState<ExerciseRole>('accessory');
   const [exercisePickerSearch, setExercisePickerSearch] = useState('');
   const [exerciseOrder, setExerciseOrder] = useState('1');
   const [exerciseNotes, setExerciseNotes] = useState('');
@@ -248,7 +256,7 @@ export default function WorkoutLibraryPage() {
     const exerciseResult = workoutIds.length
       ? await supabase
           .from('library_workout_exercises')
-          .select('id, library_workout_id, exercise_catalogue_id, exercise_name, exercise_order, notes')
+          .select('id, library_workout_id, exercise_catalogue_id, exercise_name, exercise_order, notes, exercise_role')
           .in('library_workout_id', workoutIds)
           .order('exercise_order')
       : { data: [], error: null };
@@ -281,10 +289,11 @@ export default function WorkoutLibraryPage() {
 
     setWorkouts(nextWorkouts);
     setCatalogue(nextCatalogue);
-    setExercises(nextExercises);
+    setExercises(nextExercises.map((exercise) => ({ ...exercise, exercise_role: exercise.exercise_role || 'accessory' })));
     setSets(nextSets);
     setSelectedWorkoutId(retainedWorkout?.id || null);
     setSelectedExerciseId(nextCatalogue[0]?.id || '');
+    setSelectedExerciseRole('accessory');
     setExercisePickerSearch('');
     setExerciseOrder(String((nextExercises.filter((exercise) => exercise.library_workout_id === retainedWorkout?.id).length || 0) + 1));
     setExerciseNotes('');
@@ -295,6 +304,7 @@ export default function WorkoutLibraryPage() {
           search: exercise.exercise_name,
           order: String(exercise.exercise_order),
           notes: exercise.notes || '',
+          exerciseRole: exercise.exercise_role || 'accessory',
         };
         return accumulator;
       }, {})
@@ -344,6 +354,7 @@ export default function WorkoutLibraryPage() {
     setWorkoutForm(blankWorkoutForm);
     setExerciseNotes('');
     setExercisePickerSearch('');
+    setSelectedExerciseRole('accessory');
     setNewSetForms({});
   };
 
@@ -449,6 +460,7 @@ export default function WorkoutLibraryPage() {
       p_exercise_name: selectedExercise.name,
       p_exercise_order: toIntegerOrFallback(exerciseOrder, selectedWorkoutExercises.length + 1),
       p_notes: exerciseNotes || selectedExercise.default_notes || null,
+      p_exercise_role: selectedExerciseRole,
     });
 
     if (addError) {
@@ -457,7 +469,7 @@ export default function WorkoutLibraryPage() {
       return;
     }
 
-    setMessage('DB-linked exercise added to workout template.');
+    setMessage(`${getRoleLabel(selectedExerciseRole)} added to workout template.`);
     setSaving(false);
     await refreshLibrary(selectedWorkoutId);
   };
@@ -497,6 +509,7 @@ export default function WorkoutLibraryPage() {
       p_exercise_name: selectedCatalogueExercise.name,
       p_exercise_order: toIntegerOrFallback(edit.order, exercise.exercise_order),
       p_notes: edit.notes,
+      p_exercise_role: edit.exerciseRole,
     });
 
     if (exerciseError) {
@@ -516,7 +529,7 @@ export default function WorkoutLibraryPage() {
       }
     }
 
-    setMessage('Exercise and sets updated with DB-linked exercise name.');
+    setMessage('Exercise role, DB link, and sets updated.');
     setSaving(false);
     setEditingExerciseId(null);
     await refreshLibrary(selectedWorkoutId);
@@ -634,11 +647,11 @@ export default function WorkoutLibraryPage() {
       <Card className="space-y-5">
         <div>
           <h2 className="text-xl font-black uppercase text-[#000000]">Exercises and prescribed sets</h2>
-          <p className="mt-1 text-sm text-gray-600">Use DB-linked exercises only. This keeps client progress graphs consistent across all programmes.</p>
+          <p className="mt-1 text-sm text-gray-600">Use DB-linked exercises only. Main lifts will drive calibration and %1RM planning later; accessories use normal rep/RPE progression.</p>
         </div>
 
         <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_0.18fr] md:items-end">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_0.22fr_0.18fr] md:items-end">
             <label>
               <span className="text-xs font-black uppercase text-gray-500">Search Exercise Library</span>
               <input
@@ -647,6 +660,13 @@ export default function WorkoutLibraryPage() {
                 placeholder="Search by exercise, category, or equipment..."
                 className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm"
               />
+            </label>
+            <label>
+              <span className="text-xs font-black uppercase text-gray-500">Role</span>
+              <select value={selectedExerciseRole} onChange={(event) => setSelectedExerciseRole(event.target.value as ExerciseRole)} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm">
+                <option value="accessory">Accessory</option>
+                <option value="main_lift">Main / Key Lift</option>
+              </select>
             </label>
             <label><span className="text-xs font-black uppercase text-gray-500">Order</span><input value={exerciseOrder} onChange={(event) => setExerciseOrder(event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 px-4 py-3 text-sm" /></label>
           </div>
@@ -679,7 +699,7 @@ export default function WorkoutLibraryPage() {
           </div>
 
           {selectedCatalogueExercise && (
-            <p className="mt-3 text-xs font-bold uppercase text-gray-600">Selected DB exercise: {selectedCatalogueExercise.name}</p>
+            <p className="mt-3 text-xs font-bold uppercase text-gray-600">Selected DB exercise: {selectedCatalogueExercise.name} · Role: {getRoleLabel(selectedExerciseRole)}</p>
           )}
 
           <label className="mt-3 block"><span className="text-xs font-black uppercase text-gray-500">Notes</span><input value={exerciseNotes} onChange={(event) => setExerciseNotes(event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 px-4 py-3 text-sm" /></label>
@@ -688,7 +708,7 @@ export default function WorkoutLibraryPage() {
 
         <div className="space-y-3">
           {selectedWorkoutExercises.length === 0 ? <p className="rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-600">No exercises in this workout yet.</p> : selectedWorkoutExercises.map((exercise) => {
-            const edit = exerciseEdits[exercise.id] || { exerciseCatalogueId: exercise.exercise_catalogue_id || '', search: exercise.exercise_name, order: String(exercise.exercise_order), notes: exercise.notes || '' };
+            const edit = exerciseEdits[exercise.id] || { exerciseCatalogueId: exercise.exercise_catalogue_id || '', search: exercise.exercise_name, order: String(exercise.exercise_order), notes: exercise.notes || '', exerciseRole: exercise.exercise_role || 'accessory' };
             const exerciseSets = (setsByExercise[exercise.id] || []).sort((a, b) => a.set_order - b.set_order);
             const newSetForm = newSetForms[exercise.id] || newSetFormFromPrevious(exerciseSets);
             const isEditingExercise = editingExerciseId === exercise.id;
@@ -702,6 +722,7 @@ export default function WorkoutLibraryPage() {
                   <div>
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="text-sm font-black uppercase text-[#000000]">{exercise.exercise_name}</p>
+                      <Badge variant={getRoleBadgeVariant(exercise.exercise_role)}>{getRoleLabel(exercise.exercise_role)}</Badge>
                       {linkedCatalogueExercise ? <Badge variant="success">DB linked</Badge> : <Badge variant="warning">Needs DB link</Badge>}
                     </div>
                     <p className="mt-1 text-xs font-bold uppercase text-gray-500">{summariseSets(exerciseSets)}</p>
@@ -715,8 +736,15 @@ export default function WorkoutLibraryPage() {
 
                 {isEditingExercise && (
                   <div className="mt-4 space-y-4 rounded-xl border border-gray-200 bg-white p-4">
-                    <div className="grid grid-cols-1 gap-3 md:grid-cols-[0.16fr_1fr] md:items-end">
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-[0.16fr_0.24fr_1fr] md:items-end">
                       <label><span className="text-xs font-black uppercase text-gray-500">Order</span><input value={edit.order} onChange={(event) => setExerciseEdits((current) => ({ ...current, [exercise.id]: { ...edit, order: event.target.value } }))} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" /></label>
+                      <label>
+                        <span className="text-xs font-black uppercase text-gray-500">Role</span>
+                        <select value={edit.exerciseRole} onChange={(event) => setExerciseEdits((current) => ({ ...current, [exercise.id]: { ...edit, exerciseRole: event.target.value as ExerciseRole } }))} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm">
+                          <option value="accessory">Accessory</option>
+                          <option value="main_lift">Main / Key Lift</option>
+                        </select>
+                      </label>
                       <label>
                         <span className="text-xs font-black uppercase text-gray-500">Search DB exercise</span>
                         <input
