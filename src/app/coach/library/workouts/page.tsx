@@ -55,6 +55,13 @@ type SetForm = {
   notes: string;
 };
 
+type ExerciseEditForm = {
+  exerciseCatalogueId: string;
+  search: string;
+  order: string;
+  notes: string;
+};
+
 const blankWorkoutForm: WorkoutForm = {
   name: '',
   description: '',
@@ -133,6 +140,19 @@ const summariseSets = (sets: WorkoutSet[]) => {
     .join(' · ');
 };
 
+const filterCatalogue = (catalogue: CatalogueExercise[], query: string) => {
+  const search = query.trim().toLowerCase();
+  if (!search) return catalogue;
+
+  return catalogue.filter((exercise) => {
+    return [exercise.name, exercise.category, exercise.equipment]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase()
+      .includes(search);
+  });
+};
+
 export default function WorkoutLibraryPage() {
   const [workouts, setWorkouts] = useState<Workout[]>([]);
   const [catalogue, setCatalogue] = useState<CatalogueExercise[]>([]);
@@ -143,9 +163,10 @@ export default function WorkoutLibraryPage() {
   const [isCreatingWorkout, setIsCreatingWorkout] = useState(false);
   const [workoutForm, setWorkoutForm] = useState<WorkoutForm>(blankWorkoutForm);
   const [selectedExerciseId, setSelectedExerciseId] = useState('');
+  const [exercisePickerSearch, setExercisePickerSearch] = useState('');
   const [exerciseOrder, setExerciseOrder] = useState('1');
   const [exerciseNotes, setExerciseNotes] = useState('');
-  const [exerciseEdits, setExerciseEdits] = useState<Record<string, { name: string; order: string; notes: string }>>({});
+  const [exerciseEdits, setExerciseEdits] = useState<Record<string, ExerciseEditForm>>({});
   const [setEdits, setSetEdits] = useState<Record<string, SetForm>>({});
   const [newSetForms, setNewSetForms] = useState<Record<string, SetForm>>({});
   const [workoutSearch, setWorkoutSearch] = useState('');
@@ -165,6 +186,14 @@ export default function WorkoutLibraryPage() {
   }, [exercises, selectedWorkoutId]);
 
   const automaticWorkoutCategory = useMemo(() => deriveWorkoutCategory(selectedWorkoutExercises, catalogue), [selectedWorkoutExercises, catalogue]);
+
+  const selectedCatalogueExercise = useMemo(() => {
+    return catalogue.find((exercise) => exercise.id === selectedExerciseId) || null;
+  }, [catalogue, selectedExerciseId]);
+
+  const filteredCatalogueForPicker = useMemo(() => {
+    return filterCatalogue(catalogue, exercisePickerSearch).slice(0, 40);
+  }, [catalogue, exercisePickerSearch]);
 
   const filteredWorkouts = useMemo(() => {
     const query = workoutSearch.trim().toLowerCase();
@@ -256,11 +285,17 @@ export default function WorkoutLibraryPage() {
     setSets(nextSets);
     setSelectedWorkoutId(retainedWorkout?.id || null);
     setSelectedExerciseId(nextCatalogue[0]?.id || '');
+    setExercisePickerSearch('');
     setExerciseOrder(String((nextExercises.filter((exercise) => exercise.library_workout_id === retainedWorkout?.id).length || 0) + 1));
     setExerciseNotes('');
     setExerciseEdits(
-      nextExercises.reduce<Record<string, { name: string; order: string; notes: string }>>((accumulator, exercise) => {
-        accumulator[exercise.id] = { name: exercise.exercise_name, order: String(exercise.exercise_order), notes: exercise.notes || '' };
+      nextExercises.reduce<Record<string, ExerciseEditForm>>((accumulator, exercise) => {
+        accumulator[exercise.id] = {
+          exerciseCatalogueId: exercise.exercise_catalogue_id || '',
+          search: exercise.exercise_name,
+          order: String(exercise.exercise_order),
+          notes: exercise.notes || '',
+        };
         return accumulator;
       }, {})
     );
@@ -308,6 +343,7 @@ export default function WorkoutLibraryPage() {
     setEditingExerciseId(null);
     setWorkoutForm(blankWorkoutForm);
     setExerciseNotes('');
+    setExercisePickerSearch('');
     setNewSetForms({});
   };
 
@@ -421,7 +457,7 @@ export default function WorkoutLibraryPage() {
       return;
     }
 
-    setMessage('Exercise added to workout template.');
+    setMessage('DB-linked exercise added to workout template.');
     setSaving(false);
     await refreshLibrary(selectedWorkoutId);
   };
@@ -442,9 +478,10 @@ export default function WorkoutLibraryPage() {
   const saveExerciseAndSets = async (exercise: WorkoutExercise) => {
     if (!isSupabaseConfigured) return;
     const edit = exerciseEdits[exercise.id];
+    const selectedCatalogueExercise = catalogue.find((catalogueExercise) => catalogueExercise.id === edit?.exerciseCatalogueId);
 
-    if (!edit?.name.trim()) {
-      setError('Exercise name is required.');
+    if (!selectedCatalogueExercise) {
+      setError('Choose this exercise from the Exercise Library so client graphs stay consistent.');
       return;
     }
 
@@ -456,8 +493,8 @@ export default function WorkoutLibraryPage() {
     const { error: exerciseError } = await supabase.rpc('upsert_library_workout_exercise', {
       p_exercise_id: exercise.id,
       p_library_workout_id: exercise.library_workout_id,
-      p_exercise_catalogue_id: exercise.exercise_catalogue_id,
-      p_exercise_name: edit.name,
+      p_exercise_catalogue_id: selectedCatalogueExercise.id,
+      p_exercise_name: selectedCatalogueExercise.name,
       p_exercise_order: toIntegerOrFallback(edit.order, exercise.exercise_order),
       p_notes: edit.notes,
     });
@@ -479,7 +516,7 @@ export default function WorkoutLibraryPage() {
       }
     }
 
-    setMessage('Exercise and sets updated.');
+    setMessage('Exercise and sets updated with DB-linked exercise name.');
     setSaving(false);
     setEditingExerciseId(null);
     await refreshLibrary(selectedWorkoutId);
@@ -527,12 +564,49 @@ export default function WorkoutLibraryPage() {
     await refreshLibrary(selectedWorkoutId);
   };
 
+  const deleteExercise = async (exercise: WorkoutExercise) => {
+    if (!isSupabaseConfigured) return;
+    if (!window.confirm(`Delete ${exercise.exercise_name} from this workout template? This also removes its prescribed sets.`)) return;
+
+    setSaving(true);
+    setError(null);
+    setMessage(null);
+
+    const supabase = createClient();
+    const { error: setDeleteError } = await supabase
+      .from('library_workout_sets')
+      .delete()
+      .eq('library_workout_exercise_id', exercise.id);
+
+    if (setDeleteError) {
+      setError(setDeleteError.message);
+      setSaving(false);
+      return;
+    }
+
+    const { error: exerciseDeleteError } = await supabase
+      .from('library_workout_exercises')
+      .delete()
+      .eq('id', exercise.id);
+
+    if (exerciseDeleteError) {
+      setError(exerciseDeleteError.message);
+      setSaving(false);
+      return;
+    }
+
+    setMessage('Exercise deleted from workout template.');
+    setSaving(false);
+    setEditingExerciseId(null);
+    await refreshLibrary(selectedWorkoutId);
+  };
+
   const renderWorkoutEditor = () => (
     <Card className="space-y-5 border-2 border-gray-200 bg-gray-50">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
           <h2 className="text-xl font-black uppercase text-[#000000]">{isCreatingWorkout ? 'Create workout template' : 'Edit workout template'}</h2>
-          <p className="mt-1 text-sm text-gray-600">Save Workout returns you to the main library. Category is generated from the selected exercises.</p>
+          <p className="mt-1 text-sm text-gray-600">Save Workout returns you to the main library. Category is generated from the selected DB-linked exercises.</p>
         </div>
         {selectedWorkout && (
           <div className="flex flex-col gap-2 md:flex-row md:items-center">
@@ -547,7 +621,7 @@ export default function WorkoutLibraryPage() {
       </div>
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <label><span className="text-xs font-black uppercase text-gray-500">Name</span><input value={workoutForm.name} onChange={(event) => setWorkoutForm((current) => ({ ...current, name: event.target.value }))} className="mt-1 w-full rounded-lg border border-gray-300 px-4 py-3 text-sm" /></label>
-        <div><span className="text-xs font-black uppercase text-gray-500">Automatic category</span><div className="mt-1 rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm font-bold text-gray-700">{automaticWorkoutCategory}</div><p className="mt-1 text-xs text-gray-500">Pulled from the muscle/category data on selected exercises.</p></div>
+        <div><span className="text-xs font-black uppercase text-gray-500">Automatic category</span><div className="mt-1 rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm font-bold text-gray-700">{automaticWorkoutCategory}</div><p className="mt-1 text-xs text-gray-500">Pulled from the category data on selected DB exercises.</p></div>
         <label className="md:col-span-2"><span className="text-xs font-black uppercase text-gray-500">Description</span><textarea value={workoutForm.description} onChange={(event) => setWorkoutForm((current) => ({ ...current, description: event.target.value }))} className="mt-1 min-h-24 w-full rounded-lg border border-gray-300 px-4 py-3 text-sm" /></label>
       </div>
     </Card>
@@ -560,32 +634,133 @@ export default function WorkoutLibraryPage() {
       <Card className="space-y-5">
         <div>
           <h2 className="text-xl font-black uppercase text-[#000000]">Exercises and prescribed sets</h2>
-          <p className="mt-1 text-sm text-gray-600">Exercise-level save now applies exercise details and all existing set changes.</p>
+          <p className="mt-1 text-sm text-gray-600">Use DB-linked exercises only. This keeps client progress graphs consistent across all programmes.</p>
         </div>
+
         <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
           <div className="grid grid-cols-1 gap-3 md:grid-cols-[1fr_0.18fr] md:items-end">
-            <label><span className="text-xs font-black uppercase text-gray-500">Exercise Library item</span><select value={selectedExerciseId} onChange={(event) => setSelectedExerciseId(event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm">{catalogue.map((exercise) => <option key={exercise.id} value={exercise.id}>{exercise.name}</option>)}</select></label>
+            <label>
+              <span className="text-xs font-black uppercase text-gray-500">Search Exercise Library</span>
+              <input
+                value={exercisePickerSearch}
+                onChange={(event) => setExercisePickerSearch(event.target.value)}
+                placeholder="Search by exercise, category, or equipment..."
+                className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm"
+              />
+            </label>
             <label><span className="text-xs font-black uppercase text-gray-500">Order</span><input value={exerciseOrder} onChange={(event) => setExerciseOrder(event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 px-4 py-3 text-sm" /></label>
-            <label className="md:col-span-2"><span className="text-xs font-black uppercase text-gray-500">Notes</span><input value={exerciseNotes} onChange={(event) => setExerciseNotes(event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 px-4 py-3 text-sm" /></label>
           </div>
-          <div className="mt-3 flex justify-end"><Button type="button" disabled={saving || catalogue.length === 0} onClick={addExercise} className="bg-[#FA0201] hover:bg-red-700">Add exercise</Button></div>
+
+          <div className="mt-3 max-h-64 space-y-2 overflow-y-auto rounded-lg border border-gray-200 bg-white p-2">
+            {filteredCatalogueForPicker.length === 0 ? (
+              <p className="p-3 text-sm text-gray-600">No DB exercises match your search.</p>
+            ) : filteredCatalogueForPicker.map((exercise) => {
+              const isSelected = selectedExerciseId === exercise.id;
+              return (
+                <button
+                  key={exercise.id}
+                  type="button"
+                  onClick={() => {
+                    setSelectedExerciseId(exercise.id);
+                    setExercisePickerSearch(exercise.name);
+                  }}
+                  className={`w-full rounded-lg border p-3 text-left hover:border-[#FA0201] hover:bg-red-50 ${isSelected ? 'border-[#FA0201] bg-red-50' : 'border-gray-200 bg-gray-50'}`}
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-sm font-black uppercase text-[#000000]">{exercise.name}</p>
+                    <Badge variant="default">DB exercise</Badge>
+                    <Badge variant="default">{exercise.category}</Badge>
+                    {exercise.equipment && <Badge variant="warning">{exercise.equipment}</Badge>}
+                  </div>
+                  {exercise.default_notes && <p className="mt-1 text-xs text-gray-500">{exercise.default_notes}</p>}
+                </button>
+              );
+            })}
+          </div>
+
+          {selectedCatalogueExercise && (
+            <p className="mt-3 text-xs font-bold uppercase text-gray-600">Selected DB exercise: {selectedCatalogueExercise.name}</p>
+          )}
+
+          <label className="mt-3 block"><span className="text-xs font-black uppercase text-gray-500">Notes</span><input value={exerciseNotes} onChange={(event) => setExerciseNotes(event.target.value)} className="mt-1 w-full rounded-lg border border-gray-300 px-4 py-3 text-sm" /></label>
+          <div className="mt-3 flex justify-end"><Button type="button" disabled={saving || !selectedExerciseId} onClick={addExercise} className="bg-[#FA0201] hover:bg-red-700">Add exercise</Button></div>
         </div>
+
         <div className="space-y-3">
           {selectedWorkoutExercises.length === 0 ? <p className="rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-600">No exercises in this workout yet.</p> : selectedWorkoutExercises.map((exercise) => {
-            const edit = exerciseEdits[exercise.id] || { name: exercise.exercise_name, order: String(exercise.exercise_order), notes: exercise.notes || '' };
+            const edit = exerciseEdits[exercise.id] || { exerciseCatalogueId: exercise.exercise_catalogue_id || '', search: exercise.exercise_name, order: String(exercise.exercise_order), notes: exercise.notes || '' };
             const exerciseSets = (setsByExercise[exercise.id] || []).sort((a, b) => a.set_order - b.set_order);
             const newSetForm = newSetForms[exercise.id] || newSetFormFromPrevious(exerciseSets);
             const isEditingExercise = editingExerciseId === exercise.id;
+            const linkedCatalogueExercise = exercise.exercise_catalogue_id ? catalogue.find((catalogueExercise) => catalogueExercise.id === exercise.exercise_catalogue_id) : null;
+            const filteredEditCatalogue = filterCatalogue(catalogue, edit.search).slice(0, 30);
+
             return (
               <div key={exercise.id} className="rounded-xl border border-gray-200 bg-gray-50 p-3">
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-[0.12fr_1fr_0.22fr] md:items-center"><Badge variant="default">#{exercise.exercise_order}</Badge><div><p className="text-sm font-black uppercase text-[#000000]">{exercise.exercise_name}</p><p className="mt-1 text-xs font-bold uppercase text-gray-500">{summariseSets(exerciseSets)}</p>{exercise.notes && <p className="mt-1 text-xs text-gray-600">{exercise.notes}</p>}</div><button type="button" onClick={() => (isEditingExercise ? saveExerciseAndSets(exercise) : setEditingExerciseId(exercise.id))} className="rounded-lg bg-[#FA0201] px-4 py-2 text-xs font-bold uppercase text-white hover:bg-red-700 disabled:opacity-60" disabled={saving}>{isEditingExercise ? 'Save exercise' : 'Edit'}</button></div>
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-[0.12fr_1fr_0.34fr] md:items-center">
+                  <Badge variant="default">#{exercise.exercise_order}</Badge>
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-sm font-black uppercase text-[#000000]">{exercise.exercise_name}</p>
+                      {linkedCatalogueExercise ? <Badge variant="success">DB linked</Badge> : <Badge variant="warning">Needs DB link</Badge>}
+                    </div>
+                    <p className="mt-1 text-xs font-bold uppercase text-gray-500">{summariseSets(exerciseSets)}</p>
+                    {exercise.notes && <p className="mt-1 text-xs text-gray-600">{exercise.notes}</p>}
+                  </div>
+                  <div className="flex flex-col gap-2 md:items-end">
+                    <button type="button" onClick={() => (isEditingExercise ? saveExerciseAndSets(exercise) : setEditingExerciseId(exercise.id))} className="w-full rounded-lg bg-[#FA0201] px-4 py-2 text-xs font-bold uppercase text-white hover:bg-red-700 disabled:opacity-60 md:w-auto" disabled={saving}>{isEditingExercise ? 'Save exercise' : 'Edit'}</button>
+                    <button type="button" onClick={() => deleteExercise(exercise)} className="w-full rounded-lg border border-red-300 bg-red-50 px-4 py-2 text-xs font-bold uppercase text-[#FA0201] hover:bg-red-100 disabled:opacity-60 md:w-auto" disabled={saving}>Delete exercise</button>
+                  </div>
+                </div>
+
                 {isEditingExercise && (
                   <div className="mt-4 space-y-4 rounded-xl border border-gray-200 bg-white p-4">
                     <div className="grid grid-cols-1 gap-3 md:grid-cols-[0.16fr_1fr] md:items-end">
                       <label><span className="text-xs font-black uppercase text-gray-500">Order</span><input value={edit.order} onChange={(event) => setExerciseEdits((current) => ({ ...current, [exercise.id]: { ...edit, order: event.target.value } }))} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" /></label>
-                      <label><span className="text-xs font-black uppercase text-gray-500">Exercise</span><input value={edit.name} onChange={(event) => setExerciseEdits((current) => ({ ...current, [exercise.id]: { ...edit, name: event.target.value } }))} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" /></label>
-                      <label className="md:col-span-2"><span className="text-xs font-black uppercase text-gray-500">Notes</span><input value={edit.notes} onChange={(event) => setExerciseEdits((current) => ({ ...current, [exercise.id]: { ...edit, notes: event.target.value } }))} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" /></label>
+                      <label>
+                        <span className="text-xs font-black uppercase text-gray-500">Search DB exercise</span>
+                        <input
+                          value={edit.search}
+                          onChange={(event) => setExerciseEdits((current) => ({ ...current, [exercise.id]: { ...edit, search: event.target.value, exerciseCatalogueId: '' } }))}
+                          className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                          placeholder="Search exercise catalogue..."
+                        />
+                      </label>
                     </div>
+
+                    <div className="max-h-56 space-y-2 overflow-y-auto rounded-lg border border-gray-200 bg-gray-50 p-2">
+                      {filteredEditCatalogue.length === 0 ? (
+                        <p className="p-3 text-sm text-gray-600">No DB exercises match this search.</p>
+                      ) : filteredEditCatalogue.map((catalogueExercise) => {
+                        const isSelected = edit.exerciseCatalogueId === catalogueExercise.id;
+                        return (
+                          <button
+                            key={catalogueExercise.id}
+                            type="button"
+                            onClick={() => setExerciseEdits((current) => ({
+                              ...current,
+                              [exercise.id]: {
+                                ...edit,
+                                exerciseCatalogueId: catalogueExercise.id,
+                                search: catalogueExercise.name,
+                                notes: edit.notes || catalogueExercise.default_notes || '',
+                              },
+                            }))}
+                            className={`w-full rounded-lg border p-3 text-left hover:border-[#FA0201] hover:bg-red-50 ${isSelected ? 'border-[#FA0201] bg-red-50' : 'border-gray-200 bg-white'}`}
+                          >
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="text-sm font-black uppercase text-[#000000]">{catalogueExercise.name}</p>
+                              <Badge variant="default">DB exercise</Badge>
+                              <Badge variant="default">{catalogueExercise.category}</Badge>
+                              {catalogueExercise.equipment && <Badge variant="warning">{catalogueExercise.equipment}</Badge>}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <label className="block"><span className="text-xs font-black uppercase text-gray-500">Notes</span><input value={edit.notes} onChange={(event) => setExerciseEdits((current) => ({ ...current, [exercise.id]: { ...edit, notes: event.target.value } }))} className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" /></label>
+
                     <div className="space-y-3">
                       <p className="text-sm font-black uppercase text-[#000000]">Sets</p>
                       {[...exerciseSets.map((set) => ({ id: set.id, form: setEdits[set.id] || setToForm(set), isNew: false })), { id: 'new', form: newSetForm, isNew: true }].map((item) => (
@@ -620,12 +795,17 @@ export default function WorkoutLibraryPage() {
             <p className="text-xs font-black uppercase tracking-[0.24em] text-[#FA0201]">Workout Builder</p>
             <h2 className="mt-1 text-2xl font-black uppercase leading-tight">{isCreatingWorkout ? 'Create workout template' : selectedWorkout?.name}</h2>
             <p className="mt-1 text-sm font-semibold text-gray-300">
-              {selectedWorkout ? `${automaticWorkoutCategory} · ${selectedWorkoutExercises.length} exercise${selectedWorkoutExercises.length === 1 ? '' : 's'}` : 'Set up the template details first, then add exercises after saving.'}
+              {selectedWorkout ? `${automaticWorkoutCategory} · ${selectedWorkoutExercises.length} exercise${selectedWorkoutExercises.length === 1 ? '' : 's'}` : 'Set up the template details first, then add DB-linked exercises after saving.'}
             </p>
           </div>
-          <button type="button" onClick={saveWorkout} disabled={saving} className="rounded-lg bg-[#FA0201] px-4 py-3 text-sm font-bold uppercase text-white hover:bg-red-700 disabled:opacity-60">
-            {saving ? 'Saving...' : isCreatingWorkout ? 'Create workout' : 'Save workout'}
-          </button>
+          <div className="flex flex-col gap-2 md:flex-row md:items-center">
+            <button type="button" onClick={resetWorkoutBuilder} className="rounded-lg border border-gray-500 px-4 py-3 text-sm font-bold uppercase text-white hover:bg-white/10">
+              Close
+            </button>
+            <button type="button" onClick={saveWorkout} disabled={saving} className="rounded-lg bg-[#FA0201] px-4 py-3 text-sm font-bold uppercase text-white hover:bg-red-700 disabled:opacity-60">
+              {saving ? 'Saving...' : isCreatingWorkout ? 'Create workout' : 'Save workout'}
+            </button>
+          </div>
         </div>
         <div className="flex-1 space-y-5 overflow-y-auto bg-gray-100 p-4 md:p-6">
           {message && <Card className="border-2 border-green-200 bg-green-50 text-sm font-semibold text-green-700">{message}</Card>}
