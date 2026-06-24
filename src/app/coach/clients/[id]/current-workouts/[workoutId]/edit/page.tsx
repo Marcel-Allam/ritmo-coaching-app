@@ -11,6 +11,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { SectionHeader } from '@/components/ui/section-header';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
 
+type ExerciseRole = 'main_lift' | 'accessory';
+
 type ClientRecord = { id: string; full_name: string; email: string | null };
 
 type WorkoutRecord = {
@@ -30,6 +32,7 @@ type ExerciseRecord = {
   exercise_name: string;
   notes: string | null;
   exercise_catalogue_id: string | null;
+  exercise_role: ExerciseRole | null;
 };
 
 type ProgramSetRecord = {
@@ -60,6 +63,7 @@ type SetForm = {
 type ExerciseForm = {
   exerciseName: string;
   exerciseCatalogueId: string | null;
+  exerciseRole: ExerciseRole;
   notes: string;
   sets: SetForm[];
 };
@@ -84,6 +88,7 @@ const blankSet = (): SetForm => ({ targetReps: '', targetWeightKg: '', notes: ''
 const blankExercise = (): ExerciseForm => ({
   exerciseName: '',
   exerciseCatalogueId: null,
+  exerciseRole: 'accessory',
   notes: '',
   sets: [blankSet(), blankSet(), blankSet()],
 });
@@ -95,6 +100,8 @@ const blankNewExerciseDraft = (): NewExerciseDraft => ({ open: false, name: '', 
 const numberOrNull = (value: string) => (value.trim() ? Number(value) : null);
 const textOrNull = (value: string) => value.trim() || null;
 const parseMuscles = (value: string) => value.split(',').map((muscle) => muscle.trim()).filter(Boolean);
+const getRoleLabel = (role: ExerciseRole) => role === 'main_lift' ? 'Main / Key Lift' : 'Accessory';
+const getRoleBadgeVariant = (role: ExerciseRole) => role === 'main_lift' ? 'success' : 'default';
 
 export default function EditAssignedWorkoutPage() {
   const params = useParams();
@@ -181,7 +188,7 @@ export default function EditAssignedWorkoutPage() {
 
     const { data: exerciseData, error: exerciseError } = await supabase
       .from('program_exercises')
-      .select('id, exercise_order, exercise_name, notes, exercise_catalogue_id')
+      .select('id, exercise_order, exercise_name, notes, exercise_catalogue_id, exercise_role')
       .eq('workout_id', workoutId)
       .order('exercise_order', { ascending: true });
 
@@ -212,6 +219,7 @@ export default function EditAssignedWorkoutPage() {
     const formExercises = loadedExercises.map((exercise) => ({
       exerciseName: exercise.exercise_name,
       exerciseCatalogueId: exercise.exercise_catalogue_id,
+      exerciseRole: exercise.exercise_role || 'accessory',
       notes: exercise.notes || '',
       sets: loadedSets
         .filter((set) => set.exercise_id === exercise.id)
@@ -438,6 +446,7 @@ export default function EditAssignedWorkoutPage() {
           exercise_order: exerciseIndex + 1,
           exercise_name: linkedCatalogueExercise.name,
           exercise_catalogue_id: linkedCatalogueExercise.id,
+          exercise_role: exercise.exerciseRole,
           notes: textOrNull(exercise.notes),
         })
         .select('id')
@@ -471,7 +480,7 @@ export default function EditAssignedWorkoutPage() {
     }
 
     setOriginalExerciseIds(newExerciseIds);
-    setMessage('Workout updated. Exercises are linked to the Exercise Library for consistent client graphs.');
+    setMessage('Workout updated. Exercise roles and DB links are saved for progression logic.');
     setSaving(false);
   };
 
@@ -518,9 +527,9 @@ export default function EditAssignedWorkoutPage() {
             </div>
 
             <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
-              <p className="text-xs font-black uppercase tracking-wide text-blue-900">Exercise names are graph-linked</p>
+              <p className="text-xs font-black uppercase tracking-wide text-blue-900">Exercise names and roles are graph-linked</p>
               <p className="mt-1 text-sm font-semibold text-blue-800">
-                Choose exercises from the Exercise Library dropdown. This stores the catalogue ID and keeps client strength graphs consistent across programmes.
+                Choose exercises from the Exercise Library dropdown and classify them as Main / Key Lift or Accessory. Main lifts will later drive calibration and %1RM planning.
               </p>
             </div>
 
@@ -534,7 +543,10 @@ export default function EditAssignedWorkoutPage() {
                 <div key={exerciseIndex} className="space-y-4 rounded-xl border border-gray-200 p-4">
                   <div className="flex items-center justify-between gap-4">
                     <div>
-                      <p className="text-sm font-bold uppercase text-[#000000]">Exercise {exerciseIndex + 1}</p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-sm font-bold uppercase text-[#000000]">Exercise {exerciseIndex + 1}</p>
+                        <Badge variant={getRoleBadgeVariant(exercise.exerciseRole)}>{getRoleLabel(exercise.exerciseRole)}</Badge>
+                      </div>
                       <p className="mt-1 text-xs font-semibold uppercase text-gray-500">
                         {linkedExercise ? `Linked to DB: ${linkedExercise.name}` : 'Not linked yet'}
                       </p>
@@ -552,7 +564,7 @@ export default function EditAssignedWorkoutPage() {
                   </div>
 
                   <div className="space-y-3 rounded-lg border border-gray-200 bg-gray-50 p-3">
-                    <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_auto] lg:items-end">
+                    <div className="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_0.24fr_auto] lg:items-end">
                       <Input
                         label="Exercise"
                         value={exercise.exerciseName || 'Select from Exercise Library'}
@@ -560,6 +572,18 @@ export default function EditAssignedWorkoutPage() {
                         placeholder="Select from Exercise Library"
                         disabled={isLocked}
                       />
+                      <label className="block">
+                        <span className="mb-2 block text-sm font-semibold uppercase">Role</span>
+                        <select
+                          value={exercise.exerciseRole}
+                          onChange={(e) => updateExercise(exerciseIndex, { exerciseRole: e.target.value as ExerciseRole })}
+                          disabled={isLocked}
+                          className="w-full rounded-lg border-2 border-gray-300 bg-white px-4 py-2 text-black disabled:opacity-60"
+                        >
+                          <option value="accessory">Accessory</option>
+                          <option value="main_lift">Main / Key Lift</option>
+                        </select>
+                      </label>
                       {!isLocked && (
                         <button
                           type="button"
