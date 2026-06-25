@@ -10,6 +10,15 @@ type ClientStatusRecord = {
   start_date: string | null;
 };
 
+type ProgramSummaryRecord = {
+  id: string;
+};
+
+type PeriodisationRecord = {
+  current_week: number;
+  current_block_name: string | null;
+};
+
 const formatDate = (value: string | null) => {
   if (!value) return 'Not set';
   return new Intl.DateTimeFormat('en-GB', {
@@ -29,6 +38,7 @@ const getWeekNumber = (startDate: string | null) => {
 
 export function CoachingStatusCard({ clientId }: { clientId: string }) {
   const [status, setStatus] = useState<ClientStatusRecord | null>(null);
+  const [periodisation, setPeriodisation] = useState<PeriodisationRecord | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -53,6 +63,37 @@ export function CoachingStatusCard({ clientId }: { clientId: string }) {
         return;
       }
 
+      const { data: programData, error: programError } = await supabase
+        .from('training_programs')
+        .select('id')
+        .eq('client_id', clientId)
+        .eq('status', 'active')
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      if (programError) {
+        setError(programError.message);
+        setLoading(false);
+        return;
+      }
+
+      const activeProgram = ((programData ?? []) as ProgramSummaryRecord[])[0] ?? null;
+      if (activeProgram) {
+        const { data: periodisationData, error: periodisationError } = await supabase
+          .from('program_periodisation_settings')
+          .select('current_week, current_block_name')
+          .eq('program_id', activeProgram.id)
+          .maybeSingle();
+
+        if (periodisationError) {
+          setError(periodisationError.message);
+          setLoading(false);
+          return;
+        }
+
+        setPeriodisation((periodisationData ?? null) as PeriodisationRecord | null);
+      }
+
       setStatus(data as ClientStatusRecord);
       setLoading(false);
     };
@@ -68,19 +109,21 @@ export function CoachingStatusCard({ clientId }: { clientId: string }) {
     return <Card><p className="text-sm font-semibold text-red-700">{error}</p></Card>;
   }
 
-  const weekNumber = getWeekNumber(status?.start_date ?? null);
+  const calendarWeekNumber = getWeekNumber(status?.start_date ?? null);
+  const programmeWeekNumber = periodisation?.current_week ?? null;
+  const visibleWeekNumber = programmeWeekNumber ?? calendarWeekNumber;
 
   return (
     <Card variant="dark" className="flex h-full flex-col justify-between p-6">
       <div>
         <p className="text-xs font-black uppercase tracking-wide text-[#FA0201]">Coaching status</p>
         <h2 className="mt-2 text-3xl font-black uppercase tracking-tight text-white">
-          {weekNumber ? `Week ${weekNumber}` : 'Active coaching'}
+          {visibleWeekNumber !== null ? `Week ${visibleWeekNumber}` : 'Active coaching'}
         </h2>
         <div className="mt-5 space-y-3">
           <div className="rounded-lg bg-white/10 p-3">
             <p className="text-[10px] font-bold uppercase text-white/50">Current focus</p>
-            <p className="mt-1 text-sm font-black uppercase text-white">{status?.current_focus || 'No focus set yet'}</p>
+            <p className="mt-1 text-sm font-black uppercase text-white">{periodisation?.current_block_name || status?.current_focus || 'No focus set yet'}</p>
           </div>
           <div className="rounded-lg bg-white/10 p-3">
             <p className="text-[10px] font-bold uppercase text-white/50">Next review</p>
