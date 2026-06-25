@@ -15,7 +15,7 @@ type NumericValue = number | string | null;
 
 type ClientRecord = { id: string; full_name: string };
 type WorkoutRecord = { id: string; title: string; instructions: string | null };
-type CompletedSessionRecord = { id: string; completed_at: string | null; review_status: string };
+type CompletedSessionRecord = { id: string; completed_at: string | null; review_status: string; program_week: number | null };
 type ExerciseRecord = { id: string; exercise_order: number; exercise_name: string; notes: string | null; exercise_role: string | null };
 
 type PrescribedSetRecord = {
@@ -159,27 +159,15 @@ export default function ClientWorkoutSessionPage() {
       const linkedClient = clientData as ClientRecord;
       setClient(linkedClient);
 
-      const [workoutResult, existingSessionResult] = await Promise.all([
-        supabase.from('program_workouts').select('id, title, instructions').eq('id', workoutId).eq('client_id', linkedClient.id).single(),
-        supabase.from('workout_sessions').select('id, completed_at, review_status').eq('client_id', linkedClient.id).eq('program_workout_id', workoutId).eq('status', 'completed').order('completed_at', { ascending: false }).limit(1),
-      ]);
+      const { data: workoutData, error: workoutError } = await supabase
+        .from('program_workouts')
+        .select('id, title, instructions')
+        .eq('id', workoutId)
+        .eq('client_id', linkedClient.id)
+        .single();
 
-      if (workoutResult.error || !workoutResult.data) {
-        setError(workoutResult.error?.message || 'Workout not found.');
-        setLoading(false);
-        return;
-      }
-
-      if (existingSessionResult.error) {
-        setError(existingSessionResult.error.message);
-        setLoading(false);
-        return;
-      }
-
-      const existingSession = ((existingSessionResult.data ?? []) as CompletedSessionRecord[])[0] ?? null;
-      if (existingSession) {
-        setWorkout(workoutResult.data as WorkoutRecord);
-        setCompletedSession(existingSession);
+      if (workoutError || !workoutData) {
+        setError(workoutError?.message || 'Workout not found.');
         setLoading(false);
         return;
       }
@@ -219,12 +207,39 @@ export default function ClientWorkoutSessionPage() {
       const loadedSets = currentWeekSets.length > 0 ? currentWeekSets : fallbackWeekOneSets;
       const resolvedDisplayWeek = loadedSets[0]?.week_number ?? allResolvedSets[0]?.week_number ?? null;
 
+      if (resolvedDisplayWeek !== null) {
+        const { data: existingSessionData, error: existingSessionError } = await supabase
+          .from('workout_sessions')
+          .select('id, completed_at, review_status, program_week')
+          .eq('client_id', linkedClient.id)
+          .eq('program_workout_id', workoutId)
+          .eq('status', 'completed')
+          .eq('program_week', resolvedDisplayWeek)
+          .order('completed_at', { ascending: false })
+          .limit(1);
+
+        if (existingSessionError) {
+          setError(existingSessionError.message);
+          setLoading(false);
+          return;
+        }
+
+        const existingSession = ((existingSessionData ?? []) as CompletedSessionRecord[])[0] ?? null;
+        if (existingSession) {
+          setWorkout(workoutData as WorkoutRecord);
+          setCompletedSession(existingSession);
+          setDisplayWeek(resolvedDisplayWeek);
+          setLoading(false);
+          return;
+        }
+      }
+
       const initialLogs = loadedSets.reduce<Record<string, SetLog>>((acc, set) => {
         acc[set.id] = { ...emptyLog, weight: prescribedWeightValue(set), reps: prescribedRepsValue(set) };
         return acc;
       }, {});
 
-      setWorkout(workoutResult.data as WorkoutRecord);
+      setWorkout(workoutData as WorkoutRecord);
       setExercises((exerciseData ?? []) as ExerciseRecord[]);
       setSets(loadedSets);
       setDisplayWeek(resolvedDisplayWeek);
@@ -313,14 +328,27 @@ export default function ClientWorkoutSessionPage() {
     event?.preventDefault();
     if (!client || !workout || !isSupabaseConfigured) return;
 
-    const confirmed = window.confirm(`Submit ${workout.title}? You will not be able to submit this workout again.`);
+    const confirmed = window.confirm(`Submit ${workout.title}${displayWeek ? ` for Week ${displayWeek}` : ''}? You will not be able to submit this same week again.`);
     if (!confirmed) return;
 
     setSaving(true);
     setError(null);
     const supabase = createClient();
 
-    const { data: existingSessionData, error: existingSessionError } = await supabase.from('workout_sessions').select('id, completed_at, review_status').eq('client_id', client.id).eq('program_workout_id', workout.id).eq('status', 'completed').order('completed_at', { ascending: false }).limit(1);
+    let existingSessionQuery = supabase
+      .from('workout_sessions')
+      .select('id, completed_at, review_status, program_week')
+      .eq('client_id', client.id)
+      .eq('program_workout_id', workout.id)
+      .eq('status', 'completed')
+      .order('completed_at', { ascending: false })
+      .limit(1);
+
+    existingSessionQuery = displayWeek === null
+      ? existingSessionQuery.is('program_week', null)
+      : existingSessionQuery.eq('program_week', displayWeek);
+
+    const { data: existingSessionData, error: existingSessionError } = await existingSessionQuery;
 
     if (existingSessionError) {
       setError(existingSessionError.message);
@@ -331,7 +359,7 @@ export default function ClientWorkoutSessionPage() {
     const existingSession = ((existingSessionData ?? []) as CompletedSessionRecord[])[0] ?? null;
     if (existingSession) {
       setCompletedSession(existingSession);
-      setError('This workout has already been submitted, so it is locked to prevent duplicate logs.');
+      setError(`This workout has already been submitted for Week ${existingSession.program_week ?? 'unknown'}, so it is locked to prevent duplicate logs for the same week.`);
       setSaving(false);
       return;
     }
@@ -339,7 +367,7 @@ export default function ClientWorkoutSessionPage() {
     const sessionFeelLabel = sessionFeelOptions.find((option) => option.value === sessionFeel)?.label || '';
     const combinedSessionNotes = [sessionFeelLabel ? `Session felt: ${sessionFeelLabel}` : null, sessionNotes.trim() || null].filter(Boolean).join('\n\n') || null;
 
-    const { data: sessionData, error: sessionError } = await supabase.from('workout_sessions').insert({ client_id: client.id, program_workout_id: workout.id, status: 'completed', completed_at: new Date().toISOString(), review_status: 'new', client_notes: combinedSessionNotes }).select('id').single();
+    const { data: sessionData, error: sessionError } = await supabase.from('workout_sessions').insert({ client_id: client.id, program_workout_id: workout.id, program_week: displayWeek, status: 'completed', completed_at: new Date().toISOString(), review_status: 'new', client_notes: combinedSessionNotes }).select('id').single();
 
     if (sessionError || !sessionData) {
       setError(sessionError?.message || 'Could not submit workout.');
@@ -383,13 +411,13 @@ export default function ClientWorkoutSessionPage() {
   if (completedSession) {
     return (
       <div>
-        <PageHeader title="WORKOUT COMPLETED" subtitle={workout ? `${workout.title} has already been submitted.` : undefined} />
+        <PageHeader title="WORKOUT COMPLETED" subtitle={workout ? `${workout.title}${displayWeek ? ` • Week ${displayWeek}` : ''} has already been submitted.` : undefined} />
         <main className="mx-auto max-w-3xl px-4 py-6 md:px-8">
           <Card className="border-2 border-green-200 bg-green-50">
             <p className="text-sm font-black uppercase text-green-800">Submission locked</p>
-            <h2 className="mt-2 text-2xl font-black uppercase text-[#000000]">This workout is already complete</h2>
+            <h2 className="mt-2 text-2xl font-black uppercase text-[#000000]">This workout is already complete for this week</h2>
             <p className="mt-2 text-sm text-gray-700">Completed: {formatDateTime(completedSession.completed_at)}. Your coach can now review the performance and send feedback.</p>
-            <p className="mt-1 text-xs font-bold uppercase text-gray-500">Review status: {completedSession.review_status.replaceAll('_', ' ')}</p>
+            <p className="mt-1 text-xs font-bold uppercase text-gray-500">Programme week: {completedSession.program_week ?? displayWeek ?? 'unknown'} • Review status: {completedSession.review_status.replaceAll('_', ' ')}</p>
             <div className="mt-5 flex flex-wrap gap-3">
               <Link href="/client/training" className="rounded-lg bg-[#FA0201] px-4 py-2 text-sm font-bold uppercase text-white hover:bg-red-700">Back to training</Link>
               <Link href="/client" className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-bold uppercase text-[#000000] hover:bg-gray-50">Back to hub</Link>
@@ -419,22 +447,9 @@ export default function ClientWorkoutSessionPage() {
               <div>
                 <p className="text-sm font-bold uppercase text-gray-500">Exercise {currentFocusItem.exercise.exercise_order} of {exercises.length}</p>
                 <div className="mt-1 flex flex-wrap items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={goToPreviousSet}
-                    disabled={!canGoPrevious}
-                    className="rounded-lg border-2 border-black px-3 py-2 text-xs font-black uppercase text-black disabled:cursor-not-allowed disabled:border-gray-300 disabled:text-gray-300"
-                  >
-                    ← Previous set
-                  </button>
+                  <button type="button" onClick={goToPreviousSet} disabled={!canGoPrevious} className="rounded-lg border-2 border-black px-3 py-2 text-xs font-black uppercase text-black disabled:cursor-not-allowed disabled:border-gray-300 disabled:text-gray-300">← Previous set</button>
                   <h2 className="text-5xl font-black uppercase tracking-tight">Set {currentSetPositionInExercise}</h2>
-                  <button
-                    type="button"
-                    onClick={goToNextSet}
-                    className="rounded-lg border-2 border-black px-3 py-2 text-xs font-black uppercase text-black hover:bg-black hover:text-white"
-                  >
-                    Next set →
-                  </button>
+                  <button type="button" onClick={goToNextSet} className="rounded-lg border-2 border-black px-3 py-2 text-xs font-black uppercase text-black hover:bg-black hover:text-white">Next set →</button>
                 </div>
                 <p className="mt-1 text-sm font-bold uppercase text-gray-500">{completionStats.completedCount}/{completionStats.totalCount} sets complete</p>
               </div>
@@ -499,7 +514,7 @@ export default function ClientWorkoutSessionPage() {
           <div className="fixed inset-0 z-50 flex items-end bg-black/60 p-4 sm:items-center sm:justify-center">
             <form onSubmit={submitWorkout} className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl">
               <p className="text-lg font-black uppercase text-[#000000]">Finish workout</p>
-              <p className="mt-1 text-sm text-gray-600">Submit only when the workout is finished. After submission, this workout locks for coach review.</p>
+              <p className="mt-1 text-sm text-gray-600">Submit only when the workout is finished. After submission, this week locks for coach review.</p>
               <div className="mt-5 space-y-4">
                 <label className="block"><span className="mb-2 block text-sm font-bold uppercase text-[#000000]">How did this session feel?</span><select value={sessionFeel} onChange={(event) => setSessionFeel(event.target.value)} className="w-full rounded-lg border-2 border-gray-300 bg-white px-4 py-3 text-black"><option value="">Select a rating</option>{sessionFeelOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
                 <Textarea label="Overall workout notes" value={sessionNotes} onChange={(event) => setSessionNotes(event.target.value)} />
@@ -574,9 +589,7 @@ export default function ClientWorkoutSessionPage() {
                             </td>
                             <td className="px-4 py-3 align-top">
                               <p className="font-black uppercase text-[#000000]">Set {set.set_order}</p>
-                              <p className="mt-1 text-xs font-semibold text-gray-500">
-                                Target: {set.target_reps || '-'} reps{prescribedWeight ? ` @ ${prescribedWeight}kg` : ''}{set.target_percent_1rm ? ` (${formatPercent(set.target_percent_1rm)})` : ''}
-                              </p>
+                              <p className="mt-1 text-xs font-semibold text-gray-500">Target: {set.target_reps || '-'} reps{prescribedWeight ? ` @ ${prescribedWeight}kg` : ''}{set.target_percent_1rm ? ` (${formatPercent(set.target_percent_1rm)})` : ''}</p>
                               <p className="mt-1 text-[10px] font-black uppercase text-gray-400">{formatSourceLabel(set.target_load_source)}</p>
                             </td>
                             <td className="px-4 py-3 align-top">
@@ -614,7 +627,7 @@ export default function ClientWorkoutSessionPage() {
               </select>
             </div>
             <Textarea label="Overall workout notes" value={sessionNotes} onChange={(event) => setSessionNotes(event.target.value)} />
-            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs font-semibold text-amber-900">Submit only when the workout is finished. After submission, this workout locks and your coach reviews it.</div>
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs font-semibold text-amber-900">Submit only when the workout is finished. After submission, this week locks and your coach reviews it.</div>
           </Card>
 
           <Button type="submit" variant="primary" size="lg" fullWidth disabled={saving} className="bg-[#FA0201] hover:bg-red-700 disabled:opacity-60">{saving ? 'SUBMITTING...' : 'SUBMIT WORKOUT'}</Button>
