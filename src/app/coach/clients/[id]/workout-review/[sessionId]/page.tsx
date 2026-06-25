@@ -24,7 +24,7 @@ type WorkoutSessionRecord = {
   coach_note: string | null;
   is_calibration: boolean;
 };
-type ProgramWorkoutRecord = { id: string; title: string; instructions: string | null };
+type ProgramWorkoutRecord = { id: string; program_id: string; title: string; instructions: string | null };
 type ProgramExerciseRecord = {
   id: string;
   exercise_order: number;
@@ -52,6 +52,12 @@ type PerformedSetRecord = {
   actual_rpe: number | null;
   completed: boolean;
   notes: string | null;
+};
+type CalibrationLiftRecord = {
+  id: string;
+  lift_name: string;
+  source_session_id: string | null;
+  source_performed_set_id: string | null;
 };
 
 type CalibrationCandidate = {
@@ -204,9 +210,12 @@ export default function CoachWorkoutReviewPage() {
   const [exercises, setExercises] = useState<ProgramExerciseRecord[]>([]);
   const [programSets, setProgramSets] = useState<ProgramSetRecord[]>([]);
   const [performedSets, setPerformedSets] = useState<PerformedSetRecord[]>([]);
+  const [savedCalibrationLifts, setSavedCalibrationLifts] = useState<CalibrationLiftRecord[]>([]);
+  const [selectedCalibrationSetIds, setSelectedCalibrationSetIds] = useState<string[]>([]);
   const [feedbackText, setFeedbackText] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [savingCalibration, setSavingCalibration] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -233,18 +242,22 @@ export default function CoachWorkoutReviewPage() {
     }
 
     const loadedSession = sessionData as WorkoutSessionRecord;
-    const [clientResult, workoutResult, performedResult] = await Promise.all([
+    const [clientResult, workoutResult, performedResult, calibrationResult] = await Promise.all([
       supabase.from('clients').select('id, full_name, email').eq('id', clientId).single(),
-      supabase.from('program_workouts').select('id, title, instructions').eq('id', loadedSession.program_workout_id).single(),
+      supabase.from('program_workouts').select('id, program_id, title, instructions').eq('id', loadedSession.program_workout_id).single(),
       supabase
         .from('performed_sets')
         .select('id, program_exercise_id, program_set_id, set_order, actual_weight_kg, actual_reps, actual_rpe, completed, notes')
         .eq('session_id', sessionId)
         .order('set_order', { ascending: true }),
+      supabase
+        .from('program_calibration_lifts')
+        .select('id, lift_name, source_session_id, source_performed_set_id')
+        .eq('source_session_id', sessionId),
     ]);
 
-    if (clientResult.error || workoutResult.error || performedResult.error) {
-      setError(clientResult.error?.message || workoutResult.error?.message || performedResult.error?.message || 'Could not load workout review data.');
+    if (clientResult.error || workoutResult.error || performedResult.error || calibrationResult.error) {
+      setError(clientResult.error?.message || workoutResult.error?.message || performedResult.error?.message || calibrationResult.error?.message || 'Could not load workout review data.');
       setLoading(false);
       return;
     }
@@ -284,6 +297,7 @@ export default function CoachWorkoutReviewPage() {
     setClient(clientResult.data as ClientRecord);
     setWorkout(workoutResult.data as ProgramWorkoutRecord);
     setPerformedSets((performedResult.data ?? []) as PerformedSetRecord[]);
+    setSavedCalibrationLifts((calibrationResult.data ?? []) as CalibrationLiftRecord[]);
     setExercises(loadedExercises);
     setProgramSets((setResult.data ?? []) as ProgramSetRecord[]);
     setLoading(false);
@@ -306,6 +320,10 @@ export default function CoachWorkoutReviewPage() {
       return acc;
     }, {});
   }, [performedSets]);
+
+  const savedCalibrationSourceSetIds = useMemo(() => {
+    return new Set(savedCalibrationLifts.map((lift) => lift.source_performed_set_id).filter((id): id is string => Boolean(id)));
+  }, [savedCalibrationLifts]);
 
   const mainLiftExercises = useMemo(() => {
     return exercises.filter((exercise) => exercise.exercise_role === 'main_lift');
@@ -343,6 +361,82 @@ export default function CoachWorkoutReviewPage() {
       }];
     });
   }, [mainLiftExercises, performedSets]);
+
+  useEffect(() => {
+    setSelectedCalibrationSetIds((current) => {
+      const availableCandidateIds = calibrationCandidates
+        .map((candidate) => candidate.performedSet.id)
+        .filter((id) => !savedCalibrationSourceSetIds.has(id));
+      const retainedIds = current.filter((id) => availableCandidateIds.includes(id));
+      const missingIds = availableCandidateIds.filter((id) => !retainedIds.includes(id));
+      return [...retainedIds, ...missingIds];
+    });
+  }, [calibrationCandidates, savedCalibrationSourceSetIds]);
+
+  const toggleCalibrationCandidate = (performedSetId: string) => {
+    setSelectedCalibrationSetIds((current) => {
+      if (current.includes(performedSetId)) return current.filter((id) => id !== performedSetId);
+      return [...current, performedSetId];
+    });
+  };
+
+  const saveSelectedCalibrationLifts = async () => {
+    if (!isSupabaseConfigured || !client || !session || !workout) return;
+
+    const candidatesToSave = calibrationCandidates.filter((candidate) => {
+      return selectedCalibrationSetIds.includes(candidate.performedSet.id) && !savedCalibrationSourceSetIds.has(candidate.performedSet.id);
+    });
+
+    if (candidatesToSave.length === 0) {
+      setError('Select at least one unsaved calibration candidate.');
+      return;
+    }
+
+    setSavingCalibration(true);
+    setMessage(null);
+    setError(null);
+
+    const supabase = createClient();
+    const insertRows = candidatesToSave.map((candidate) => ({
+      program_id: workout.program_id,
+      client_id: client.id,
+      lift_name: candidate.exercise.exercise_name,
+      top_set_weight_kg: candidate.performedSet.actual_weight_kg,
+      top_set_reps: candidate.performedSet.actual_reps,
+      estimated_1rm_kg: candidate.estimatedOneRepMaxKg,
+      source_session_id: session.id,
+      source_performed_set_id: candidate.performedSet.id,
+      formula: 'weight * (1 + reps / 30)',
+      client_visible: true,
+      notes: `Saved from workout review: ${workout.title}`,
+    }));
+
+    const { error: insertError } = await supabase.from('program_calibration_lifts').insert(insertRows);
+
+    if (insertError) {
+      setError(insertError.message);
+      setSavingCalibration(false);
+      return;
+    }
+
+    const { error: sessionUpdateError } = await supabase
+      .from('workout_sessions')
+      .update({ is_calibration: true })
+      .eq('id', session.id)
+      .eq('client_id', client.id);
+
+    if (sessionUpdateError) {
+      setError(sessionUpdateError.message);
+      setSavingCalibration(false);
+      return;
+    }
+
+    setSession((current) => (current ? { ...current, is_calibration: true } : current));
+    setSelectedCalibrationSetIds([]);
+    setMessage(`${candidatesToSave.length} calibration lift${candidatesToSave.length === 1 ? '' : 's'} saved.`);
+    setSavingCalibration(false);
+    await loadReview();
+  };
 
   const sendClientFeedback = async () => {
     if (!isSupabaseConfigured || !client || !session) return;
@@ -483,9 +577,9 @@ export default function CoachWorkoutReviewPage() {
         <SectionHeader title="CALIBRATION CANDIDATES" accent />
         <Card className="space-y-4">
           <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-blue-900">
-            <p className="text-xs font-black uppercase">Read-only preview</p>
+            <p className="text-xs font-black uppercase">Coach-controlled save</p>
             <p className="mt-2 text-sm font-semibold">
-              RITMO is identifying the best completed top set for each Main / Key Lift using the Epley formula: weight × (1 + reps / 30). Saving these candidates comes in the next build step.
+              RITMO identifies the best completed top set for each Main / Key Lift using the Epley formula. Select the candidates you want to store as calibration baselines.
             </p>
           </div>
 
@@ -498,34 +592,63 @@ export default function CoachWorkoutReviewPage() {
               Main / Key Lifts exist, but no completed sets with both load and reps were found in this submission.
             </p>
           ) : (
-            <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-              {calibrationCandidates.map((candidate) => (
-                <div key={candidate.exercise.id} className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="text-sm font-black uppercase text-[#000000]">{candidate.exercise.exercise_name}</p>
-                    <Badge variant="success">Main / Key Lift</Badge>
-                    <Badge variant="default">Epley</Badge>
-                  </div>
-                  <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
-                    <div className="rounded-lg bg-white p-3">
-                      <p className="text-[11px] font-black uppercase text-gray-500">Best set</p>
-                      <p className="mt-1 text-sm font-black text-[#000000]">{formatActualSet(candidate.performedSet)}</p>
+            <>
+              <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                {calibrationCandidates.map((candidate) => {
+                  const isAlreadySaved = savedCalibrationSourceSetIds.has(candidate.performedSet.id);
+                  const isSelected = selectedCalibrationSetIds.includes(candidate.performedSet.id);
+
+                  return (
+                    <div key={candidate.exercise.id} className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-sm font-black uppercase text-[#000000]">{candidate.exercise.exercise_name}</p>
+                          <Badge variant="success">Main / Key Lift</Badge>
+                          <Badge variant="default">Epley</Badge>
+                          {isAlreadySaved && <Badge variant="warning">Saved</Badge>}
+                        </div>
+                        <label className="flex items-center gap-2 text-xs font-black uppercase text-gray-600">
+                          <input
+                            type="checkbox"
+                            checked={isSelected || isAlreadySaved}
+                            disabled={isAlreadySaved || savingCalibration}
+                            onChange={() => toggleCalibrationCandidate(candidate.performedSet.id)}
+                            className="h-4 w-4 accent-[#FA0201]"
+                          />
+                          {isAlreadySaved ? 'Already saved' : 'Save'}
+                        </label>
+                      </div>
+                      <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+                        <div className="rounded-lg bg-white p-3">
+                          <p className="text-[11px] font-black uppercase text-gray-500">Best set</p>
+                          <p className="mt-1 text-sm font-black text-[#000000]">{formatActualSet(candidate.performedSet)}</p>
+                        </div>
+                        <div className="rounded-lg bg-white p-3">
+                          <p className="text-[11px] font-black uppercase text-gray-500">Estimated 1RM</p>
+                          <p className="mt-1 text-sm font-black text-[#FA0201]">{candidate.estimatedOneRepMaxKg}kg</p>
+                        </div>
+                        <div className="rounded-lg bg-white p-3">
+                          <p className="text-[11px] font-black uppercase text-gray-500">Source set</p>
+                          <p className="mt-1 text-sm font-black text-[#000000]">Set {candidate.performedSet.set_order}</p>
+                        </div>
+                      </div>
+                      {candidate.performedSet.notes && (
+                        <p className="mt-3 rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs font-semibold text-blue-900">{candidate.performedSet.notes}</p>
+                      )}
                     </div>
-                    <div className="rounded-lg bg-white p-3">
-                      <p className="text-[11px] font-black uppercase text-gray-500">Estimated 1RM</p>
-                      <p className="mt-1 text-sm font-black text-[#FA0201]">{candidate.estimatedOneRepMaxKg}kg</p>
-                    </div>
-                    <div className="rounded-lg bg-white p-3">
-                      <p className="text-[11px] font-black uppercase text-gray-500">Source set</p>
-                      <p className="mt-1 text-sm font-black text-[#000000]">Set {candidate.performedSet.set_order}</p>
-                    </div>
-                  </div>
-                  {candidate.performedSet.notes && (
-                    <p className="mt-3 rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs font-semibold text-blue-900">{candidate.performedSet.notes}</p>
-                  )}
-                </div>
-              ))}
-            </div>
+                  );
+                })}
+              </div>
+
+              <button
+                type="button"
+                disabled={savingCalibration || selectedCalibrationSetIds.length === 0}
+                onClick={saveSelectedCalibrationLifts}
+                className="w-full rounded-lg bg-[#FA0201] px-5 py-3 text-sm font-bold uppercase text-white hover:bg-red-700 disabled:opacity-60"
+              >
+                {savingCalibration ? 'Saving calibration lifts...' : `Save ${selectedCalibrationSetIds.length} calibration lift${selectedCalibrationSetIds.length === 1 ? '' : 's'}`}
+              </button>
+            </>
           )}
         </Card>
       </section>
