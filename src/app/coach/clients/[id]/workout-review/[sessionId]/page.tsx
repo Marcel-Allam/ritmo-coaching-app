@@ -11,6 +11,7 @@ import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
 
 type ReviewStatus = 'new' | 'reviewed' | 'needs_feedback' | 'needs_action' | 'flagged' | 'resolved';
 type Outcome = 'above' | 'matched' | 'caution' | 'below' | 'missing';
+type ExerciseRole = 'main_lift' | 'accessory';
 
 type ClientRecord = { id: string; full_name: string; email: string | null };
 type WorkoutSessionRecord = {
@@ -21,6 +22,7 @@ type WorkoutSessionRecord = {
   review_status: ReviewStatus;
   client_notes: string | null;
   coach_note: string | null;
+  is_calibration: boolean;
 };
 type ProgramWorkoutRecord = { id: string; title: string; instructions: string | null };
 type ProgramExerciseRecord = {
@@ -29,6 +31,7 @@ type ProgramExerciseRecord = {
   exercise_name: string;
   notes: string | null;
   exercise_catalogue_id: string | null;
+  exercise_role: ExerciseRole;
 };
 type ProgramSetRecord = {
   id: string;
@@ -49,6 +52,12 @@ type PerformedSetRecord = {
   actual_rpe: number | null;
   completed: boolean;
   notes: string | null;
+};
+
+type CalibrationCandidate = {
+  exercise: ProgramExerciseRecord;
+  performedSet: PerformedSetRecord;
+  estimatedOneRepMaxKg: number;
 };
 
 const formatDateTime = (value: string | null) => {
@@ -103,6 +112,19 @@ const outcomeLabel: Record<Outcome, string> = {
   caution: 'Watch',
   below: 'Under target',
   missing: 'Missing info',
+};
+
+const calculateEstimatedOneRepMax = (weightKg: number, reps: number) => {
+  // Epley formula: weight × (1 + reps / 30). Rounded to 0.1kg for display/storage consistency.
+  return Number((weightKg * (1 + reps / 30)).toFixed(1));
+};
+
+const formatActualSet = (actual?: PerformedSetRecord) => {
+  if (!actual) return 'No actual data';
+  const weight = actual.actual_weight_kg !== null && actual.actual_weight_kg !== undefined ? `${actual.actual_weight_kg}kg` : 'No KG';
+  const reps = actual.actual_reps !== null && actual.actual_reps !== undefined ? `${actual.actual_reps} reps` : 'No reps';
+  const rpe = actual.actual_rpe !== null && actual.actual_rpe !== undefined ? `RPE ${actual.actual_rpe}` : 'No RPE';
+  return `${weight} × ${reps} @ ${rpe}`;
 };
 
 const analyseSet = (target: ProgramSetRecord, actual?: PerformedSetRecord) => {
@@ -170,14 +192,6 @@ const analyseSet = (target: ProgramSetRecord, actual?: PerformedSetRecord) => {
   return { outcome: 'matched' as Outcome, reasons: reasons.length ? reasons : ['Matched the planned work.'] };
 };
 
-const formatActualSet = (actual?: PerformedSetRecord) => {
-  if (!actual) return 'No actual data';
-  const weight = actual.actual_weight_kg !== null && actual.actual_weight_kg !== undefined ? `${actual.actual_weight_kg}kg` : 'No KG';
-  const reps = actual.actual_reps !== null && actual.actual_reps !== undefined ? `${actual.actual_reps} reps` : 'No reps';
-  const rpe = actual.actual_rpe !== null && actual.actual_rpe !== undefined ? `RPE ${actual.actual_rpe}` : 'No RPE';
-  return `${weight} × ${reps} @ ${rpe}`;
-};
-
 export default function CoachWorkoutReviewPage() {
   const params = useParams();
   const router = useRouter();
@@ -207,7 +221,7 @@ export default function CoachWorkoutReviewPage() {
     const supabase = createClient();
     const { data: sessionData, error: sessionError } = await supabase
       .from('workout_sessions')
-      .select('id, client_id, program_workout_id, completed_at, review_status, client_notes, coach_note')
+      .select('id, client_id, program_workout_id, completed_at, review_status, client_notes, coach_note, is_calibration')
       .eq('id', sessionId)
       .eq('client_id', clientId)
       .single();
@@ -237,7 +251,7 @@ export default function CoachWorkoutReviewPage() {
 
     const { data: exerciseData, error: exerciseError } = await supabase
       .from('program_exercises')
-      .select('id, exercise_order, exercise_name, notes, exercise_catalogue_id')
+      .select('id, exercise_order, exercise_name, notes, exercise_catalogue_id, exercise_role')
       .eq('workout_id', loadedSession.program_workout_id)
       .order('exercise_order', { ascending: true });
 
@@ -247,7 +261,10 @@ export default function CoachWorkoutReviewPage() {
       return;
     }
 
-    const loadedExercises = (exerciseData ?? []) as ProgramExerciseRecord[];
+    const loadedExercises = ((exerciseData ?? []) as ProgramExerciseRecord[]).map((exercise) => ({
+      ...exercise,
+      exercise_role: exercise.exercise_role || 'accessory',
+    }));
     const exerciseIds = loadedExercises.map((exercise) => exercise.id);
     const setResult = exerciseIds.length
       ? await supabase
@@ -289,6 +306,43 @@ export default function CoachWorkoutReviewPage() {
       return acc;
     }, {});
   }, [performedSets]);
+
+  const mainLiftExercises = useMemo(() => {
+    return exercises.filter((exercise) => exercise.exercise_role === 'main_lift');
+  }, [exercises]);
+
+  const calibrationCandidates = useMemo<CalibrationCandidate[]>(() => {
+    return mainLiftExercises.flatMap((exercise) => {
+      const usableSets = performedSets
+        .filter((set) => {
+          return set.program_exercise_id === exercise.id
+            && set.completed
+            && set.actual_weight_kg !== null
+            && set.actual_weight_kg !== undefined
+            && set.actual_reps !== null
+            && set.actual_reps !== undefined
+            && set.actual_weight_kg > 0
+            && set.actual_reps > 0;
+        })
+        .map((set) => ({
+          performedSet: set,
+          estimatedOneRepMaxKg: calculateEstimatedOneRepMax(set.actual_weight_kg as number, set.actual_reps as number),
+        }))
+        .sort((a, b) => {
+          if (b.estimatedOneRepMaxKg !== a.estimatedOneRepMaxKg) return b.estimatedOneRepMaxKg - a.estimatedOneRepMaxKg;
+          return (b.performedSet.actual_weight_kg || 0) - (a.performedSet.actual_weight_kg || 0);
+        });
+
+      const bestSet = usableSets[0];
+      if (!bestSet) return [];
+
+      return [{
+        exercise,
+        performedSet: bestSet.performedSet,
+        estimatedOneRepMaxKg: bestSet.estimatedOneRepMaxKg,
+      }];
+    });
+  }, [mainLiftExercises, performedSets]);
 
   const sendClientFeedback = async () => {
     if (!isSupabaseConfigured || !client || !session) return;
@@ -411,6 +465,7 @@ export default function CoachWorkoutReviewPage() {
         </div>
         <div className="flex flex-col items-start gap-2 md:items-end">
           {session && <Badge variant={getStatusVariant(session.review_status) as any}>{session.review_status.replaceAll('_', ' ')}</Badge>}
+          {session?.is_calibration && <Badge variant="success">Calibration session</Badge>}
           <Link href={workout ? `/coach/clients/${clientId}/current-workouts/${workout.id}/edit` : '#'} className="rounded-lg bg-black px-4 py-2 text-xs font-black uppercase text-white hover:bg-gray-900">
             Adjust following workout
           </Link>
@@ -425,6 +480,57 @@ export default function CoachWorkoutReviewPage() {
       {error && <Card className="border-2 border-red-200 bg-red-50"><p className="text-sm font-semibold text-red-700">{error}</p></Card>}
 
       <section>
+        <SectionHeader title="CALIBRATION CANDIDATES" accent />
+        <Card className="space-y-4">
+          <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-blue-900">
+            <p className="text-xs font-black uppercase">Read-only preview</p>
+            <p className="mt-2 text-sm font-semibold">
+              RITMO is identifying the best completed top set for each Main / Key Lift using the Epley formula: weight × (1 + reps / 30). Saving these candidates comes in the next build step.
+            </p>
+          </div>
+
+          {mainLiftExercises.length === 0 ? (
+            <p className="rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm font-semibold text-gray-600">
+              No Main / Key Lift exercises were found in this workout. Mark lifts such as bench, squat, deadlift, or overhead press as Main / Key Lift in the workout editor to enable calibration candidates.
+            </p>
+          ) : calibrationCandidates.length === 0 ? (
+            <p className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-900">
+              Main / Key Lifts exist, but no completed sets with both load and reps were found in this submission.
+            </p>
+          ) : (
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+              {calibrationCandidates.map((candidate) => (
+                <div key={candidate.exercise.id} className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-sm font-black uppercase text-[#000000]">{candidate.exercise.exercise_name}</p>
+                    <Badge variant="success">Main / Key Lift</Badge>
+                    <Badge variant="default">Epley</Badge>
+                  </div>
+                  <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+                    <div className="rounded-lg bg-white p-3">
+                      <p className="text-[11px] font-black uppercase text-gray-500">Best set</p>
+                      <p className="mt-1 text-sm font-black text-[#000000]">{formatActualSet(candidate.performedSet)}</p>
+                    </div>
+                    <div className="rounded-lg bg-white p-3">
+                      <p className="text-[11px] font-black uppercase text-gray-500">Estimated 1RM</p>
+                      <p className="mt-1 text-sm font-black text-[#FA0201]">{candidate.estimatedOneRepMaxKg}kg</p>
+                    </div>
+                    <div className="rounded-lg bg-white p-3">
+                      <p className="text-[11px] font-black uppercase text-gray-500">Source set</p>
+                      <p className="mt-1 text-sm font-black text-[#000000]">Set {candidate.performedSet.set_order}</p>
+                    </div>
+                  </div>
+                  {candidate.performedSet.notes && (
+                    <p className="mt-3 rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs font-semibold text-blue-900">{candidate.performedSet.notes}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+      </section>
+
+      <section>
         <SectionHeader title="CLIENT PERFORMANCE" accent />
         <Card className="space-y-6">
           {session?.client_notes && (
@@ -436,7 +542,10 @@ export default function CoachWorkoutReviewPage() {
 
           {exercises.map((exercise) => (
             <div key={exercise.id} className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-              <p className="text-sm font-bold uppercase text-[#000000]">{exercise.exercise_order}. {exercise.exercise_name}</p>
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-sm font-bold uppercase text-[#000000]">{exercise.exercise_order}. {exercise.exercise_name}</p>
+                {exercise.exercise_role === 'main_lift' && <Badge variant="success">Main / Key Lift</Badge>}
+              </div>
               {exercise.notes && <p className="mt-1 text-xs text-gray-600">{exercise.notes}</p>}
               <div className="mt-4 space-y-3">
                 {(setsByExercise[exercise.id] || []).map((set) => {
