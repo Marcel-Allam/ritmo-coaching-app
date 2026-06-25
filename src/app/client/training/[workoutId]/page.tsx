@@ -8,21 +8,44 @@ import { PageHeader } from '@/components/layout/page-header';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { SectionHeader } from '@/components/ui/section-header';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
 import { useAuth } from '@/lib/auth-context';
+
+type NumericValue = number | string | null;
 
 type ClientRecord = { id: string; full_name: string };
 type WorkoutRecord = { id: string; title: string; instructions: string | null };
 type CompletedSessionRecord = { id: string; completed_at: string | null; review_status: string };
-type ExerciseRecord = { id: string; exercise_order: number; exercise_name: string; notes: string | null };
-type PrescribedSetRecord = { id: string; exercise_id: string; set_order: number; target_reps: string | null; target_weight_kg: number | null };
+type ExerciseRecord = { id: string; exercise_order: number; exercise_name: string; notes: string | null; exercise_role: string | null };
+
+type PrescribedSetRecord = {
+  id: string;
+  program_set_id: string;
+  exercise_id: string;
+  week_number: number;
+  current_program_week: number;
+  is_current_week: boolean;
+  set_order: number;
+  target_reps: string | null;
+  target_percent_1rm: NumericValue;
+  target_rpe: NumericValue;
+  target_rir: NumericValue;
+  effective_target_weight_kg: NumericValue;
+  target_load_source: string;
+  notes: string | null;
+};
+
 type SetLog = { weight: string; reps: string; rpe: string; completed: boolean; notes: string };
 type ViewMode = 'focus' | 'full';
 
 const emptyLog: SetLog = { weight: '', reps: '', rpe: '', completed: false, notes: '' };
 const numberOrNull = (value: string) => (value.trim() ? Number(value) : null);
-const numberOrFallback = (value: string, fallback: number | null) => (value.trim() ? Number(value) : fallback);
+const numericValueOrNull = (value: NumericValue) => {
+  if (value === null || value === undefined || value === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+const numberOrFallback = (value: string, fallback: NumericValue) => (value.trim() ? Number(value) : numericValueOrNull(fallback));
 const integerOrFallback = (value: string, fallback: string | null) => {
   if (value.trim()) return Number.parseInt(value, 10);
   if (!fallback?.trim()) return null;
@@ -41,6 +64,31 @@ const defaultActualReps = (targetReps: string | null) => {
 const formatDateTime = (value: string | null) => {
   if (!value) return 'Not recorded';
   return new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(value));
+};
+
+const formatNumericValue = (value: NumericValue) => {
+  if (value === null || value === undefined || value === '') return '—';
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return String(value);
+  return Number.isInteger(parsed) ? String(parsed) : parsed.toFixed(1);
+};
+
+const formatKg = (value: NumericValue) => {
+  const formatted = formatNumericValue(value);
+  return formatted === '—' ? formatted : `${formatted}kg`;
+};
+
+const formatPercent = (value: NumericValue) => {
+  const formatted = formatNumericValue(value);
+  return formatted === '—' ? formatted : `${formatted}%`;
+};
+
+const formatSourceLabel = (source: string) => {
+  if (source === 'coach_override') return 'Coach override';
+  if (source === 'calculated_from_percent_1rm') return 'Calculated from %1RM';
+  if (source === 'missing_calibration') return 'Missing calibration';
+  if (source === 'not_percent_based') return 'Not % based';
+  return source.replaceAll('_', ' ');
 };
 
 const rpeGuide = [
@@ -62,7 +110,10 @@ const sessionFeelOptions = [
 ];
 
 const getRpeDescription = (value: string) => rpeGuide.find((item) => item.score === value.trim());
-const prescribedWeightValue = (set: PrescribedSetRecord) => set.target_weight_kg?.toString() || '';
+const prescribedWeightValue = (set: PrescribedSetRecord) => {
+  const weight = numericValueOrNull(set.effective_target_weight_kg);
+  return weight === null ? '' : String(weight);
+};
 const prescribedRepsValue = (set: PrescribedSetRecord) => defaultActualReps(set.target_reps);
 const matchesPrescription = (value: string, prescription: string) => Boolean(prescription.trim()) && value.trim() === prescription.trim();
 
@@ -78,6 +129,7 @@ export default function ClientWorkoutSessionPage() {
   const [exercises, setExercises] = useState<ExerciseRecord[]>([]);
   const [sets, setSets] = useState<PrescribedSetRecord[]>([]);
   const [logs, setLogs] = useState<Record<string, SetLog>>({});
+  const [displayWeek, setDisplayWeek] = useState<number | null>(null);
   const [sessionFeel, setSessionFeel] = useState('');
   const [sessionNotes, setSessionNotes] = useState('');
   const [viewMode, setViewMode] = useState<ViewMode>('focus');
@@ -132,7 +184,11 @@ export default function ClientWorkoutSessionPage() {
         return;
       }
 
-      const { data: exerciseData, error: exerciseError } = await supabase.from('program_exercises').select('id, exercise_order, exercise_name, notes').eq('workout_id', workoutId).order('exercise_order', { ascending: true });
+      const { data: exerciseData, error: exerciseError } = await supabase
+        .from('program_exercises')
+        .select('id, exercise_order, exercise_name, notes, exercise_role')
+        .eq('workout_id', workoutId)
+        .order('exercise_order', { ascending: true });
 
       if (exerciseError) {
         setError(exerciseError.message);
@@ -140,27 +196,38 @@ export default function ClientWorkoutSessionPage() {
         return;
       }
 
-      const loadedExercises = (exerciseData ?? []) as ExerciseRecord[];
-      const exerciseIds = loadedExercises.map((exercise) => exercise.id);
-      const setResult = exerciseIds.length
-        ? await supabase.from('program_sets').select('id, exercise_id, set_order, target_reps, target_weight_kg').in('exercise_id', exerciseIds).order('set_order', { ascending: true })
-        : { data: [], error: null };
+      const { data: resolvedSetData, error: resolvedSetError } = await supabase
+        .from('program_set_calculated_targets')
+        .select('program_set_id, exercise_id, week_number, current_program_week, is_current_week, set_order, target_reps, target_percent_1rm, target_rpe, target_rir, effective_target_weight_kg, target_load_source, notes')
+        .eq('workout_id', workoutId)
+        .order('week_number', { ascending: true })
+        .order('exercise_name', { ascending: true })
+        .order('set_order', { ascending: true });
 
-      if (setResult.error) {
-        setError(setResult.error.message);
+      if (resolvedSetError) {
+        setError(resolvedSetError.message);
         setLoading(false);
         return;
       }
 
-      const loadedSets = (setResult.data ?? []) as PrescribedSetRecord[];
+      const allResolvedSets = ((resolvedSetData ?? []) as Omit<PrescribedSetRecord, 'id'>[]).map((set) => ({
+        ...set,
+        id: set.program_set_id,
+      }));
+      const currentWeekSets = allResolvedSets.filter((set) => set.is_current_week);
+      const fallbackWeekOneSets = allResolvedSets.filter((set) => set.week_number === 1);
+      const loadedSets = currentWeekSets.length > 0 ? currentWeekSets : fallbackWeekOneSets;
+      const resolvedDisplayWeek = loadedSets[0]?.week_number ?? allResolvedSets[0]?.week_number ?? null;
+
       const initialLogs = loadedSets.reduce<Record<string, SetLog>>((acc, set) => {
         acc[set.id] = { ...emptyLog, weight: prescribedWeightValue(set), reps: prescribedRepsValue(set) };
         return acc;
       }, {});
 
       setWorkout(workoutResult.data as WorkoutRecord);
-      setExercises(loadedExercises);
+      setExercises((exerciseData ?? []) as ExerciseRecord[]);
       setSets(loadedSets);
+      setDisplayWeek(resolvedDisplayWeek);
       setLogs(initialLogs);
       setLoading(false);
     };
@@ -284,9 +351,9 @@ export default function ClientWorkoutSessionPage() {
     const rows = sets.map((set) => ({
       session_id: sessionId,
       program_exercise_id: set.exercise_id,
-      program_set_id: set.id,
+      program_set_id: set.program_set_id,
       set_order: set.set_order,
-      actual_weight_kg: numberOrFallback(logs[set.id]?.weight || '', set.target_weight_kg),
+      actual_weight_kg: numberOrFallback(logs[set.id]?.weight || '', set.effective_target_weight_kg),
       actual_reps: integerOrFallback(logs[set.id]?.reps || '', set.target_reps),
       actual_rpe: numberOrNull(logs[set.id]?.rpe || ''),
       completed: logs[set.id]?.completed ?? false,
@@ -341,7 +408,7 @@ export default function ClientWorkoutSessionPage() {
 
           <header className="flex items-center justify-between gap-4 border-b border-gray-200 pb-5">
             <div>
-              <p className="text-xs font-black uppercase tracking-wide text-[#FA0201]">Focus mode</p>
+              <p className="text-xs font-black uppercase tracking-wide text-[#FA0201]">Focus mode{displayWeek ? ` • Week ${displayWeek}` : ''}</p>
               <h1 className="mt-1 text-3xl font-black uppercase leading-tight tracking-tight">{currentFocusItem.exercise.exercise_name}</h1>
             </div>
             <Link href="/client/training" className="rounded-lg bg-[#FA0201] px-4 py-3 text-center text-xs font-black uppercase text-white hover:bg-red-700">Cancel<br />workout</Link>
@@ -374,7 +441,9 @@ export default function ClientWorkoutSessionPage() {
               <div className="rounded-xl bg-gray-100 px-4 py-3 text-right">
                 <p className="text-xs font-bold uppercase text-gray-500">Target</p>
                 <p className="text-sm font-black">{currentFocusItem.set.target_reps || '-'} reps</p>
-                <p className="text-sm font-black">{currentFocusItem.set.target_weight_kg ? `${currentFocusItem.set.target_weight_kg}kg` : '-'}</p>
+                <p className="text-sm font-black">{formatKg(currentFocusItem.set.effective_target_weight_kg)}</p>
+                <p className="mt-1 text-[10px] font-black uppercase text-gray-500">{formatSourceLabel(currentFocusItem.set.target_load_source)}</p>
+                {currentFocusItem.set.target_percent_1rm && <p className="text-[10px] font-black uppercase text-gray-500">{formatPercent(currentFocusItem.set.target_percent_1rm)}</p>}
               </div>
             </div>
 
@@ -389,7 +458,7 @@ export default function ClientWorkoutSessionPage() {
           <section className="space-y-5">
             <label className="block rounded-2xl bg-gray-100 p-5">
               <span className="block text-2xl font-black uppercase">KG</span>
-              <input type="number" step="0.5" value={currentLog.weight} placeholder={currentPrescribedWeight} onChange={(event) => updateLog(currentFocusItem.set.id, { weight: event.target.value })} className={`${focusInputBaseClass} ${kgMatchesPrescription ? 'text-black/60' : 'text-[#000000]'}`} />
+              <input type="number" step="2.5" value={currentLog.weight} placeholder={currentPrescribedWeight} onChange={(event) => updateLog(currentFocusItem.set.id, { weight: event.target.value })} className={`${focusInputBaseClass} ${kgMatchesPrescription ? 'text-black/60' : 'text-[#000000]'}`} />
               {kgMatchesPrescription && <p className="mt-2 text-xs font-bold uppercase text-gray-500">Prescribed load</p>}
             </label>
 
@@ -445,14 +514,14 @@ export default function ClientWorkoutSessionPage() {
 
   return (
     <div>
-      <PageHeader title="FULL WORKOUT VIEW" subtitle={workout ? `Logging ${workout.title}` : undefined} />
+      <PageHeader title="FULL WORKOUT VIEW" subtitle={workout ? `Logging ${workout.title}${displayWeek ? ` • Week ${displayWeek}` : ''}` : undefined} />
       <main className="mx-auto max-w-5xl space-y-6 px-4 py-6 md:px-8 md:pb-8">
         {error && <Card className="border-2 border-red-200 bg-red-50"><p className="text-sm font-semibold text-red-700">{error}</p></Card>}
 
         <div className="sticky top-0 z-20 -mx-4 border-b border-gray-200 bg-white/95 px-4 py-3 backdrop-blur md:mx-0 md:rounded-xl md:border md:px-4">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
-              <p className="text-xs font-black uppercase tracking-wide text-[#FA0201]">Full workout view</p>
+              <p className="text-xs font-black uppercase tracking-wide text-[#FA0201]">Full workout view{displayWeek ? ` • Week ${displayWeek}` : ''}</p>
               <h1 className="text-2xl font-black uppercase tracking-tight text-[#000000]">{workout?.title}</h1>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -472,14 +541,17 @@ export default function ClientWorkoutSessionPage() {
               <Card key={exercise.id} className="overflow-hidden p-0">
                 <div className="flex flex-col gap-2 border-b border-gray-200 bg-gray-50 p-4 md:flex-row md:items-start md:justify-between">
                   <div>
-                    <h2 className="text-xl font-black uppercase tracking-tight text-[#000000]">{exercise.exercise_name}</h2>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h2 className="text-xl font-black uppercase tracking-tight text-[#000000]">{exercise.exercise_name}</h2>
+                      {exercise.exercise_role === 'main_lift' && <span className="rounded-full bg-red-100 px-3 py-1 text-xs font-black uppercase text-[#FA0201]">Main lift</span>}
+                    </div>
                     {exercise.notes && <p className="mt-1 text-sm font-semibold text-gray-700">{exercise.notes}</p>}
                   </div>
                   <p className="w-fit rounded-full bg-gray-200 px-3 py-1 text-xs font-black uppercase text-[#000000]">{exerciseSets.length} set{exerciseSets.length === 1 ? '' : 's'}</p>
                 </div>
 
                 <div className="overflow-x-auto">
-                  <table className="w-full min-w-[760px] border-collapse text-left text-sm">
+                  <table className="w-full min-w-[900px] border-collapse text-left text-sm">
                     <thead className="bg-white text-xs font-black uppercase text-gray-500">
                       <tr>
                         <th className="px-4 py-3">Done</th>
@@ -494,6 +566,7 @@ export default function ClientWorkoutSessionPage() {
                       {exerciseSets.map((set) => {
                         const log = logs[set.id] || emptyLog;
                         const fullViewRpe = getRpeDescription(log.rpe);
+                        const prescribedWeight = prescribedWeightValue(set);
                         return (
                           <tr key={set.id} className={`border-t border-gray-100 ${log.completed ? 'bg-green-50/70' : 'odd:bg-gray-50 even:bg-white'}`}>
                             <td className="px-4 py-3 align-top">
@@ -501,10 +574,13 @@ export default function ClientWorkoutSessionPage() {
                             </td>
                             <td className="px-4 py-3 align-top">
                               <p className="font-black uppercase text-[#000000]">Set {set.set_order}</p>
-                              <p className="mt-1 text-xs font-semibold text-gray-500">Target: {set.target_reps || '-'} reps{set.target_weight_kg ? ` @ ${set.target_weight_kg}kg` : ''}</p>
+                              <p className="mt-1 text-xs font-semibold text-gray-500">
+                                Target: {set.target_reps || '-'} reps{prescribedWeight ? ` @ ${prescribedWeight}kg` : ''}{set.target_percent_1rm ? ` (${formatPercent(set.target_percent_1rm)})` : ''}
+                              </p>
+                              <p className="mt-1 text-[10px] font-black uppercase text-gray-400">{formatSourceLabel(set.target_load_source)}</p>
                             </td>
                             <td className="px-4 py-3 align-top">
-                              <input type="number" step="0.5" value={log.weight} placeholder={set.target_weight_kg?.toString() || ''} onChange={(event) => updateLog(set.id, { weight: event.target.value })} className="w-24 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-bold text-black" />
+                              <input type="number" step="2.5" value={log.weight} placeholder={prescribedWeight} onChange={(event) => updateLog(set.id, { weight: event.target.value })} className="w-24 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-bold text-black" />
                             </td>
                             <td className="px-4 py-3 align-top">
                               <input type="number" value={log.reps} placeholder={set.target_reps || ''} onChange={(event) => updateLog(set.id, { reps: event.target.value })} className="w-24 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-bold text-black" />
