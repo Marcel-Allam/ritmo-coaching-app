@@ -167,6 +167,7 @@ export function EditPlanPeriodisationPanel({ clientId, programs }: Props) {
   const [libraryProgrammes, setLibraryProgrammes] = useState<LibraryProgramme[]>([]);
   const [selectedLibraryProgrammeId, setSelectedLibraryProgrammeId] = useState('');
   const [settingsByProgram, setSettingsByProgram] = useState<Record<string, PeriodisationRecord>>({});
+  const [currentWeekDraft, setCurrentWeekDraft] = useState('1');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
@@ -243,6 +244,15 @@ export function EditPlanPeriodisationPanel({ clientId, programs }: Props) {
     }
   }, [matchingLibraryProgrammes, selectedLibraryProgrammeId]);
 
+  useEffect(() => {
+    if (activeSettings) {
+      setCurrentWeekDraft(String(activeSettings.current_week));
+      return;
+    }
+
+    setCurrentWeekDraft('1');
+  }, [activeSettings?.id, activeSettings?.current_week]);
+
   const startPeriodisation = async () => {
     if (!isSupabaseConfigured || !selectedLibraryProgramme) return;
 
@@ -287,6 +297,51 @@ export function EditPlanPeriodisationPanel({ clientId, programs }: Props) {
 
     setMessage('Periodisation started. Reloading client plan...');
     window.setTimeout(() => window.location.reload(), 600);
+  };
+
+  const saveCurrentWeek = async () => {
+    if (!isSupabaseConfigured || !activeProgram) return;
+
+    const programmeLength = activeSettings?.programme_length_weeks ?? 12;
+    const parsedWeek = Number.parseInt(currentWeekDraft, 10);
+
+    if (!Number.isFinite(parsedWeek) || parsedWeek < 0 || parsedWeek > programmeLength) {
+      setError(`Choose a valid week between 0 and ${programmeLength}. Week 0 is calibration.`);
+      return;
+    }
+
+    const selectedBlock = getBlockByWeek(parsedWeek);
+
+    setActionLoading('week');
+    setError(null);
+    setMessage(null);
+
+    const supabase = createClient();
+    const { data, error: updateError } = await supabase
+      .from('program_periodisation_settings')
+      .upsert(
+        {
+          program_id: activeProgram.id,
+          client_id: clientId,
+          programme_length_weeks: programmeLength,
+          current_week: parsedWeek,
+          ...blockPayload(selectedBlock),
+        },
+        { onConflict: 'program_id' }
+      )
+      .select('id, program_id, programme_length_weeks, current_week, current_block_name, current_block_start_week, current_block_end_week, current_block_goal, client_explanation, next_block_name, loading_guide, client_visible')
+      .single();
+
+    if (updateError || !data) {
+      setError(updateError?.message || 'Could not update current week.');
+      setActionLoading(null);
+      return;
+    }
+
+    const updatedSettings = data as PeriodisationRecord;
+    setSettingsByProgram((current) => ({ ...current, [activeProgram.id]: updatedSettings }));
+    setMessage(`Programme moved to Week ${parsedWeek}. Client workouts now resolve against Week ${parsedWeek} targets.`);
+    setActionLoading(null);
   };
 
   const extendCurrentBlock = async () => {
@@ -499,7 +554,7 @@ export function EditPlanPeriodisationPanel({ clientId, programs }: Props) {
             <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
               <div>
                 <p className="text-lg font-black uppercase text-[#000000]">Periodisation Controls</p>
-                <p className="mt-1 text-sm text-gray-600">Adjust the current block or move the client forward, then edit workouts if needed.</p>
+                <p className="mt-1 text-sm text-gray-600">Adjust the current week or block. Client workouts resolve weekly targets from this current week.</p>
               </div>
               <Badge variant="success">Active programme</Badge>
             </div>
@@ -516,6 +571,33 @@ export function EditPlanPeriodisationPanel({ clientId, programs }: Props) {
               <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
                 <p className="text-xs font-bold uppercase text-gray-500">Next block</p>
                 <p className="mt-2 text-xl font-black text-[#000000]">{activeSettings?.next_block_name ?? currentBlock.nextBlock}</p>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-red-100 bg-red-50 p-4">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                <div>
+                  <p className="text-xs font-black uppercase text-[#FA0201]">Set active programme week</p>
+                  <p className="mt-1 text-sm font-semibold text-red-900">
+                    This controls which week-specific targets the client sees and logs. Week 0 is calibration; Week 1 starts the 12-week progression.
+                  </p>
+                </div>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                  <label className="block min-w-36">
+                    <span className="mb-2 block text-xs font-bold uppercase text-gray-600">Current week</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={activeSettings?.programme_length_weeks ?? 12}
+                      value={currentWeekDraft}
+                      onChange={(event) => setCurrentWeekDraft(event.target.value)}
+                      className="w-full rounded-lg border-2 border-gray-300 bg-white px-4 py-2 text-sm font-black text-[#000000]"
+                    />
+                  </label>
+                  <button type="button" onClick={saveCurrentWeek} disabled={Boolean(actionLoading)} className="rounded-lg bg-[#FA0201] px-4 py-3 text-xs font-black uppercase text-white hover:bg-red-700 disabled:opacity-60">
+                    {actionLoading === 'week' ? 'Saving week...' : 'Save current week'}
+                  </button>
+                </div>
               </div>
             </div>
 
