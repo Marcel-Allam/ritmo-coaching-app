@@ -41,6 +41,7 @@ type ProgramSetRecord = {
   set_order: number;
   target_reps: string | null;
   target_weight_kg: number | null;
+  target_percent_1rm: number | null;
   notes: string | null;
 };
 
@@ -57,6 +58,7 @@ type ExerciseCatalogueRecord = {
 type SetForm = {
   targetReps: string;
   targetWeightKg: string;
+  targetPercent1Rm: string;
   notes: string;
 };
 
@@ -83,7 +85,7 @@ type NewExerciseDraft = {
   notes: string;
 };
 
-const blankSet = (): SetForm => ({ targetReps: '', targetWeightKg: '', notes: '' });
+const blankSet = (): SetForm => ({ targetReps: '', targetWeightKg: '', targetPercent1Rm: '', notes: '' });
 
 const blankExercise = (): ExerciseForm => ({
   exerciseName: '',
@@ -204,7 +206,7 @@ export default function EditAssignedWorkoutPage() {
     const { data: setData, error: setError } = exerciseIds.length > 0
       ? await supabase
           .from('program_sets')
-          .select('id, exercise_id, set_order, target_reps, target_weight_kg, notes')
+          .select('id, exercise_id, set_order, target_reps, target_weight_kg, target_percent_1rm, notes')
           .in('exercise_id', exerciseIds)
           .order('set_order', { ascending: true })
       : { data: [], error: null };
@@ -227,6 +229,7 @@ export default function EditAssignedWorkoutPage() {
         .map((set) => ({
           targetReps: set.target_reps || '',
           targetWeightKg: set.target_weight_kg?.toString() || '',
+          targetPercent1Rm: set.target_percent_1rm?.toString() || '',
           notes: set.notes || '',
         })),
     }));
@@ -466,6 +469,7 @@ export default function EditAssignedWorkoutPage() {
         set_order: setIndex + 1,
         target_reps: textOrNull(set.targetReps),
         target_weight_kg: numberOrNull(set.targetWeightKg),
+        target_percent_1rm: numberOrNull(set.targetPercent1Rm),
         target_rpe: null,
         target_rir: null,
         notes: textOrNull(set.notes),
@@ -480,7 +484,7 @@ export default function EditAssignedWorkoutPage() {
     }
 
     setOriginalExerciseIds(newExerciseIds);
-    setMessage('Workout updated. Exercise roles and DB links are saved for progression logic.');
+    setMessage('Workout updated. Exercise roles, %1RM targets and DB links are saved for progression logic.');
     setSaving(false);
   };
 
@@ -529,7 +533,7 @@ export default function EditAssignedWorkoutPage() {
             <div className="rounded-lg border border-blue-200 bg-blue-50 p-3">
               <p className="text-xs font-black uppercase tracking-wide text-blue-900">Exercise names and roles are graph-linked</p>
               <p className="mt-1 text-sm font-semibold text-blue-800">
-                Choose exercises from the Exercise Library dropdown and classify them as Main / Key Lift or Accessory. Main lifts will later drive calibration and %1RM planning.
+                Choose exercises from the Exercise Library dropdown and classify them as Main / Key Lift or Accessory. Main lifts will later drive calibration, %1RM planning and calculated loads.
               </p>
             </div>
 
@@ -718,19 +722,21 @@ export default function EditAssignedWorkoutPage() {
                   <Textarea label="Exercise notes" value={exercise.notes} onChange={(e) => updateExercise(exerciseIndex, { notes: e.target.value })} disabled={isLocked} />
 
                   <div className="overflow-x-auto rounded-lg bg-gray-50 p-3">
-                    <div className="grid min-w-[720px] grid-cols-[80px_1fr_1fr_2fr_48px] gap-3 px-1 pb-2 text-xs font-bold uppercase text-gray-600">
+                    <div className="grid min-w-[860px] grid-cols-[80px_1fr_1fr_1fr_2fr_48px] gap-3 px-1 pb-2 text-xs font-bold uppercase text-gray-600">
                       <div />
-                      <p>Kg</p>
                       <p>Reps</p>
+                      <p>%1RM</p>
+                      <p>Kg</p>
                       <p>Notes</p>
                       <div />
                     </div>
                     <div className="space-y-3">
                       {exercise.sets.map((set, setIndex) => (
-                        <div key={setIndex} className="grid min-w-[720px] grid-cols-[80px_1fr_1fr_2fr_48px] items-center gap-3">
+                        <div key={setIndex} className="grid min-w-[860px] grid-cols-[80px_1fr_1fr_1fr_2fr_48px] items-center gap-3">
                           <p className="text-sm font-bold uppercase text-[#000000]">Set {setIndex + 1}</p>
-                          <Input type="number" step="2.5" value={set.targetWeightKg} onChange={(e) => updateSet(exerciseIndex, setIndex, { targetWeightKg: e.target.value })} disabled={isLocked} />
                           <Input value={set.targetReps} onChange={(e) => updateSet(exerciseIndex, setIndex, { targetReps: e.target.value })} placeholder="6-8" disabled={isLocked} />
+                          <Input type="number" step="0.5" value={set.targetPercent1Rm} onChange={(e) => updateSet(exerciseIndex, setIndex, { targetPercent1Rm: e.target.value })} placeholder="75" disabled={isLocked} />
+                          <Input type="number" step="2.5" value={set.targetWeightKg} onChange={(e) => updateSet(exerciseIndex, setIndex, { targetWeightKg: e.target.value })} disabled={isLocked} />
                           <Input value={set.notes} onChange={(e) => updateSet(exerciseIndex, setIndex, { notes: e.target.value })} disabled={isLocked} />
                           {!isLocked && exercise.sets.length > 1 && (
                             <button
