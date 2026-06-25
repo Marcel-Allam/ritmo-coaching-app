@@ -18,6 +18,11 @@ interface TrainingProgramRecord {
   title: string;
 }
 
+interface ProgramPeriodisationRecord {
+  program_id: string;
+  current_week: number;
+}
+
 interface ProgramWorkoutRecord {
   id: string;
   program_id: string;
@@ -35,6 +40,7 @@ interface CompletedSessionRecord {
   completed_at: string | null;
   review_status: string;
   client_notes: string | null;
+  program_week: number | null;
 }
 
 type WorkoutHistoryStats = {
@@ -70,6 +76,7 @@ export default function ClientTrainingPage() {
   const [client, setClient] = useState<ClientRecord | null>(null);
   const [workouts, setWorkouts] = useState<ProgramWorkoutRecord[]>([]);
   const [programs, setPrograms] = useState<Record<string, TrainingProgramRecord>>({});
+  const [periodisationByProgram, setPeriodisationByProgram] = useState<Record<string, ProgramPeriodisationRecord>>({});
   const [completedSessions, setCompletedSessions] = useState<CompletedSessionRecord[]>([]);
   const [exerciseCounts, setExerciseCounts] = useState<Record<string, number>>({});
   const [isLoading, setIsLoading] = useState(true);
@@ -109,7 +116,7 @@ export default function ClientTrainingPage() {
           .order('created_at', { ascending: true }),
         supabase
           .from('workout_sessions')
-          .select('id, program_workout_id, completed_at, review_status, client_notes')
+          .select('id, program_workout_id, completed_at, review_status, client_notes, program_week')
           .eq('client_id', linkedClient.id)
           .eq('status', 'completed')
           .order('completed_at', { ascending: false }),
@@ -128,22 +135,34 @@ export default function ClientTrainingPage() {
 
       const programIds = [...new Set(loadedWorkouts.map((workout) => workout.program_id))];
       if (programIds.length > 0) {
-        const { data: programData, error: programError } = await supabase
-          .from('training_programs')
-          .select('id, title')
-          .in('id', programIds);
+        const [programResult, periodisationResult] = await Promise.all([
+          supabase
+            .from('training_programs')
+            .select('id, title')
+            .in('id', programIds),
+          supabase
+            .from('program_periodisation_settings')
+            .select('program_id, current_week')
+            .in('program_id', programIds),
+        ]);
 
-        if (programError) {
-          setMessage(programError.message);
+        if (programResult.error || periodisationResult.error) {
+          setMessage(programResult.error?.message || periodisationResult.error?.message || 'Could not load programme data.');
           setIsLoading(false);
           return;
         }
 
-        const programMap = ((programData ?? []) as TrainingProgramRecord[]).reduce<Record<string, TrainingProgramRecord>>((acc, program) => {
+        const programMap = ((programResult.data ?? []) as TrainingProgramRecord[]).reduce<Record<string, TrainingProgramRecord>>((acc, program) => {
           acc[program.id] = program;
           return acc;
         }, {});
+        const periodisationMap = ((periodisationResult.data ?? []) as ProgramPeriodisationRecord[]).reduce<Record<string, ProgramPeriodisationRecord>>((acc, settings) => {
+          acc[settings.program_id] = settings;
+          return acc;
+        }, {});
+
         setPrograms(programMap);
+        setPeriodisationByProgram(periodisationMap);
       }
 
       const workoutIds = loadedWorkouts.map((workout) => workout.id);
@@ -172,9 +191,13 @@ export default function ClientTrainingPage() {
     loadAssignedWorkouts();
   }, [user]);
 
-  const latestCompletedWorkoutId = completedSessions.find((session) => workouts.some((workout) => workout.id === session.program_workout_id))?.program_workout_id ?? null;
+  const primaryProgramId = workouts[0]?.program_id ?? null;
+  const currentProgramWeek = primaryProgramId ? periodisationByProgram[primaryProgramId]?.current_week ?? 1 : 1;
+  const currentWeekCompletedSessions = completedSessions.filter((session) => session.program_week === currentProgramWeek);
+  const latestCompletedWorkoutId = currentWeekCompletedSessions.find((session) => workouts.some((workout) => workout.id === session.program_workout_id))?.program_workout_id ?? null;
   const latestCompletedWorkoutIndex = workouts.findIndex((workout) => workout.id === latestCompletedWorkoutId);
-  const nextWorkout = workouts.length > 0 ? workouts[(latestCompletedWorkoutIndex + 1) % workouts.length] : null;
+  const firstIncompleteWorkoutThisWeek = workouts.find((workout) => !currentWeekCompletedSessions.some((session) => session.program_workout_id === workout.id));
+  const nextWorkout = firstIncompleteWorkoutThisWeek ?? (workouts.length > 0 ? workouts[(latestCompletedWorkoutIndex + 1) % workouts.length] : null);
   const currentProgram = nextWorkout ? programs[nextWorkout.program_id] : workouts[0] ? programs[workouts[0].program_id] : null;
 
   const workoutHistoryStats = useMemo(() => {
@@ -255,7 +278,7 @@ export default function ClientTrainingPage() {
                 {cleanProgrammeTitle(currentProgram?.title)}
               </h1>
               <p className="mt-2 text-sm font-semibold text-gray-600">
-                {workouts.length} workout template{workouts.length === 1 ? '' : 's'} • Highlighted red = next session to complete
+                Week {currentProgramWeek} • {workouts.length} workout template{workouts.length === 1 ? '' : 's'} • Highlighted red = next session to complete this week
               </p>
             </div>
             <Link href="/client" className="rounded-lg bg-[#FA0201] px-4 py-3 text-xs font-black uppercase text-white hover:bg-red-700">
@@ -267,6 +290,7 @@ export default function ClientTrainingPage() {
             {workouts.map((workout, index) => {
               const isNext = workout.id === nextWorkout.id;
               const stats = workoutHistoryStats[workout.id];
+              const doneThisWeek = currentWeekCompletedSessions.some((session) => session.program_workout_id === workout.id);
               const exerciseCount = exerciseCounts[workout.id] || 0;
 
               return (
@@ -285,10 +309,10 @@ export default function ClientTrainingPage() {
                       {isNext && <p className="mb-2 text-xs font-black uppercase tracking-wide text-white/80">Next workout</p>}
                       <p className="text-2xl font-black uppercase tracking-tight">{workout.title}</p>
                       <p className={`mt-1 text-sm font-semibold ${isNext ? 'text-white/80' : 'text-gray-600'}`}>
-                        Day {workout.workout_order || index + 1} • {exerciseCount} exercise{exerciseCount === 1 ? '' : 's'} • {getHistoryLabel(stats)}
+                        Day {workout.workout_order || index + 1} • {exerciseCount} exercise{exerciseCount === 1 ? '' : 's'} • {doneThisWeek ? `Completed Week ${currentProgramWeek}` : `Not completed Week ${currentProgramWeek}`}
                       </p>
                       <p className={`mt-1 text-xs font-bold uppercase ${isNext ? 'text-white/70' : 'text-gray-500'}`}>
-                        Last done: {stats?.lastCompletedAt ? formatDate(stats.lastCompletedAt) : '—'}
+                        Last done: {stats?.lastCompletedAt ? formatDate(stats.lastCompletedAt) : '—'} • {getHistoryLabel(stats)} total
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-2 md:justify-end">
