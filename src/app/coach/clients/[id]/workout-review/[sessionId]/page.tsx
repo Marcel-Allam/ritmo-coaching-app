@@ -12,6 +12,7 @@ import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
 type ReviewStatus = 'new' | 'reviewed' | 'needs_feedback' | 'needs_action' | 'flagged' | 'resolved';
 type Outcome = 'above' | 'matched' | 'caution' | 'below' | 'missing';
 type ExerciseRole = 'main_lift' | 'accessory';
+type NumericValue = number | string | null;
 
 type ClientRecord = { id: string; full_name: string; email: string | null };
 type WorkoutSessionRecord = {
@@ -23,6 +24,7 @@ type WorkoutSessionRecord = {
   client_notes: string | null;
   coach_note: string | null;
   is_calibration: boolean;
+  program_week: number | null;
 };
 type ProgramWorkoutRecord = { id: string; program_id: string; title: string; instructions: string | null };
 type ProgramExerciseRecord = {
@@ -39,7 +41,25 @@ type ProgramSetRecord = {
   set_order: number;
   target_reps: string | null;
   target_weight_kg: number | null;
+  target_percent_1rm: number | null;
   target_rpe: number | null;
+  target_rir: number | null;
+  target_definition_source: string | null;
+  target_load_source: string | null;
+  notes: string | null;
+};
+type ResolvedTargetRecord = {
+  program_set_id: string;
+  exercise_id: string;
+  set_order: number;
+  target_definition_source: string | null;
+  target_reps: string | null;
+  target_weight_kg: NumericValue;
+  target_percent_1rm: NumericValue;
+  target_rpe: NumericValue;
+  target_rir: NumericValue;
+  effective_target_weight_kg: NumericValue;
+  target_load_source: string | null;
   notes: string | null;
 };
 type PerformedSetRecord = {
@@ -120,6 +140,40 @@ const outcomeLabel: Record<Outcome, string> = {
   missing: 'Missing info',
 };
 
+const numericValueOrNull = (value: NumericValue) => {
+  if (value === null || value === undefined || value === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const formatNumericValue = (value: NumericValue) => {
+  if (value === null || value === undefined || value === '') return '—';
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return String(value);
+  return Number.isInteger(parsed) ? String(parsed) : parsed.toFixed(1);
+};
+
+const formatKg = (value: NumericValue) => {
+  const formatted = formatNumericValue(value);
+  return formatted === '—' ? formatted : `${formatted}kg`;
+};
+
+const formatPercent = (value: NumericValue) => {
+  const formatted = formatNumericValue(value);
+  return formatted === '—' ? formatted : `${formatted}%`;
+};
+
+const formatSourceLabel = (source: string | null) => {
+  if (!source) return 'Base plan';
+  if (source === 'weekly_target') return 'Weekly target';
+  if (source === 'base_program_set') return 'Base fallback';
+  if (source === 'coach_override') return 'Coach override';
+  if (source === 'calculated_from_percent_1rm') return 'Calculated from %1RM';
+  if (source === 'missing_calibration') return 'Missing calibration';
+  if (source === 'not_percent_based') return 'Not % based';
+  return source.replaceAll('_', ' ');
+};
+
 const calculateEstimatedOneRepMax = (weightKg: number, reps: number) => {
   // Epley formula: weight × (1 + reps / 30). Rounded to 0.1kg for display/storage consistency.
   return Number((weightKg * (1 + reps / 30)).toFixed(1));
@@ -131,6 +185,15 @@ const formatActualSet = (actual?: PerformedSetRecord) => {
   const reps = actual.actual_reps !== null && actual.actual_reps !== undefined ? `${actual.actual_reps} reps` : 'No reps';
   const rpe = actual.actual_rpe !== null && actual.actual_rpe !== undefined ? `RPE ${actual.actual_rpe}` : 'No RPE';
   return `${weight} × ${reps} @ ${rpe}`;
+};
+
+const formatTargetSet = (target: ProgramSetRecord) => {
+  const load = formatKg(target.target_weight_kg);
+  const reps = target.target_reps || '— reps';
+  const percent = target.target_percent_1rm !== null && target.target_percent_1rm !== undefined ? ` @ ${formatPercent(target.target_percent_1rm)}` : '';
+  const rpe = target.target_rpe !== null && target.target_rpe !== undefined ? ` • RPE ${target.target_rpe}` : '';
+  const rir = target.target_rir !== null && target.target_rir !== undefined ? ` • RIR ${target.target_rir}` : '';
+  return `${load} × ${reps}${percent}${rpe}${rir}`;
 };
 
 const analyseSet = (target: ProgramSetRecord, actual?: PerformedSetRecord) => {
@@ -230,7 +293,7 @@ export default function CoachWorkoutReviewPage() {
     const supabase = createClient();
     const { data: sessionData, error: sessionError } = await supabase
       .from('workout_sessions')
-      .select('id, client_id, program_workout_id, completed_at, review_status, client_notes, coach_note, is_calibration')
+      .select('id, client_id, program_workout_id, completed_at, review_status, client_notes, coach_note, is_calibration, program_week')
       .eq('id', sessionId)
       .eq('client_id', clientId)
       .single();
@@ -262,6 +325,7 @@ export default function CoachWorkoutReviewPage() {
       return;
     }
 
+    const loadedWorkout = workoutResult.data as ProgramWorkoutRecord;
     const { data: exerciseData, error: exerciseError } = await supabase
       .from('program_exercises')
       .select('id, exercise_order, exercise_name, notes, exercise_catalogue_id, exercise_role')
@@ -279,27 +343,63 @@ export default function CoachWorkoutReviewPage() {
       exercise_role: exercise.exercise_role || 'accessory',
     }));
     const exerciseIds = loadedExercises.map((exercise) => exercise.id);
-    const setResult = exerciseIds.length
-      ? await supabase
-          .from('program_sets')
-          .select('id, exercise_id, set_order, target_reps, target_weight_kg, target_rpe, notes')
-          .in('exercise_id', exerciseIds)
-          .order('set_order', { ascending: true })
-      : { data: [], error: null };
 
-    if (setResult.error) {
-      setError(setResult.error.message);
-      setLoading(false);
-      return;
+    let loadedProgramSets: ProgramSetRecord[] = [];
+    if (exerciseIds.length > 0 && loadedSession.program_week !== null && loadedSession.program_week !== undefined) {
+      const { data: resolvedTargetData, error: resolvedTargetError } = await supabase
+        .from('program_set_calculated_targets')
+        .select('program_set_id, exercise_id, set_order, target_definition_source, target_reps, target_weight_kg, target_percent_1rm, target_rpe, target_rir, effective_target_weight_kg, target_load_source, notes')
+        .eq('workout_id', loadedSession.program_workout_id)
+        .eq('week_number', loadedSession.program_week)
+        .order('exercise_name', { ascending: true })
+        .order('set_order', { ascending: true });
+
+      if (resolvedTargetError) {
+        setError(resolvedTargetError.message);
+        setLoading(false);
+        return;
+      }
+
+      loadedProgramSets = ((resolvedTargetData ?? []) as ResolvedTargetRecord[]).map((target) => ({
+        id: target.program_set_id,
+        exercise_id: target.exercise_id,
+        set_order: target.set_order,
+        target_reps: target.target_reps,
+        target_weight_kg: numericValueOrNull(target.effective_target_weight_kg) ?? numericValueOrNull(target.target_weight_kg),
+        target_percent_1rm: numericValueOrNull(target.target_percent_1rm),
+        target_rpe: numericValueOrNull(target.target_rpe),
+        target_rir: numericValueOrNull(target.target_rir),
+        target_definition_source: target.target_definition_source,
+        target_load_source: target.target_load_source,
+        notes: target.notes,
+      }));
+    } else if (exerciseIds.length > 0) {
+      const { data: baseSetData, error: baseSetError } = await supabase
+        .from('program_sets')
+        .select('id, exercise_id, set_order, target_reps, target_weight_kg, target_percent_1rm, target_rpe, target_rir, notes')
+        .in('exercise_id', exerciseIds)
+        .order('set_order', { ascending: true });
+
+      if (baseSetError) {
+        setError(baseSetError.message);
+        setLoading(false);
+        return;
+      }
+
+      loadedProgramSets = ((baseSetData ?? []) as Array<Omit<ProgramSetRecord, 'target_definition_source' | 'target_load_source'>>).map((set) => ({
+        ...set,
+        target_definition_source: 'base_program_set',
+        target_load_source: set.target_weight_kg !== null && set.target_weight_kg !== undefined ? 'coach_override' : 'not_percent_based',
+      }));
     }
 
     setSession(loadedSession);
     setClient(clientResult.data as ClientRecord);
-    setWorkout(workoutResult.data as ProgramWorkoutRecord);
+    setWorkout(loadedWorkout);
     setPerformedSets((performedResult.data ?? []) as PerformedSetRecord[]);
     setSavedCalibrationLifts((calibrationResult.data ?? []) as CalibrationLiftRecord[]);
     setExercises(loadedExercises);
-    setProgramSets((setResult.data ?? []) as ProgramSetRecord[]);
+    setProgramSets(loadedProgramSets);
     setLoading(false);
   };
 
@@ -408,7 +508,7 @@ export default function CoachWorkoutReviewPage() {
       source_performed_set_id: candidate.performedSet.id,
       formula: 'weight * (1 + reps / 30)',
       client_visible: true,
-      notes: `Saved from workout review: ${workout.title}`,
+      notes: `Saved from workout review: ${workout.title}${session.program_week !== null ? ` Week ${session.program_week}` : ''}`,
     }));
 
     const { error: insertError } = await supabase.from('program_calibration_lifts').insert(insertRows);
@@ -555,10 +655,11 @@ export default function CoachWorkoutReviewPage() {
         <div>
           <h1 className="text-3xl font-bold uppercase tracking-tight text-[#000000]">Workout Review</h1>
           <p className="mt-1 text-sm text-gray-600">{client?.full_name}{client?.email ? ` • ${client.email}` : ''}</p>
-          <p className="mt-1 text-xs font-bold uppercase text-gray-500">{workout?.title || 'Workout'} • Completed {formatDateTime(session?.completed_at || null)}</p>
+          <p className="mt-1 text-xs font-bold uppercase text-gray-500">{workout?.title || 'Workout'}{session?.program_week !== null && session?.program_week !== undefined ? ` • Week ${session.program_week}` : ''} • Completed {formatDateTime(session?.completed_at || null)}</p>
         </div>
         <div className="flex flex-col items-start gap-2 md:items-end">
           {session && <Badge variant={getStatusVariant(session.review_status) as any}>{session.review_status.replaceAll('_', ' ')}</Badge>}
+          {session?.program_week !== null && session?.program_week !== undefined && <Badge variant="default">Week {session.program_week}</Badge>}
           {session?.is_calibration && <Badge variant="success">Calibration session</Badge>}
           <Link href={workout ? `/coach/clients/${clientId}/current-workouts/${workout.id}/edit` : '#'} className="rounded-lg bg-black px-4 py-2 text-xs font-black uppercase text-white hover:bg-gray-900">
             Adjust following workout
@@ -572,6 +673,24 @@ export default function CoachWorkoutReviewPage() {
 
       {message && <Card className="border-2 border-green-200 bg-green-50"><p className="text-sm font-semibold text-green-700">{message}</p></Card>}
       {error && <Card className="border-2 border-red-200 bg-red-50"><p className="text-sm font-semibold text-red-700">{error}</p></Card>}
+
+      <section>
+        <SectionHeader title="SESSION TARGET CONTEXT" accent />
+        <Card className="grid grid-cols-1 gap-3 md:grid-cols-3">
+          <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+            <p className="text-xs font-black uppercase text-gray-500">Programme week</p>
+            <p className="mt-2 text-xl font-black text-[#000000]">{session?.program_week !== null && session?.program_week !== undefined ? `Week ${session.program_week}` : 'Not recorded'}</p>
+          </div>
+          <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+            <p className="text-xs font-black uppercase text-gray-500">Target source</p>
+            <p className="mt-2 text-xl font-black text-[#000000]">Weekly resolved</p>
+          </div>
+          <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+            <p className="text-xs font-black uppercase text-gray-500">Comparison</p>
+            <p className="mt-2 text-xl font-black text-[#000000]">Actual vs target</p>
+          </div>
+        </Card>
+      </section>
 
       <section>
         <SectionHeader title="CALIBRATION CANDIDATES" accent />
@@ -680,10 +799,15 @@ export default function CoachWorkoutReviewPage() {
                         <div>
                           <p className="text-xs font-bold uppercase opacity-70">Set {set.set_order}</p>
                           <p className="mt-1 text-lg font-black">{formatActualSet(actual)}</p>
+                          <p className="mt-1 text-xs font-black uppercase opacity-70">Target: {formatTargetSet(set)}</p>
                         </div>
                         <span className="rounded bg-white/70 px-2 py-1 text-xs font-bold uppercase">{outcomeLabel[analysis.outcome]}</span>
                       </div>
                       <div className="mt-3 space-y-2">
+                        <div className="flex flex-wrap gap-2">
+                          <Badge variant="default">{formatSourceLabel(set.target_definition_source)}</Badge>
+                          <Badge variant={set.target_load_source === 'missing_calibration' ? 'warning' : 'default'}>{formatSourceLabel(set.target_load_source)}</Badge>
+                        </div>
                         {analysis.reasons.map((reason) => <p key={reason} className="text-xs font-semibold opacity-80">{reason}</p>)}
                         {actual?.notes && (
                           <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-blue-900">
