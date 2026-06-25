@@ -42,6 +42,7 @@ type WorkoutSet = {
   target_reps: string | null;
   target_weight_kg: number | null;
   target_rpe: number | null;
+  target_percent_1rm: number | null;
   notes: string | null;
 };
 
@@ -55,6 +56,7 @@ type SetForm = {
   targetReps: string;
   targetWeightKg: string;
   targetRpe: string;
+  targetPercent1Rm: string;
   notes: string;
 };
 
@@ -104,6 +106,7 @@ const setToForm = (set: WorkoutSet): SetForm => ({
   targetReps: set.target_reps || '',
   targetWeightKg: set.target_weight_kg === null || set.target_weight_kg === undefined ? '' : String(set.target_weight_kg),
   targetRpe: set.target_rpe === null || set.target_rpe === undefined ? '' : String(set.target_rpe),
+  targetPercent1Rm: set.target_percent_1rm === null || set.target_percent_1rm === undefined ? '' : String(set.target_percent_1rm),
   notes: set.notes || '',
 });
 
@@ -112,6 +115,7 @@ const emptySetForm = (order: number): SetForm => ({
   targetReps: '',
   targetWeightKg: '',
   targetRpe: '',
+  targetPercent1Rm: '',
   notes: '',
 });
 
@@ -131,12 +135,14 @@ const summariseSets = (sets: WorkoutSet[]) => {
   if (sets.length === 0) return 'No prescribed sets yet';
 
   const reps = Array.from(new Set(sets.map((set) => set.target_reps).filter(Boolean))).join('/');
+  const percent1Rm = Array.from(new Set(sets.map((set) => set.target_percent_1rm).filter((value) => value !== null && value !== undefined))).join('/');
   const kg = Array.from(new Set(sets.map((set) => set.target_weight_kg).filter((value) => value !== null && value !== undefined))).join('/');
   const rpe = Array.from(new Set(sets.map((set) => set.target_rpe).filter((value) => value !== null && value !== undefined))).join('/');
 
   return [
     `${sets.length} set${sets.length === 1 ? '' : 's'}`,
     reps ? `${reps} reps` : null,
+    percent1Rm ? `${percent1Rm}% 1RM` : null,
     kg ? `${kg}kg` : null,
     rpe ? `RPE ${rpe}` : null,
   ]
@@ -272,7 +278,7 @@ export default function WorkoutLibraryPage() {
     const setResult = exerciseIds.length
       ? await supabase
           .from('library_workout_sets')
-          .select('id, library_workout_exercise_id, set_order, target_reps, target_weight_kg, target_rpe, notes')
+          .select('id, library_workout_exercise_id, set_order, target_reps, target_weight_kg, target_rpe, target_percent_1rm, notes')
           .in('library_workout_exercise_id', exerciseIds)
           .order('set_order')
       : { data: [], error: null };
@@ -483,6 +489,7 @@ export default function WorkoutLibraryPage() {
       p_target_reps: form.targetReps,
       p_target_weight_kg: toNumberOrNull(form.targetWeightKg),
       p_target_rpe: toNumberOrNull(form.targetRpe),
+      p_target_percent_1rm: toNumberOrNull(form.targetPercent1Rm),
       p_notes: form.notes,
     });
   };
@@ -792,9 +799,10 @@ export default function WorkoutLibraryPage() {
                     <div className="space-y-3">
                       <p className="text-sm font-black uppercase text-[#000000]">Sets</p>
                       {[...exerciseSets.map((set) => ({ id: set.id, form: setEdits[set.id] || setToForm(set), isNew: false })), { id: 'new', form: newSetForm, isNew: true }].map((item) => (
-                        <div key={item.id} className={`grid grid-cols-1 gap-2 rounded-lg border p-3 md:grid-cols-[0.7fr_1fr_1fr_1fr_1.5fr_0.9fr] md:items-end ${item.isNew ? 'border-dashed border-gray-300 bg-gray-50/40' : 'border-gray-200 bg-gray-50'}`}>
+                        <div key={item.id} className={`grid grid-cols-1 gap-2 rounded-lg border p-3 md:grid-cols-[0.7fr_1fr_1fr_1fr_1fr_1.5fr_0.9fr] md:items-end ${item.isNew ? 'border-dashed border-gray-300 bg-gray-50/40' : 'border-gray-200 bg-gray-50'}`}>
                           <label><span className="text-[10px] font-black uppercase text-gray-500">Set</span><input value={item.form.setOrder} onChange={(event) => item.isNew ? setNewSetForms((current) => ({ ...current, [exercise.id]: { ...item.form, setOrder: event.target.value } })) : setSetEdits((current) => ({ ...current, [item.id]: { ...item.form, setOrder: event.target.value } }))} className="mt-1 w-full rounded border border-gray-300 px-2 py-2 text-sm" /></label>
                           <label><span className="text-[10px] font-black uppercase text-gray-500">Reps</span><input value={item.form.targetReps} onChange={(event) => item.isNew ? setNewSetForms((current) => ({ ...current, [exercise.id]: { ...item.form, targetReps: event.target.value } })) : setSetEdits((current) => ({ ...current, [item.id]: { ...item.form, targetReps: event.target.value } }))} className="mt-1 w-full rounded border border-gray-300 px-2 py-2 text-sm" /></label>
+                          <label><span className="text-[10px] font-black uppercase text-gray-500">%1RM</span><input value={item.form.targetPercent1Rm} onChange={(event) => item.isNew ? setNewSetForms((current) => ({ ...current, [exercise.id]: { ...item.form, targetPercent1Rm: event.target.value } })) : setSetEdits((current) => ({ ...current, [item.id]: { ...item.form, targetPercent1Rm: event.target.value } }))} placeholder="75" className="mt-1 w-full rounded border border-gray-300 px-2 py-2 text-sm" /></label>
                           <label><span className="text-[10px] font-black uppercase text-gray-500">Kg</span><input value={item.form.targetWeightKg} onChange={(event) => item.isNew ? setNewSetForms((current) => ({ ...current, [exercise.id]: { ...item.form, targetWeightKg: event.target.value } })) : setSetEdits((current) => ({ ...current, [item.id]: { ...item.form, targetWeightKg: event.target.value } }))} className="mt-1 w-full rounded border border-gray-300 px-2 py-2 text-sm" /></label>
                           <label><span className="text-[10px] font-black uppercase text-gray-500">RPE</span><input value={item.form.targetRpe} onChange={(event) => item.isNew ? setNewSetForms((current) => ({ ...current, [exercise.id]: { ...item.form, targetRpe: event.target.value } })) : setSetEdits((current) => ({ ...current, [item.id]: { ...item.form, targetRpe: event.target.value } }))} className="mt-1 w-full rounded border border-gray-300 px-2 py-2 text-sm" /></label>
                           <label><span className="text-[10px] font-black uppercase text-gray-500">Notes</span><input value={item.form.notes} onChange={(event) => item.isNew ? setNewSetForms((current) => ({ ...current, [exercise.id]: { ...item.form, notes: event.target.value } })) : setSetEdits((current) => ({ ...current, [item.id]: { ...item.form, notes: event.target.value } }))} className="mt-1 w-full rounded border border-gray-300 px-2 py-2 text-sm" /></label>
