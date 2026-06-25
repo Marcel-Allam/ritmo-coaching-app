@@ -47,6 +47,8 @@ type ProgramSetRecord = {
 };
 
 type WeeklyTargetPreviewRecord = {
+  program_set_id: string;
+  exercise_id: string;
   week_number: number;
   exercise_name: string;
   set_order: number;
@@ -54,10 +56,21 @@ type WeeklyTargetPreviewRecord = {
   target_reps: string | null;
   target_percent_1rm: NumericValue;
   target_weight_kg: NumericValue;
+  target_rpe: NumericValue;
+  target_rir: NumericValue;
   calculated_target_weight_kg: NumericValue;
   effective_target_weight_kg: NumericValue;
   target_load_source: 'coach_override' | 'calculated_from_percent_1rm' | 'missing_calibration' | 'not_percent_based' | string;
   notes: string | null;
+};
+
+type WeeklyTargetForm = {
+  targetReps: string;
+  targetPercent1Rm: string;
+  targetWeightKg: string;
+  targetRpe: string;
+  targetRir: string;
+  notes: string;
 };
 
 type ExerciseCatalogueRecord = {
@@ -78,6 +91,7 @@ type SetForm = {
 };
 
 type ExerciseForm = {
+  exerciseId: string | null;
   exerciseName: string;
   exerciseCatalogueId: string | null;
   exerciseRole: ExerciseRole;
@@ -103,6 +117,7 @@ type NewExerciseDraft = {
 const blankSet = (): SetForm => ({ targetReps: '', targetWeightKg: '', targetPercent1Rm: '', notes: '' });
 
 const blankExercise = (): ExerciseForm => ({
+  exerciseId: null,
   exerciseName: '',
   exerciseCatalogueId: null,
   exerciseRole: 'accessory',
@@ -119,6 +134,11 @@ const textOrNull = (value: string) => value.trim() || null;
 const parseMuscles = (value: string) => value.split(',').map((muscle) => muscle.trim()).filter(Boolean);
 const getRoleLabel = (role: ExerciseRole) => role === 'main_lift' ? 'Main / Key Lift' : 'Accessory';
 const getRoleBadgeVariant = (role: ExerciseRole) => role === 'main_lift' ? 'success' : 'default';
+
+const valueToInput = (value: NumericValue | string | null | undefined) => {
+  if (value === null || value === undefined || value === '') return '';
+  return String(value);
+};
 
 const formatNumericValue = (value: NumericValue) => {
   if (value === null || value === undefined || value === '') return '—';
@@ -151,6 +171,17 @@ const getLoadSourceLabel = (source: string) => {
   return source.replaceAll('_', ' ');
 };
 
+const getWeeklyTargetFormKey = (programSetId: string, weekNumber: number) => `${programSetId}:${weekNumber}`;
+
+const targetToForm = (target: WeeklyTargetPreviewRecord): WeeklyTargetForm => ({
+  targetReps: target.target_reps || '',
+  targetPercent1Rm: valueToInput(target.target_percent_1rm),
+  targetWeightKg: valueToInput(target.target_weight_kg),
+  targetRpe: valueToInput(target.target_rpe),
+  targetRir: valueToInput(target.target_rir),
+  notes: target.notes || '',
+});
+
 export default function EditAssignedWorkoutPage() {
   const params = useParams();
   const clientId = params.id as string;
@@ -167,10 +198,12 @@ export default function EditAssignedWorkoutPage() {
   const [addingExerciseIndex, setAddingExerciseIndex] = useState<number | null>(null);
   const [originalExerciseIds, setOriginalExerciseIds] = useState<string[]>([]);
   const [weeklyTargetPreviewRows, setWeeklyTargetPreviewRows] = useState<WeeklyTargetPreviewRecord[]>([]);
+  const [weeklyTargetForms, setWeeklyTargetForms] = useState<Record<string, WeeklyTargetForm>>({});
   const [selectedWeek, setSelectedWeek] = useState(1);
   const [isLocked, setIsLocked] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [savingWeeklyTargets, setSavingWeeklyTargets] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -197,16 +230,20 @@ export default function EditAssignedWorkoutPage() {
     return weeks.length > 0 ? weeks : Array.from({ length: 12 }, (_, index) => index + 1);
   }, [weeklyTargetPreviewRows]);
 
-  const weeklyTargetsByExerciseName = useMemo(() => {
+  const weeklyTargetsByExerciseId = useMemo(() => {
     return weeklyTargetPreviewRows
       .filter((row) => row.week_number === selectedWeek)
       .reduce<Record<string, WeeklyTargetPreviewRecord[]>>((acc, row) => {
-        if (!acc[row.exercise_name]) acc[row.exercise_name] = [];
-        acc[row.exercise_name].push(row);
-        acc[row.exercise_name].sort((a, b) => a.set_order - b.set_order);
+        if (!acc[row.exercise_id]) acc[row.exercise_id] = [];
+        acc[row.exercise_id].push(row);
+        acc[row.exercise_id].sort((a, b) => a.set_order - b.set_order);
         return acc;
       }, {});
   }, [selectedWeek, weeklyTargetPreviewRows]);
+
+  const getWeeklyTargetForm = (target: WeeklyTargetPreviewRecord) => {
+    return weeklyTargetForms[getWeeklyTargetFormKey(target.program_set_id, target.week_number)] || targetToForm(target);
+  };
 
   const loadWorkout = async () => {
     if (!isSupabaseConfigured) {
@@ -286,7 +323,7 @@ export default function EditAssignedWorkoutPage() {
 
     const { data: weeklyTargetData, error: weeklyTargetError } = await supabase
       .from('program_set_calculated_targets')
-      .select('week_number, exercise_name, set_order, target_definition_source, target_reps, target_percent_1rm, target_weight_kg, calculated_target_weight_kg, effective_target_weight_kg, target_load_source, notes')
+      .select('program_set_id, exercise_id, week_number, exercise_name, set_order, target_definition_source, target_reps, target_percent_1rm, target_weight_kg, target_rpe, target_rir, calculated_target_weight_kg, effective_target_weight_kg, target_load_source, notes')
       .eq('workout_id', workoutId)
       .order('week_number', { ascending: true })
       .order('exercise_name', { ascending: true })
@@ -300,6 +337,7 @@ export default function EditAssignedWorkoutPage() {
 
     const loadedSets = (setData ?? []) as ProgramSetRecord[];
     const formExercises = loadedExercises.map((exercise) => ({
+      exerciseId: exercise.id,
       exerciseName: exercise.exercise_name,
       exerciseCatalogueId: exercise.exercise_catalogue_id,
       exerciseRole: exercise.exercise_role || 'accessory',
@@ -315,12 +353,19 @@ export default function EditAssignedWorkoutPage() {
         })),
     }));
 
+    const loadedWeeklyTargets = (weeklyTargetData ?? []) as WeeklyTargetPreviewRecord[];
+    const loadedWeeklyForms = loadedWeeklyTargets.reduce<Record<string, WeeklyTargetForm>>((acc, target) => {
+      acc[getWeeklyTargetFormKey(target.program_set_id, target.week_number)] = targetToForm(target);
+      return acc;
+    }, {});
+
     setClient(clientResult.data as ClientRecord);
     setWorkout(loadedWorkout);
     setWorkoutTitle(loadedWorkout.title);
     setScheduledDate(loadedWorkout.scheduled_date || '');
     setExerciseCatalogue((catalogueResult.data ?? []) as ExerciseCatalogueRecord[]);
-    setWeeklyTargetPreviewRows((weeklyTargetData ?? []) as WeeklyTargetPreviewRecord[]);
+    setWeeklyTargetPreviewRows(loadedWeeklyTargets);
+    setWeeklyTargetForms(loadedWeeklyForms);
     setExercises(formExercises.length > 0 ? formExercises : [blankExercise()]);
     setOriginalExerciseIds(exerciseIds);
     setIsLocked(locked);
@@ -346,6 +391,17 @@ export default function EditAssignedWorkoutPage() {
     setNewExerciseDrafts((current) => ({
       ...current,
       [index]: { ...(current[index] || blankNewExerciseDraft()), ...updates },
+    }));
+  };
+
+  const updateWeeklyTargetForm = (target: WeeklyTargetPreviewRecord, updates: Partial<WeeklyTargetForm>) => {
+    const key = getWeeklyTargetFormKey(target.program_set_id, target.week_number);
+    setWeeklyTargetForms((current) => ({
+      ...current,
+      [key]: {
+        ...(current[key] || targetToForm(target)),
+        ...updates,
+      },
     }));
   };
 
@@ -457,6 +513,57 @@ export default function EditAssignedWorkoutPage() {
       if (i !== exerciseIndex) return exercise;
       return { ...exercise, sets: exercise.sets.filter((_, j) => j !== setIndex) };
     }));
+  };
+
+  const saveWeeklyTargetsForSelectedWeek = async () => {
+    if (!workout || !isSupabaseConfigured) return;
+
+    const mainLiftExerciseIds = new Set(
+      exercises
+        .filter((exercise) => exercise.exerciseRole === 'main_lift' && exercise.exerciseId)
+        .map((exercise) => exercise.exerciseId as string)
+    );
+
+    const targetsToSave = weeklyTargetPreviewRows
+      .filter((target) => target.week_number === selectedWeek && mainLiftExerciseIds.has(target.exercise_id))
+      .map((target) => {
+        const form = getWeeklyTargetForm(target);
+        return {
+          program_id: workout.program_id,
+          program_set_id: target.program_set_id,
+          week_number: selectedWeek,
+          target_reps: textOrNull(form.targetReps),
+          target_percent_1rm: numberOrNull(form.targetPercent1Rm),
+          target_weight_kg: numberOrNull(form.targetWeightKg),
+          target_rpe: numberOrNull(form.targetRpe),
+          target_rir: numberOrNull(form.targetRir),
+          notes: textOrNull(form.notes),
+        };
+      });
+
+    if (targetsToSave.length === 0) {
+      setError('No Main / Key Lift weekly targets are available for this selected week.');
+      return;
+    }
+
+    setSavingWeeklyTargets(true);
+    setMessage(null);
+    setError(null);
+
+    const supabase = createClient();
+    const { error: upsertError } = await supabase
+      .from('program_set_weekly_targets')
+      .upsert(targetsToSave, { onConflict: 'program_set_id,week_number' });
+
+    if (upsertError) {
+      setError(upsertError.message);
+      setSavingWeeklyTargets(false);
+      return;
+    }
+
+    setMessage(`Week ${selectedWeek} weekly targets saved.`);
+    setSavingWeeklyTargets(false);
+    await loadWorkout();
   };
 
   const saveWorkout = async (event: FormEvent<HTMLFormElement>) => {
@@ -593,9 +700,9 @@ export default function EditAssignedWorkoutPage() {
 
       {isLocked && (
         <Card className="border-2 border-yellow-200 bg-yellow-50">
-          <Badge variant="warning">Locked</Badge>
+          <Badge variant="warning">Base workout locked</Badge>
           <p className="mt-2 text-sm font-semibold text-yellow-800">
-            This workout is locked because the client has completed it. Duplicate it from Current Workouts to make a new editable copy.
+            The base workout structure is locked because the client has completed it. Weekly targets can still be edited for future progression.
           </p>
         </Card>
       )}
@@ -622,23 +729,33 @@ export default function EditAssignedWorkoutPage() {
             <div className="rounded-lg border border-gray-200 bg-white p-4">
               <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
                 <div>
-                  <p className="text-xs font-black uppercase tracking-wide text-[#FA0201]">Weekly progression preview</p>
+                  <p className="text-xs font-black uppercase tracking-wide text-[#FA0201]">Weekly progression editor</p>
                   <p className="mt-1 text-sm font-semibold text-gray-700">
-                    Select a week to see week-specific targets. Rows marked Weekly target override the base set. Rows marked Base fallback use the default set values.
+                    Select a week, edit the Main / Key Lift set targets, then save weekly targets separately from the base workout structure.
                   </p>
                 </div>
-                <label className="block min-w-40">
-                  <span className="mb-2 block text-sm font-semibold uppercase">Week</span>
-                  <select
-                    value={selectedWeek}
-                    onChange={(event) => setSelectedWeek(Number(event.target.value))}
-                    className="w-full rounded-lg border-2 border-gray-300 bg-white px-4 py-2 text-black"
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                  <label className="block min-w-40">
+                    <span className="mb-2 block text-sm font-semibold uppercase">Week</span>
+                    <select
+                      value={selectedWeek}
+                      onChange={(event) => setSelectedWeek(Number(event.target.value))}
+                      className="w-full rounded-lg border-2 border-gray-300 bg-white px-4 py-2 text-black"
+                    >
+                      {availableWeekNumbers.map((weekNumber) => (
+                        <option key={weekNumber} value={weekNumber}>Week {weekNumber}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <button
+                    type="button"
+                    disabled={savingWeeklyTargets}
+                    onClick={saveWeeklyTargetsForSelectedWeek}
+                    className="rounded-lg bg-[#FA0201] px-4 py-3 text-xs font-black uppercase text-white hover:bg-red-700 disabled:opacity-60"
                   >
-                    {availableWeekNumbers.map((weekNumber) => (
-                      <option key={weekNumber} value={weekNumber}>Week {weekNumber}</option>
-                    ))}
-                  </select>
-                </label>
+                    {savingWeeklyTargets ? 'Saving weekly targets...' : `Save Week ${selectedWeek} targets`}
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -647,7 +764,7 @@ export default function EditAssignedWorkoutPage() {
               const filter = selectorFilters[exerciseIndex] || blankFilter();
               const filteredCatalogue = getFilteredCatalogue(exerciseIndex);
               const newExerciseDraft = newExerciseDrafts[exerciseIndex] || blankNewExerciseDraft();
-              const weeklyTargetsForExercise = weeklyTargetsByExerciseName[exercise.exerciseName] || [];
+              const weeklyTargetsForExercise = exercise.exerciseId ? weeklyTargetsByExerciseId[exercise.exerciseId] || [] : [];
 
               return (
                 <div key={exerciseIndex} className="space-y-4 rounded-xl border border-gray-200 p-4">
@@ -831,9 +948,9 @@ export default function EditAssignedWorkoutPage() {
                     <div className="rounded-lg border border-red-100 bg-red-50 p-3">
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <div>
-                          <p className="text-xs font-black uppercase text-[#FA0201]">Week {selectedWeek} progression preview</p>
+                          <p className="text-xs font-black uppercase text-[#FA0201]">Week {selectedWeek} progression editor</p>
                           <p className="mt-1 text-xs font-semibold text-red-900">
-                            Read-only preview. Weekly target editing is the next build step; this section shows what the programme currently resolves to for this week.
+                            Edit week-specific targets here. Fixed kg overrides calculated %1RM loads. Leave kg blank to calculate from calibration.
                           </p>
                         </div>
                         <Badge variant="success">Calculated kg snaps to 2.5kg</Badge>
@@ -845,25 +962,37 @@ export default function EditAssignedWorkoutPage() {
                         </p>
                       ) : (
                         <div className="mt-3 overflow-x-auto rounded-lg bg-white p-3">
-                          <div className="grid min-w-[900px] grid-cols-[80px_1.2fr_1fr_1fr_1fr_1.4fr] gap-3 px-1 pb-2 text-xs font-bold uppercase text-gray-600">
+                          <div className="grid min-w-[1180px] grid-cols-[70px_1fr_1fr_1fr_1fr_1fr_1fr_1.3fr_1.7fr] gap-3 px-1 pb-2 text-xs font-bold uppercase text-gray-600">
                             <p>Set</p>
                             <p>Source</p>
                             <p>Reps</p>
                             <p>%1RM</p>
-                            <p>Target kg</p>
-                            <p>Load source</p>
+                            <p>Kg override</p>
+                            <p>RPE</p>
+                            <p>RIR</p>
+                            <p>Effective kg</p>
+                            <p>Notes</p>
                           </div>
                           <div className="space-y-2">
-                            {weeklyTargetsForExercise.map((target) => (
-                              <div key={`${target.week_number}-${target.exercise_name}-${target.set_order}`} className="grid min-w-[900px] grid-cols-[80px_1.2fr_1fr_1fr_1fr_1.4fr] items-center gap-3 rounded-lg border border-gray-100 bg-gray-50 p-2 text-sm">
-                                <p className="font-black uppercase text-[#000000]">Set {target.set_order}</p>
-                                <Badge variant={target.target_definition_source === 'weekly_target' ? 'success' : 'default'}>{getTargetSourceLabel(target.target_definition_source)}</Badge>
-                                <p className="font-semibold text-gray-800">{target.target_reps || '—'}</p>
-                                <p className="font-semibold text-gray-800">{formatPercent(target.target_percent_1rm)}</p>
-                                <p className="font-black text-[#FA0201]">{formatKg(target.effective_target_weight_kg)}</p>
-                                <Badge variant={target.target_load_source === 'missing_calibration' ? 'warning' : 'default'}>{getLoadSourceLabel(target.target_load_source)}</Badge>
-                              </div>
-                            ))}
+                            {weeklyTargetsForExercise.map((target) => {
+                              const form = getWeeklyTargetForm(target);
+                              return (
+                                <div key={`${target.week_number}-${target.exercise_id}-${target.set_order}`} className="grid min-w-[1180px] grid-cols-[70px_1fr_1fr_1fr_1fr_1fr_1fr_1.3fr_1.7fr] items-center gap-3 rounded-lg border border-gray-100 bg-gray-50 p-2 text-sm">
+                                  <p className="font-black uppercase text-[#000000]">Set {target.set_order}</p>
+                                  <Badge variant={target.target_definition_source === 'weekly_target' ? 'success' : 'default'}>{getTargetSourceLabel(target.target_definition_source)}</Badge>
+                                  <Input value={form.targetReps} onChange={(event) => updateWeeklyTargetForm(target, { targetReps: event.target.value })} placeholder="5" />
+                                  <Input type="number" step="0.5" value={form.targetPercent1Rm} onChange={(event) => updateWeeklyTargetForm(target, { targetPercent1Rm: event.target.value })} placeholder="75" />
+                                  <Input type="number" step="2.5" value={form.targetWeightKg} onChange={(event) => updateWeeklyTargetForm(target, { targetWeightKg: event.target.value })} placeholder="blank = calc" />
+                                  <Input type="number" step="0.5" value={form.targetRpe} onChange={(event) => updateWeeklyTargetForm(target, { targetRpe: event.target.value })} placeholder="8" />
+                                  <Input type="number" step="0.5" value={form.targetRir} onChange={(event) => updateWeeklyTargetForm(target, { targetRir: event.target.value })} placeholder="2" />
+                                  <div>
+                                    <p className="font-black text-[#FA0201]">{formatKg(target.effective_target_weight_kg)}</p>
+                                    <p className="mt-1 text-[10px] font-black uppercase text-gray-500">{getLoadSourceLabel(target.target_load_source)}</p>
+                                  </div>
+                                  <Input value={form.notes} onChange={(event) => updateWeeklyTargetForm(target, { notes: event.target.value })} placeholder="Optional" />
+                                </div>
+                              );
+                            })}
                           </div>
                         </div>
                       )}
@@ -917,13 +1046,13 @@ export default function EditAssignedWorkoutPage() {
             <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
               <p className="text-xs font-black uppercase text-amber-900">Base workout save</p>
               <p className="mt-1 text-sm font-semibold text-amber-800">
-                Save changes currently updates the base workout structure. Weekly targets are displayed here as a read-only preview and will get their own editing workflow next.
+                Save changes updates the base workout structure only. Use Save Week {selectedWeek} targets for week-specific progression.
               </p>
             </div>
 
             <div className="flex flex-col gap-3 md:flex-row">
               {!isLocked && <Button type="button" variant="outline" onClick={() => setExercises((current) => [...current, blankExercise()])}>Add exercise</Button>}
-              <Button type="submit" variant="primary" isLoading={saving} className="bg-[#FA0201] hover:bg-red-700" disabled={isLocked || saving}>Save changes</Button>
+              <Button type="submit" variant="primary" isLoading={saving} className="bg-[#FA0201] hover:bg-red-700" disabled={isLocked || saving}>Save base workout changes</Button>
             </div>
           </form>
         </Card>
